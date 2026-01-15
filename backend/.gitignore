@@ -1,0 +1,249 @@
+# -------------------------
+# Global / OS
+# -------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# Temporary files
+*.swp
+*~
+*.tmp
+*.temp
+
+# -------------------------
+# Secrets / env
+# -------------------------
+# dotenv environment variables
+.env
+.env.*
+.env.local
+.env.*.local
+.envrc
+*.pem
+*.key
+credentials
+secrets.yml
+
+# -------------------------
+# Logs
+# -------------------------
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+debug.log
+
+# -------------------------
+# Node.js / JavaScript
+# -------------------------
+node_modules/
+jspm_packages/
+.cache/
+.next/
+.nuxt/
+.out/
+dist/
+build/
+.tmp/
+public/build/
+.pnpm-store/
+.nyc_output/
+coverage/
+*.tgz
+# Optional: lockfiles are usually committed (package-lock.json / yarn.lock). Remove the next line if you want to keep them.
+# package-lock.json
+
+# -------------------------
+# Python
+# -------------------------
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Packaging
+*.egg-info/
+dist/
+build/
+pip-wheel-metadata/
+*.egg
+
+# Test / coverage
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# -------------------------
+# Java / JVM (Maven / Gradle)
+# -------------------------
+# Compiled class files
+*.class
+
+# Build output
+target/
+build/
+out/
+
+# IntelliJ / Eclipse
+*.iml
+.idea/
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+
+# Gradle
+.gradle/
+build/
+
+# Maven
+log/
+dependency-reduced-pom.xml
+release.properties
+
+# JAR / WAR / EAR
+*.jar
+*.war
+*.ear
+
+# -------------------------
+# Go
+# -------------------------
+# compiled binaries
+/bin/
+/pkg/
+*.exe
+*.test
+*.out
+
+# vendor (optional — uncomment if you don't want to commit vendor)
+# /vendor/
+
+# -------------------------
+# Ruby / Rails
+# -------------------------
+*.gem
+*.rbc
+.bundle/
+vendor/bundle/
+log/
+tmp/
+coverage/
+spec/tmp/
+db/*.sqlite3
+db/*.sqlite3-journal
+public/system
+.byebug_history
+
+# -------------------------
+# PHP / Composer
+# -------------------------
+vendor/
+composer.lock
+
+# -------------------------
+# .NET
+# -------------------------
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# -------------------------
+# Docker / Containers
+# -------------------------
+# Docker artifacts
+docker-compose.override.yml
+.docker/
+Dockerfile.debug
+**/.env.docker
+
+# Docker build cache / image layers
+docker-compose*.yml
+tmp_docker_build/
+
+# -------------------------
+# Serverless / Cloud build artifacts
+# -------------------------
+.serverless/
+.aws-sam/
+.vercel/
+.now/
+.build/
+
+# -------------------------
+# Databases / runtime data
+# -------------------------
+*.sqlite
+*.sqlite3
+*.db
+*.DB
+*.bak
+*.dump
+*.sql
+*.sqlite-journal
+
+# -------------------------
+# Test reports / coverage
+# -------------------------
+coverage/
+lcov-report/
+junit-*.xml
+test-results/
+
+# -------------------------
+# Editors / IDEs
+# -------------------------
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+*.code-workspace
+
+# -------------------------
+# Misc / Tools
+# -------------------------
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Parcel / Vite / Rollup caches
+.cache/
+.parcel-cache/
+.svelte-kit/
+
+# Build system temporary files
+*.lock-wscript
+*.wafpickle-*
+
+# -------------------------
+# Keep these files (examples / configs)
+# -------------------------
+# If you have local config files you DO want to keep in repo, add explicit allow-rules:
+# !important-config.example
+# !README.md
+
+# End of file
