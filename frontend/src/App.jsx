@@ -30,7 +30,6 @@ const Settings = lazy(() => import('./pages/Settings'));
 // const Help = lazy(() => import('./pages/Help'));
 // const NotFound = lazy(() => import('./pages/NotFound'));
 
-import './App.css';
 
 const App = () => {
   return (
@@ -38,7 +37,7 @@ const App = () => {
       <AuthProvider>
         <ThemeProvider>
           <EditorProvider>
-            <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+<div className="min-h-screen flex flex-col bg-gray-950 text-white overflow-x-hidden">
               <Header />
               
               <div className="flex flex-1">
