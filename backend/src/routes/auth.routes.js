@@ -14,7 +14,6 @@ import {
 } from '../controllers/auth.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 import { authLimiter } from '../middlewares/rateLimiter.middleware.js';
-// Remove upload import for now since we don't have multer setup
 
 const router = express.Router();
 

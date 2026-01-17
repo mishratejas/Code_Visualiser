@@ -1,41 +1,60 @@
 import sanitizeHtml from 'sanitize-html';
 
-export const sanitize = (req, res, next) => {
+const sanitizeMiddleware = (req, res, next) => {
+  // Helper function to sanitize recursively
+  const sanitizeObject = (obj) => {
+    for (const key in obj) {
+      if (typeof obj[key] === 'string') {
+        // Remove any $ or . characters that could be used for NoSQL injection
+        obj[key] = obj[key].replace(/[$]/g, '_');
+        
+        // Sanitize HTML
+        obj[key] = sanitizeHtml(obj[key], {
+          allowedTags: [],
+          allowedAttributes: {}
+        }).trim();
+      } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+        sanitizeObject(obj[key]);
+      }
+    }
+  };
+
   // Sanitize request body
-  if (req.body) {
-    Object.keys(req.body).forEach(key => {
-      if (typeof req.body[key] === 'string') {
-        req.body[key] = sanitizeHtml(req.body[key], {
-          allowedTags: [],
-          allowedAttributes: {}
-        }).trim();
-      }
-    });
+  if (req.body && typeof req.body === 'object') {
+    sanitizeObject(req.body);
   }
-  
-  // Sanitize request query parameters
-  if (req.query) {
-    Object.keys(req.query).forEach(key => {
+
+  // Sanitize query parameters by creating new object
+  if (req.query && typeof req.query === 'object') {
+    const sanitizedQuery = {};
+    for (const key in req.query) {
       if (typeof req.query[key] === 'string') {
-        req.query[key] = sanitizeHtml(req.query[key], {
-          allowedTags: [],
-          allowedAttributes: {}
-        }).trim();
+        sanitizedQuery[key] = req.query[key]
+          .replace(/[$]/g, '_')
+          .trim();
+      } else {
+        sanitizedQuery[key] = req.query[key];
       }
-    });
+    }
+    req.query = sanitizedQuery;
   }
-  
-  // Sanitize request params
-  if (req.params) {
-    Object.keys(req.params).forEach(key => {
+
+  // Sanitize route parameters
+  if (req.params && typeof req.params === 'object') {
+    const sanitizedParams = {};
+    for (const key in req.params) {
       if (typeof req.params[key] === 'string') {
-        req.params[key] = sanitizeHtml(req.params[key], {
-          allowedTags: [],
-          allowedAttributes: {}
-        }).trim();
+        sanitizedParams[key] = req.params[key]
+          .replace(/[$]/g, '_')
+          .trim();
+      } else {
+        sanitizedParams[key] = req.params[key];
       }
-    });
+    }
+    req.params = sanitizedParams;
   }
-  
+
   next();
 };
+
+export default sanitizeMiddleware;

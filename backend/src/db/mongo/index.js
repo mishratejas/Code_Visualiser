@@ -1,46 +1,57 @@
 import mongoose from 'mongoose';
-import { DB_CONNECTION_TIMEOUT } from '../../constants.js';
-
-// Attach listeners ONCE
-mongoose.connection.on('connected', () => {
-  console.log('✅ MongoDB connection established');
-});
-
-mongoose.connection.on('error', (err) => {
-  console.error('❌ MongoDB connection error:', err.message);
-});
-
-mongoose.connection.on('disconnected', () => {
-  console.warn('⚠️ MongoDB disconnected — waiting for reconnection');
-});
+import logger from '../../config/logger.js';
 
 const connectMongoDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      serverSelectionTimeoutMS: DB_CONNECTION_TIMEOUT,
-      socketTimeoutMS: 45000,
-      maxPoolSize: 10,
-      retryWrites: true,
-      w: 'majority',
-      tls: true,
-      tlsAllowInvalidCertificates: false,
-      tlsAllowInvalidHostnames: false,
-      heartbeatFrequencyMS: 10000
+    const uri = process.env.MONGODB_URI;
+    
+    if (!uri) {
+      throw new Error('MONGODB_URI is not defined in environment variables');
+    }
+    
+    logger.info('Connecting to MongoDB Atlas...');
+    
+    // For MongoDB Atlas SRV connection, use simpler options
+    const conn = await mongoose.connect(uri, {
+      // Remove deprecated options for newer mongoose versions
+      serverSelectionTimeoutMS: 10000, // 10 seconds
     });
 
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+    logger.info(`✅ MongoDB Atlas Connected: ${conn.connection.host}`);
+    logger.info(`✅ Database: ${conn.connection.name}`);
+    
+    // Check if models are registered
+    const modelNames = mongoose.modelNames();
+    logger.info(`✅ Mongoose models loaded: ${modelNames.join(', ') || 'None'}`);
+    
     return conn;
   } catch (error) {
-    console.error('❌ MongoDB Connection Failed:', error.message);
-
-    if (process.env.NODE_ENV === 'production') {
-      console.log('Retrying MongoDB connection in 5 seconds...');
-      setTimeout(connectMongoDB, 5000);
-    } else {
-      console.log('MongoDB unavailable — continuing without DB');
+    logger.error('❌ MongoDB Connection Failed:', error.message);
+    
+    if (process.env.NODE_ENV === 'development') {
+      logger.warn('⚠️ Running in development mode without MongoDB');
+      return null;
     }
-    return null;
+    
+    throw error;
   }
 };
+
+// Connection events
+mongoose.connection.on('connected', () => {
+  logger.info('Mongoose connected to MongoDB Atlas');
+  
+  // Log all registered models when connected
+  const modelNames = mongoose.modelNames();
+  logger.info(`Registered models: ${modelNames.join(', ') || 'None'}`);
+});
+
+mongoose.connection.on('error', (err) => {
+  logger.error(`Mongoose connection error: ${err.message}`);
+});
+
+mongoose.connection.on('disconnected', () => {
+  logger.warn('Mongoose disconnected from MongoDB Atlas');
+});
 
 export default connectMongoDB;

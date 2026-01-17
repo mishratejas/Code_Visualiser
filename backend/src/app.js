@@ -65,9 +65,66 @@ class App {
         this.app.use(compression());
         
         // Sanitization
-        this.app.use(mongoSanitize());
-        this.app.use(hpp());
-        this.app.use(sanitizeInput);
+        // Replace the entire sanitization middleware (lines 66-94) with this:
+
+// Sanitization - Fixed version
+this.app.use((req, res, next) => {
+    // Helper function to sanitize data
+    const sanitizeData = (data) => {
+        if (!data || typeof data !== 'object') return data;
+        
+        const sanitized = Array.isArray(data) ? [] : {};
+        
+        for (const key in data) {
+            if (Object.prototype.hasOwnProperty.call(data, key)) {
+                const cleanKey = key.replace(/^\$/, '').replace(/\./g, '_');
+                const value = data[key];
+                
+                if (typeof value === 'string') {
+                    sanitized[cleanKey] = value;
+                } else if (value && typeof value === 'object') {
+                    sanitized[cleanKey] = sanitizeData(value);
+                } else {
+                    sanitized[cleanKey] = value;
+                }
+            }
+        }
+        return sanitized;
+    };
+    
+    // Sanitize body - this is allowed
+    if (req.body) {
+        req.body = sanitizeData(req.body);
+    }
+    
+    // For query params, we need to be careful
+    // Don't assign directly to req.query, just sanitize its properties
+    if (req.query && typeof req.query === 'object') {
+        const sanitizedQuery = sanitizeData(req.query);
+        // Copy sanitized properties back to req.query
+        Object.keys(sanitizedQuery).forEach(key => {
+            if (sanitizedQuery[key] !== undefined) {
+                req.query[key] = sanitizedQuery[key];
+            }
+        });
+    }
+    
+    // Sanitize params
+    if (req.params && typeof req.params === 'object') {
+        const sanitizedParams = sanitizeData(req.params);
+        Object.keys(sanitizedParams).forEach(key => {
+            if (sanitizedParams[key] !== undefined) {
+                req.params[key] = sanitizedParams[key];
+            }
+        });
+    }
+    
+    next();
+});
+
+// HPP (HTTP Parameter Pollution) - Comment this out temporarily
+// this.app.use(hpp());
+// this.app.use(sanitizeInput);
         
         // Logging
         if (config.server.isDevelopment) {
@@ -89,92 +146,90 @@ class App {
         });
     }
     
-    setupRoutes() {
-        // API prefix
-        const apiPrefix = `${config.server.apiPrefix || '/api'}/${config.server.apiVersion || 'v1'}`;
+   setupRoutes() {
+    // Get the base path
+    const apiBase = config.server.apiPrefix || '/api';
+    const apiVersion = config.server.apiVersion || 'v1';
+    const apiPrefix = `${apiBase}/${apiVersion}`;
+    
+    console.log(`API Prefix: ${apiPrefix}`); // Debug log
+    console.log(`API Base: ${apiBase}`); // Debug log
+    
+    // Health check endpoint
+    this.app.get(`${apiPrefix}/health`, (req, res) => {
+        const uptime = process.uptime();
+        const memoryUsage = process.memoryUsage();
         
-        // Health check endpoint
-        this.app.get(`${apiPrefix}/health`, (req, res) => {
-            const uptime = process.uptime();
-            const memoryUsage = process.memoryUsage();
-            
-            res.json({
-                status: 'healthy',
-                timestamp: new Date().toISOString(),
-                uptime: `${Math.floor(uptime / 60)}m ${Math.floor(uptime % 60)}s`,
-                memory: {
-                    rss: `${Math.round(memoryUsage.rss / 1024 / 1024)}MB`,
-                    heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`,
-                    heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`,
+        res.json({
+            status: 'healthy',
+            timestamp: new Date().toISOString(),
+            uptime: `${Math.floor(uptime / 60)}m ${Math.floor(uptime % 60)}s`,
+            memory: {
+                rss: `${Math.round(memoryUsage.rss / 1024 / 1024)}MB`,
+                heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`,
+                heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`,
+            },
+            environment: config.server.nodeEnv,
+            version: process.env.npm_package_version || '1.0.0'
+        });
+    });
+    
+    // API Documentation
+    this.app.get(`${apiPrefix}/docs`, (req, res) => {
+        res.json({
+            message: 'Coding Judge API Documentation',
+            version: '1.0.0',
+            endpoints: {
+                auth: {
+                    register: `POST ${apiPrefix}/auth/register`,
+                    login: `POST ${apiPrefix}/auth/login`,
+                    logout: `POST ${apiPrefix}/auth/logout`,
+                    me: `GET ${apiPrefix}/auth/me`
                 },
-                environment: config.server.nodeEnv,
-                version: process.env.npm_package_version || '1.0.0'
-            });
+                // ... other endpoints
+            }
         });
-        
-        // API Documentation
-        this.app.get(`${apiPrefix}/docs`, (req, res) => {
-            res.json({
-                message: 'Coding Judge API Documentation',
-                version: '1.0.0',
-                endpoints: {
-                    auth: {
-                        register: 'POST /auth/register',
-                        login: 'POST /auth/login',
-                        logout: 'POST /auth/logout',
-                        me: 'GET /auth/me'
-                    },
-                    problems: {
-                        list: 'GET /problems',
-                        get: 'GET /problems/:id',
-                        create: 'POST /problems (admin)',
-                        update: 'PUT /problems/:id (admin)'
-                    },
-                    submissions: {
-                        submit: 'POST /submissions',
-                        list: 'GET /submissions',
-                        get: 'GET /submissions/:id'
-                    },
-                    users: {
-                        profile: 'GET /users/:username',
-                        stats: 'GET /users/:username/stats'
-                    },
-                    leaderboard: 'GET /leaderboard'
-                }
-            });
+    });
+    
+    // API routes with version prefix
+    this.app.use(`${apiPrefix}/auth`, authRoutes);
+    this.app.use(`${apiPrefix}/problems`, problemRoutes);
+    this.app.use(`${apiPrefix}/submissions`, submissionRoutes);
+    this.app.use(`${apiPrefix}/users`, userRoutes);
+    this.app.use(`${apiPrefix}/leaderboard`, leaderboardRoutes);
+    
+    // For backward compatibility, also register routes without version
+    this.app.use(`${apiBase}/auth`, authRoutes);
+    
+    // Add a test route to verify
+    this.app.post(`${apiBase}/test`, (req, res) => {
+        res.json({ message: 'Test route works!', body: req.body });
+    });
+    
+    // 404 handler for undefined routes
+    this.app.use(`${apiPrefix}/:params`, (req, res, next) => {
+        const err = new Error(`Cannot ${req.method} ${req.originalUrl}`);
+        err.statusCode = 404;
+        err.isOperational = true;
+        next(err);
+    });
+    
+    // Root endpoint
+    this.app.get('/', (req, res) => {
+        res.json({
+            message: 'Coding Judge API',
+            version: '1.0.0',
+            apiBase: apiBase,
+            apiVersion: apiVersion,
+            apiPrefix: apiPrefix,
+            endpoints: {
+                auth: `${apiPrefix}/auth`,
+                health: `${apiPrefix}/health`,
+                docs: `${apiPrefix}/docs`
+            }
         });
-        
-        // API routes
-        this.app.use(`${apiPrefix}/auth`, authRoutes);
-        this.app.use(`${apiPrefix}/problems`, problemRoutes);
-        this.app.use(`${apiPrefix}/submissions`, submissionRoutes);
-        this.app.use(`${apiPrefix}/users`, userRoutes);
-        this.app.use(`${apiPrefix}/leaderboard`, leaderboardRoutes);
-        
-        // 404 handler for undefined routes
-        this.app.use(`${apiPrefix}/:params`, (req, res, next) => {
-            const err = new Error(`Cannot ${req.method} ${req.originalUrl}`);
-            err.statusCode = 404;
-            err.isOperational = true;
-            next(err);
-        });
-        
-        // Root endpoint
-        this.app.get('/', (req, res) => {
-            res.json({
-                message: 'Coding Judge API',
-                version: '1.0.0',
-                documentation: `${req.protocol}://${req.get('host')}${apiPrefix}/docs`,
-                endpoints: {
-                    auth: `${apiPrefix}/auth`,
-                    problems: `${apiPrefix}/problems`,
-                    submissions: `${apiPrefix}/submissions`,
-                    users: `${apiPrefix}/users`,
-                    leaderboard: `${apiPrefix}/leaderboard`
-                }
-            });
-        });
-    }
+    });
+}
     
     setupErrorHandling() {
         // Error handling middleware (should be last)

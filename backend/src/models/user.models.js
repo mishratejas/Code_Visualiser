@@ -292,17 +292,31 @@ userSchema.index({ 'stats.totalProblemsSolved': -1 });
 userSchema.index({ 'stats.streak': -1 });
 userSchema.index({ createdAt: -1 });
 
-// Pre-save middleware
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
+userSchema.pre('save', async function() {
+  // Only hash if password was modified
+  if (!this.isModified('password')) {
+    return;
+  }
   
+  // Check if password exists
+  if (!this.password || typeof this.password !== 'string') {
+    throw new Error('Password is required and must be a string');
+  }
+  
+  const saltRounds = parseInt(process.env.BCRYPT_ROUNDS) || 12;
+  
+  // Use synchronous bcrypt for now
   try {
-    const salt = await bcrypt.genSalt(parseInt(process.env.BCRYPT_ROUNDS) || 12);
-    this.password = await bcrypt.hash(this.password, salt);
+    const salt = bcrypt.genSaltSync(saltRounds);
+    this.password = bcrypt.hashSync(this.password, salt);
+    
+    // Initialize security object if it doesn't exist
+    if (!this.security) {
+      this.security = {};
+    }
     this.security.lastPasswordChange = new Date();
-    next();
   } catch (error) {
-    next(error);
+    throw error;
   }
 });
 
