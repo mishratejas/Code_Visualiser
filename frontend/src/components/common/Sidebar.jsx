@@ -109,7 +109,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }) => {
             </div>
             <span className="text-xl font-bold text-white">
               CodeForge
-            </span>
+              </span>
           </Link>
         )}
         {collapsed && (
