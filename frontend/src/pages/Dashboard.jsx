@@ -30,51 +30,99 @@ const Dashboard = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (user && user.id) {
+    if (user && user._id) {
       fetchDashboardData();
     } else {
       setLoading(false);
     }
   }, [user]);
+// Dashboard.jsx - Update the fetchDashboardData function
+const fetchDashboardData = async () => {
+  try {
+    setLoading(true);
+    setError(null);
+    
+    // Only fetch if user exists and has an _id
+    if (!user?._id) {
+      console.log('User or user._id is undefined:', user);
+      setLoading(false);
+      return;
+    }
 
-  const fetchDashboardData = async () => {
     try {
-      setLoading(true);
-      setError(null);
+      // Fetch submissions (this endpoint should exist)
+      const submissionsRes = await api.get('/submissions', { 
+        params: { limit: 10 } 
+      }).catch(() => ({ data: { submissions: [] } })); // Fallback if fails
       
-      // Only fetch if user exists and has an id
-      if (!user?.id) {
-        console.log('User or user.id is undefined:', user);
-        return;
+      setRecentSubmissions(submissionsRes.data?.submissions || submissionsRes.data || []);
+
+      // Fetch upcoming contests (handle if endpoint doesn't exist)
+      let contestsData = [];
+      try {
+        const contestsRes = await api.get('/contests', { 
+          params: { status: 'upcoming', limit: 3 } 
+        });
+        contestsData = contestsRes.data?.contests || contestsRes.data || [];
+      } catch (contestError) {
+        console.log('Contests endpoint not available, using mock data');
+        // Use mock data for contests
+        contestsData = [
+          { 
+            _id: '1', 
+            title: 'Weekly Coding Challenge', 
+            startTime: new Date(Date.now() + 86400000), 
+            duration: 120, 
+            type: 'weekly', 
+            participants: 1500 
+          },
+          { 
+            _id: '2', 
+            title: 'Beginner\'s Contest', 
+            startTime: new Date(Date.now() + 172800000), 
+            duration: 90, 
+            type: 'beginner', 
+            participants: 800 
+          },
+        ];
+      }
+      
+      setUpcomingContests(contestsData);
+
+      // Get user stats if endpoint exists
+      let userStats = {};
+      try {
+        const statsRes = await api.get(`/users/${user._id}/stats`);
+        userStats = statsRes.data || {};
+      } catch (statsError) {
+        console.log('User stats endpoint not available, using fallback');
+        // Use user data from context or fallback
+        userStats = {
+          totalSubmissions: user.stats?.totalSubmissions || 0,
+          acceptedSubmissions: user.stats?.acceptedSubmissions || 0,
+          problemsSolved: user.stats?.totalProblemsSolved || 0,
+          currentStreak: user.stats?.streak || 0,
+          maxStreak: user.stats?.maxStreak || 0,
+          ranking: user.stats?.rank || 0,
+          acceptanceRate: user.stats?.acceptanceRate || 0,
+        };
       }
 
-      // In a real app, you'd have a dedicated dashboard endpoint
-      // For now, use mock data or make API calls
-      const [submissionsRes, contestsRes] = await Promise.all([
-        api.get('/submissions', { params: { limit: 10, user: user.id } })
-          .catch(() => ({ data: [] })), // Fallback if API fails
-        api.get('/contests', { params: { status: 'upcoming', limit: 3 } })
-          .catch(() => ({ data: [] })), // Fallback if API fails
-      ]);
-
-      setRecentSubmissions(submissionsRes.data || []);
-      setUpcomingContests(contestsRes.data || []);
-
-      // Mock stats - replace with actual API
+      // Update stats
       setStats({
-        totalSubmissions: 147,
-        acceptedSubmissions: 89,
-        problemsSolved: 45,
-        contestsParticipated: 12,
-        currentStreak: user?.stats?.currentStreak || 0,
-        maxStreak: user?.stats?.maxStreak || 0,
-        ranking: 1567,
-        acceptanceRate: 60.5,
+        totalSubmissions: userStats.totalSubmissions || 0,
+        acceptedSubmissions: userStats.acceptedSubmissions || 0,
+        problemsSolved: userStats.problemsSolved || userStats.totalProblemsSolved || 0,
+        contestsParticipated: 0, // You can add this to user stats
+        currentStreak: userStats.currentStreak || userStats.streak || 0,
+        maxStreak: userStats.maxStreak || 0,
+        ranking: userStats.ranking || userStats.rank || 0,
+        acceptanceRate: userStats.acceptanceRate || 0,
       });
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
-      setError('Failed to load dashboard data. Please try again.');
-      // Use fallback data
+      
+    } catch (apiError) {
+      console.error('API Error:', apiError);
+      // Use mock data if all APIs fail
       setRecentSubmissions([]);
       setUpcomingContests([]);
       setStats({
@@ -87,11 +135,15 @@ const Dashboard = () => {
         ranking: 0,
         acceptanceRate: 0,
       });
-    } finally {
-      setLoading(false);
     }
-  };
-
+    
+  } catch (error) {
+    console.error('Failed to fetch dashboard data:', error);
+    setError('Failed to load dashboard data. Some features may not work.');
+  } finally {
+    setLoading(false);
+  }
+};
   // If no user is logged in, redirect or show message
   if (!user) {
     return (
