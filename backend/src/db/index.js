@@ -1,21 +1,11 @@
-// src/db/index.js - WORKING VERSION
+// src/db/index.js - FIXED VERSION
 import connectMongoDB from './mongo/index.js';
-
-// Conditionally import PostgreSQL
-let connectPostgreSQL = null;
-if (process.env.POSTGRES_URI || process.env.POSTGRES_HOST) {
-  try {
-    const pgModule = await import('./postgres/index.js');
-    connectPostgreSQL = pgModule.default;
-  } catch (error) {
-    console.log('⚠️ PostgreSQL module not available, skipping...');
-  }
-}
 
 class DatabaseManager {
   constructor() {
     this.mongoConnection = null;
     this.postgresConnection = null;
+    this.sequelize = null;
   }
 
   async connectAll() {
@@ -27,11 +17,20 @@ class DatabaseManager {
       console.log('✅ MongoDB connected');
       
       // Connect to PostgreSQL if available
-      if (connectPostgreSQL) {
+      if (process.env.POSTGRES_URI || process.env.POSTGRES_HOST) {
         try {
-          this.postgresConnection = await connectPostgreSQL();
+          // Import the PostgreSQL module
+          const { sequelize, connectPostgreSQL } = await import('./postgres/index.js');
+          
+          // Connect to PostgreSQL
+          await connectPostgreSQL();
+          this.postgresConnection = sequelize;
+          this.sequelize = sequelize;
+          
+          console.log('✅ PostgreSQL connected successfully');
         } catch (pgError) {
           console.error('⚠️ PostgreSQL connection failed:', pgError.message);
+          console.log('⚠️ Continuing without PostgreSQL');
         }
       }
       
@@ -46,15 +45,36 @@ class DatabaseManager {
     }
   }
 
+  async connectPostgreSQL() {
+    if (!process.env.POSTGRES_URI && !process.env.POSTGRES_HOST) {
+      console.log('⚠️ PostgreSQL config not found, skipping...');
+      return null;
+    }
+    
+    try {
+      const { sequelize, connectPostgreSQL: connectPG } = await import('./postgres/index.js');
+      await connectPG();
+      this.postgresConnection = sequelize;
+      this.sequelize = sequelize;
+      console.log('✅ PostgreSQL connected successfully');
+      return sequelize;
+    } catch (error) {
+      console.error('❌ PostgreSQL connection failed:', error.message);
+      throw error;
+    }
+  }
+
   async disconnectAll() {
     console.log('🔌 Disconnecting from databases...');
     
     if (this.mongoConnection) {
-      await this.mongoConnection.disconnect?.();
+      await mongoose.disconnect();
+      console.log('✅ MongoDB disconnected');
     }
     
-    if (this.postgresConnection) {
-      await this.postgresConnection.close?.();
+    if (this.sequelize) {
+      await this.sequelize.close();
+      console.log('✅ PostgreSQL disconnected');
     }
     
     console.log('✅ All databases disconnected');

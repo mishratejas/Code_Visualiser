@@ -21,33 +21,62 @@ const Profile = () => {
     fetchProfile();
   }, [username]);
 
-  const fetchProfile = async () => {
-    try {
-      setLoading(true);
-      const [userRes, statsRes, submissionsRes] = await Promise.all([
-        api.get(`/users/${username}`),
-        api.get(`/users/${username}/stats`),
-        api.get(`/submissions/user/${username}?limit=10`)
-      ]);
-
-      setUser(userRes.data);
-      setStats(statsRes.data);
-      setSubmissions(submissionsRes.data);
-
-      // Mock recent activity
-      setRecentActivity([
-        { type: 'submission', problem: 'Two Sum', status: 'accepted', time: '2 hours ago' },
-        { type: 'contest', name: 'Weekly Contest 350', rank: 45, time: '1 day ago' },
-        { type: 'achievement', title: 'Solved 100 Problems', time: '2 days ago' },
-        { type: 'submission', problem: 'Binary Tree Inorder', status: 'wrong_answer', time: '3 days ago' },
-        { type: 'streak', days: 15, time: '1 week ago' },
-      ]);
-    } catch (error) {
-      toast.error('Failed to load profile');
-    } finally {
-      setLoading(false);
+// In frontend/src/pages/Profile.jsx - Update fetchProfile function
+const fetchProfile = async () => {
+  try {
+    setLoading(true);
+    
+    // First get user by username
+    const userRes = await api.get(`/users/${username}`);
+    setUser(userRes.data?.user || userRes.data);
+    
+    // Then get stats using user ID
+    const userId = userRes.data?.user?._id || userRes.data?._id;
+    
+    if (userId) {
+      try {
+        const statsRes = await api.get(`/users/${userId}/stats`);
+        setStats(statsRes.data);
+      } catch (statsError) {
+        console.log('Stats endpoint error, using user data:', statsError);
+        // Use user stats if available
+        const userStats = userRes.data?.user?.stats || userRes.data?.stats || {};
+        setStats({
+          easySolved: userStats.easySolved || 0,
+          mediumSolved: userStats.mediumSolved || 0,
+          hardSolved: userStats.hardSolved || 0,
+          problemsSolved: userStats.totalProblemsSolved || 0,
+          streak: userStats.streak || 0,
+          acceptanceRate: userStats.acceptanceRate || 0,
+        });
+      }
     }
-  };
+    
+    // Get submissions for this user
+    try {
+      const submissionsRes = await api.get('/submissions', { 
+        params: { limit: 10, user: userId }
+      });
+      setSubmissions(submissionsRes.data?.submissions || submissionsRes.data || []);
+    } catch (submissionsError) {
+      console.log('Submissions endpoint error:', submissionsError);
+      setSubmissions([]);
+    }
+
+    // Mock recent activity (temporary)
+    setRecentActivity([
+      { type: 'submission', problem: 'Two Sum', status: 'accepted', time: '2 hours ago' },
+      { type: 'submission', problem: 'Add Two Numbers', status: 'accepted', time: '1 day ago' },
+      { type: 'streak', days: 5, time: '3 days ago' },
+    ]);
+    
+  } catch (error) {
+    console.error('Failed to load profile:', error);
+    toast.error('Failed to load profile');
+  } finally {
+    setLoading(false);
+  }
+};
 
   if (loading) {
     return <Loader />;

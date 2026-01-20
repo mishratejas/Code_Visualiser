@@ -1,14 +1,18 @@
 import { Sequelize } from 'sequelize';
 import pg from 'pg';
 
-// Create sequelize instance FIRST
+// Create sequelize instance
 const sequelize = new Sequelize(
   process.env.POSTGRES_URI || 
   `postgresql://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || 'password'}@${process.env.POSTGRES_HOST || 'localhost'}:${process.env.POSTGRES_PORT || 5432}/${process.env.POSTGRES_DB || 'coding_judge'}`,
   {
-    logging: (msg) => console.log(`📊 PostgreSQL: ${msg}`),
+    logging: false, // ← DISABLE ALL SQL LOGGING
     dialect: 'postgres',
     dialectModule: pg,
+    define: {
+      underscored: true,
+      timestamps: true
+    },
     pool: {
       max: 10,
       min: 0,
@@ -24,10 +28,13 @@ const connectPostgreSQL = async () => {
     await sequelize.authenticate();
     console.log('✅ PostgreSQL connected successfully');
     
-    // Sync models
+    // Only sync in development, and be careful with alter
     if (process.env.NODE_ENV === 'development') {
       await sequelize.sync({ alter: true });
       console.log('✅ PostgreSQL models synchronized');
+    } else {
+      // In production, don't auto-alter tables
+      await sequelize.sync({ alter: false });
     }
     
     return sequelize;
@@ -42,6 +49,6 @@ const connectPostgreSQL = async () => {
   }
 };
 
-// Export BOTH
+// Export
 export { sequelize, connectPostgreSQL };
-export default sequelize; // Default export
+export default sequelize;

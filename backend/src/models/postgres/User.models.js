@@ -8,13 +8,6 @@ const User = sequelize.define('User', {
     autoIncrement: true
   },
   
-  mongo_id: {
-    type: DataTypes.STRING(24),
-    unique: true,
-    allowNull: false,
-    comment: 'Reference to MongoDB User _id'
-  },
-  
   username: {
     type: DataTypes.STRING(50),
     unique: true,
@@ -22,13 +15,22 @@ const User = sequelize.define('User', {
   },
   
   email: {
-    type: DataTypes.STRING(255),
+    type: DataTypes.STRING(100),
     unique: true,
-    allowNull: false
+    allowNull: false,
+    validate: {
+      isEmail: true
+    }
+  },
+  
+  password_hash: {
+    type: DataTypes.STRING(255),
+    allowNull: false,
+    field: 'password_hash' // Explicitly map to snake_case column
   },
   
   role: {
-    type: DataTypes.ENUM('user', 'admin', 'moderator'),
+    type: DataTypes.STRING(20),
     defaultValue: 'user'
   },
   
@@ -39,15 +41,46 @@ const User = sequelize.define('User', {
   
   avatar_url: {
     type: DataTypes.TEXT,
-    allowNull: true
+    allowNull: true,
+    field: 'avatar_url'
   },
   
   country_code: {
     type: DataTypes.STRING(2),
-    allowNull: true
+    allowNull: true,
+    field: 'country_code'
   },
   
   score: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0
+  },
+  
+  total_problems_solved: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    field: 'total_problems_solved'
+  },
+  
+  easy_solved: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    field: 'easy_solved'
+  },
+  
+  medium_solved: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    field: 'medium_solved'
+  },
+  
+  hard_solved: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    field: 'hard_solved'
+  },
+  
+  streak: {
     type: DataTypes.INTEGER,
     defaultValue: 0
   },
@@ -57,63 +90,71 @@ const User = sequelize.define('User', {
     defaultValue: 0
   },
   
-  total_problems_solved: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0
+  profile: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
   },
   
-  easy_solved: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0
+  stats: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
   },
   
-  medium_solved: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0
+  preferences: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
   },
   
-  hard_solved: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0
+  security: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
   },
   
-  streak: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0
-  },
-  
-  max_streak: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0
-  },
-  
-  last_active_date: {
-    type: DataTypes.DATE,
-    allowNull: true
+  subscriptions: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
   },
   
   is_active: {
     type: DataTypes.BOOLEAN,
-    defaultValue: true
+    defaultValue: true,
+    field: 'is_active'
+  },
+  
+  is_email_verified: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    field: 'is_email_verified'
+  },
+  
+  is_profile_complete: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    field: 'is_profile_complete'
+  },
+  
+  bookmarks: {
+    type: DataTypes.ARRAY(DataTypes.TEXT),
+    defaultValue: []
+  },
+  
+  solved_problems: {
+    type: DataTypes.ARRAY(DataTypes.TEXT),
+    defaultValue: [],
+    field: 'solved_problems'
+  },
+  
+  attempted_problems: {
+    type: DataTypes.ARRAY(DataTypes.TEXT),
+    defaultValue: [],
+    field: 'attempted_problems'
   }
 }, {
   tableName: 'users',
-  timestamps: true,
-  indexes: [
-    {
-      name: 'idx_users_score',
-      fields: ['score'],
-      order: [['score', 'DESC']]
-    },
-    {
-      name: 'idx_users_username',
-      fields: ['username']
-    },
-    {
-      name: 'idx_users_email',
-      fields: ['email']
-    }
-  ]
+  timestamps: true, // This will use createdAt and updatedAt
+  underscored: true, // This tells Sequelize to use snake_case for timestamps
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
 });
 
 export default User;

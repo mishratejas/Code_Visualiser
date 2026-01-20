@@ -3,6 +3,7 @@ import authRoutes from './auth.routes.js';
 import userRoutes from './user.routes.js';
 import problemRoutes from './problem.routes.js';
 import submissionRoutes from './submission.routes.js';
+import contestRoutes from './contest.routes.js';
 
 const router = express.Router();
 
@@ -35,6 +36,7 @@ router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/problems', problemRoutes);
 router.use('/submissions', submissionRoutes);
+router.use('/contests', contestRoutes);
 
 // 404 handler for undefined API routes
 router.use('*', (req, res) => {

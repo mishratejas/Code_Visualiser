@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FiCalendar, FiClock, FiUsers, FiAward, FiFilter, FiChevronDown, FiChevronUp } from 'react-icons/fi';
+import { FiCalendar, FiClock, FiUsers, FiAward, FiFilter, FiChevronDown, FiChevronUp ,FiTrendingUp} from 'react-icons/fi';
 import { MdOutlineEmojiEvents } from 'react-icons/md';
 import { format, isFuture, isPast } from 'date-fns';
 import api from '../services/api';
@@ -194,7 +194,7 @@ const Contests = () => {
 
       {/* Contest Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {contests.map((contest) => {
+        {(contests || []).map((contest) => {
           const status = getContestStatus(contest);
           const isFeatured = contest._id === contests[0]?._id && status === 'upcoming';
 

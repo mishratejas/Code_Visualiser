@@ -1,6 +1,5 @@
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../../db/postgres/index.js';
-import User from './User.models.js';
 
 const Contest = sequelize.define('Contest', {
   id: {
@@ -26,66 +25,80 @@ const Contest = sequelize.define('Contest', {
   },
   
   contest_type: {
-    type: DataTypes.ENUM('practice', 'live', 'tournament'),
-    defaultValue: 'practice'
+    type: DataTypes.STRING,  //temporarily change
+    defaultValue: 'practice',
+    field: 'contest_type'
   },
   
   status: {
-    type: DataTypes.ENUM('draft', 'scheduled', 'live', 'ended', 'cancelled'),
+    type: DataTypes.STRING,
     defaultValue: 'draft'
   },
   
   start_time: {
     type: DataTypes.DATE,
-    allowNull: false
+    allowNull: false,
+    field: 'start_time'
   },
   
   end_time: {
     type: DataTypes.DATE,
-    allowNull: false
+    allowNull: false,
+    field: 'end_time'
   },
   
   duration_minutes: {
     type: DataTypes.INTEGER,
-    comment: 'Duration in minutes'
+    comment: 'Duration in minutes',
+    field: 'duration_minutes'
   },
   
   max_participants: {
     type: DataTypes.INTEGER,
-    allowNull: true
+    allowNull: true,
+    field: 'max_participants'
   },
   
   registration_open: {
     type: DataTypes.BOOLEAN,
-    defaultValue: true
+    defaultValue: true,
+    field: 'registration_open'
   },
   
   is_private: {
     type: DataTypes.BOOLEAN,
-    defaultValue: false
+    defaultValue: false,
+    field: 'is_private'
   },
   
   registration_password: {
     type: DataTypes.STRING(100),
-    allowNull: true
+    allowNull: true,
+    field: 'registration_password'
   },
   
   banner_url: {
     type: DataTypes.TEXT,
-    allowNull: true
+    allowNull: true,
+    field: 'banner_url'
   },
   
   tags: {
     type: DataTypes.ARRAY(DataTypes.STRING),
     defaultValue: []
+  },
+  
+  created_by: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'created_by'
   }
 }, {
   tableName: 'contests',
-  timestamps: true
+  timestamps: true,
+  underscored: true,
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
 });
-
-// Relationships
-Contest.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
-User.hasMany(Contest, { foreignKey: 'created_by' });
 
 export default Contest;

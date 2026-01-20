@@ -19,6 +19,7 @@ import problemRoutes from './routes/problem.routes.js';
 import submissionRoutes from './routes/submission.routes.js';
 import userRoutes from './routes/user.routes.js';
 import leaderboardRoutes from './routes/leaderboard.routes.js';
+import contestRoutes from './routes/contest.routes.js'; // ADD THIS LINE
 
 class App {
     constructor() {
@@ -49,7 +50,7 @@ class App {
         
         // CORS configuration
         this.app.use(cors({
-            origin: config.security.corsOrigins || ['http://localhost:3000'],
+            origin: config.security.corsOrigins || ['http://localhost:3000', 'http://localhost:5173'], // Added Vite default port
             credentials: true,
             methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
             allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -64,67 +65,64 @@ class App {
         // Compression
         this.app.use(compression());
         
-        // Sanitization
-        // Replace the entire sanitization middleware (lines 66-94) with this:
-
-// Sanitization - Fixed version
-this.app.use((req, res, next) => {
-    // Helper function to sanitize data
-    const sanitizeData = (data) => {
-        if (!data || typeof data !== 'object') return data;
-        
-        const sanitized = Array.isArray(data) ? [] : {};
-        
-        for (const key in data) {
-            if (Object.prototype.hasOwnProperty.call(data, key)) {
-                const cleanKey = key.replace(/^\$/, '').replace(/\./g, '_');
-                const value = data[key];
+        // Sanitization - Fixed version
+        this.app.use((req, res, next) => {
+            // Helper function to sanitize data
+            const sanitizeData = (data) => {
+                if (!data || typeof data !== 'object') return data;
                 
-                if (typeof value === 'string') {
-                    sanitized[cleanKey] = value;
-                } else if (value && typeof value === 'object') {
-                    sanitized[cleanKey] = sanitizeData(value);
-                } else {
-                    sanitized[cleanKey] = value;
+                const sanitized = Array.isArray(data) ? [] : {};
+                
+                for (const key in data) {
+                    if (Object.prototype.hasOwnProperty.call(data, key)) {
+                        const cleanKey = key.replace(/^\$/, '').replace(/\./g, '_');
+                        const value = data[key];
+                        
+                        if (typeof value === 'string') {
+                            sanitized[cleanKey] = value;
+                        } else if (value && typeof value === 'object') {
+                            sanitized[cleanKey] = sanitizeData(value);
+                        } else {
+                            sanitized[cleanKey] = value;
+                        }
+                    }
                 }
+                return sanitized;
+            };
+            
+            // Sanitize body - this is allowed
+            if (req.body) {
+                req.body = sanitizeData(req.body);
             }
-        }
-        return sanitized;
-    };
-    
-    // Sanitize body - this is allowed
-    if (req.body) {
-        req.body = sanitizeData(req.body);
-    }
-    
-    // For query params, we need to be careful
-    // Don't assign directly to req.query, just sanitize its properties
-    if (req.query && typeof req.query === 'object') {
-        const sanitizedQuery = sanitizeData(req.query);
-        // Copy sanitized properties back to req.query
-        Object.keys(sanitizedQuery).forEach(key => {
-            if (sanitizedQuery[key] !== undefined) {
-                req.query[key] = sanitizedQuery[key];
+            
+            // For query params, we need to be careful
+            // Don't assign directly to req.query, just sanitize its properties
+            if (req.query && typeof req.query === 'object') {
+                const sanitizedQuery = sanitizeData(req.query);
+                // Copy sanitized properties back to req.query
+                Object.keys(sanitizedQuery).forEach(key => {
+                    if (sanitizedQuery[key] !== undefined) {
+                        req.query[key] = sanitizedQuery[key];
+                    }
+                });
             }
+            
+            // Sanitize params
+            if (req.params && typeof req.params === 'object') {
+                const sanitizedParams = sanitizeData(req.params);
+                Object.keys(sanitizedParams).forEach(key => {
+                    if (sanitizedParams[key] !== undefined) {
+                        req.params[key] = sanitizedParams[key];
+                    }
+                });
+            }
+            
+            next();
         });
-    }
-    
-    // Sanitize params
-    if (req.params && typeof req.params === 'object') {
-        const sanitizedParams = sanitizeData(req.params);
-        Object.keys(sanitizedParams).forEach(key => {
-            if (sanitizedParams[key] !== undefined) {
-                req.params[key] = sanitizedParams[key];
-            }
-        });
-    }
-    
-    next();
-});
-
-// HPP (HTTP Parameter Pollution) - Comment this out temporarily
-// this.app.use(hpp());
-// this.app.use(sanitizeInput);
+        
+        // HPP (HTTP Parameter Pollution) - Comment this out temporarily
+        // this.app.use(hpp());
+        // this.app.use(sanitizeInput);
         
         // Logging
         if (config.server.isDevelopment) {
@@ -145,91 +143,149 @@ this.app.use((req, res, next) => {
             next();
         });
     }
-    
-   setupRoutes() {
-    // Get the base path
-    const apiBase = config.server.apiPrefix || '/api';
-    const apiVersion = config.server.apiVersion || 'v1';
-    const apiPrefix = `${apiBase}/${apiVersion}`;
-    
-    console.log(`API Prefix: ${apiPrefix}`); // Debug log
-    console.log(`API Base: ${apiBase}`); // Debug log
-    
-    // Health check endpoint
-    this.app.get(`${apiPrefix}/health`, (req, res) => {
-        const uptime = process.uptime();
-        const memoryUsage = process.memoryUsage();
+        setupRoutes() {
+        // Get the base path
+        const apiBase = config.server.apiPrefix || '/api';
+        const apiVersion = config.server.apiVersion || 'v1';
+        const apiPrefix = `${apiBase}/${apiVersion}`;
         
-        res.json({
-            status: 'healthy',
-            timestamp: new Date().toISOString(),
-            uptime: `${Math.floor(uptime / 60)}m ${Math.floor(uptime % 60)}s`,
-            memory: {
-                rss: `${Math.round(memoryUsage.rss / 1024 / 1024)}MB`,
-                heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`,
-                heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`,
-            },
-            environment: config.server.nodeEnv,
-            version: process.env.npm_package_version || '1.0.0'
-        });
-    });
-    
-    // API Documentation
-    this.app.get(`${apiPrefix}/docs`, (req, res) => {
-        res.json({
-            message: 'Coding Judge API Documentation',
-            version: '1.0.0',
-            endpoints: {
-                auth: {
-                    register: `POST ${apiPrefix}/auth/register`,
-                    login: `POST ${apiPrefix}/auth/login`,
-                    logout: `POST ${apiPrefix}/auth/logout`,
-                    me: `GET ${apiPrefix}/auth/me`
+        
+        // Health check endpoint
+        this.app.get(`${apiPrefix}/health`, (req, res) => {
+            const uptime = process.uptime();
+            const memoryUsage = process.memoryUsage();
+            
+            res.json({
+                status: 'healthy',
+                timestamp: new Date().toISOString(),
+                uptime: `${Math.floor(uptime / 60)}m ${Math.floor(uptime % 60)}s`,
+                memory: {
+                    rss: `${Math.round(memoryUsage.rss / 1024 / 1024)}MB`,
+                    heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`,
+                    heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`,
                 },
-                // ... other endpoints
-            }
+                environment: config.server.nodeEnv,
+                version: process.env.npm_package_version || '1.0.0',
+                routes: [
+                    `${apiPrefix}/auth`,
+                    `${apiPrefix}/contests`,
+                    `${apiPrefix}/problems`,
+                    `${apiPrefix}/submissions`,
+                    `${apiPrefix}/users`,
+                    `${apiPrefix}/leaderboard`
+                ]
+            });
         });
-    });
-    
-    // API routes with version prefix
-    this.app.use(`${apiPrefix}/auth`, authRoutes);
-    this.app.use(`${apiPrefix}/problems`, problemRoutes);
-    this.app.use(`${apiPrefix}/submissions`, submissionRoutes);
-    this.app.use(`${apiPrefix}/users`, userRoutes);
-    this.app.use(`${apiPrefix}/leaderboard`, leaderboardRoutes);
-    
-    // For backward compatibility, also register routes without version
-    this.app.use(`${apiBase}/auth`, authRoutes);
-    
-    // Add a test route to verify
-    this.app.post(`${apiBase}/test`, (req, res) => {
-        res.json({ message: 'Test route works!', body: req.body });
-    });
-    
-    // 404 handler for undefined routes
-    this.app.use(`${apiPrefix}/:params`, (req, res, next) => {
-        const err = new Error(`Cannot ${req.method} ${req.originalUrl}`);
-        err.statusCode = 404;
-        err.isOperational = true;
-        next(err);
-    });
-    
-    // Root endpoint
-    this.app.get('/', (req, res) => {
-        res.json({
-            message: 'Coding Judge API',
-            version: '1.0.0',
-            apiBase: apiBase,
-            apiVersion: apiVersion,
-            apiPrefix: apiPrefix,
-            endpoints: {
-                auth: `${apiPrefix}/auth`,
-                health: `${apiPrefix}/health`,
-                docs: `${apiPrefix}/docs`
-            }
+        
+        // API Documentation
+        this.app.get(`${apiPrefix}/docs`, (req, res) => {
+            res.json({
+                message: 'Coding Judge API Documentation',
+                version: '1.0.0',
+                endpoints: {
+                    auth: {
+                        register: `POST ${apiPrefix}/auth/register`,
+                        login: `POST ${apiPrefix}/auth/login`,
+                        logout: `POST ${apiPrefix}/auth/logout`,
+                        me: `GET ${apiPrefix}/auth/me`
+                    },
+                    contests: {
+                        list: `GET ${apiPrefix}/contests`,
+                        get: `GET ${apiPrefix}/contests/:id`,
+                        create: `POST ${apiPrefix}/contests`,
+                        update: `PUT ${apiPrefix}/contests/:id`,
+                        delete: `DELETE ${apiPrefix}/contests/:id`,
+                        register: `POST ${apiPrefix}/contests/:id/register`
+                    },
+                    problems: {
+                        list: `GET ${apiPrefix}/problems`,
+                        get: `GET ${apiPrefix}/problems/:id`,
+                        create: `POST ${apiPrefix}/problems`,
+                        update: `PUT ${apiPrefix}/problems/:id`,
+                        delete: `DELETE ${apiPrefix}/problems/:id`
+                    },
+                    submissions: {
+                        list: `GET ${apiPrefix}/submissions`,
+                        get: `GET ${apiPrefix}/submissions/:id`,
+                        create: `POST ${apiPrefix}/submissions`
+                    },
+                    users: {
+                        profile: `GET ${apiPrefix}/users/:username`,
+                        update: `PUT ${apiPrefix}/users/profile`
+                    },
+                    leaderboard: {
+                        global: `GET ${apiPrefix}/leaderboard`,
+                        contest: `GET ${apiPrefix}/contests/:id/leaderboard`
+                    }
+                }
+            });
         });
-    });
-}
+        
+        // API routes with version prefix
+        this.app.use(`${apiPrefix}/auth`, authRoutes);
+        
+        this.app.use(`${apiPrefix}/contests`, contestRoutes);
+        
+        this.app.use(`${apiPrefix}/problems`, problemRoutes);
+        
+        this.app.use(`${apiPrefix}/submissions`, submissionRoutes);
+        
+        this.app.use(`${apiPrefix}/users`, userRoutes);
+        
+        this.app.use(`${apiPrefix}/leaderboard`, leaderboardRoutes);
+        
+        // For backward compatibility, also register routes without version
+        this.app.use(`${apiBase}/auth`, authRoutes);
+        
+        // Test endpoint to verify all routes
+        this.app.get(`${apiPrefix}/routes`, (req, res) => {
+            const routes = [];
+            this.app._router.stack.forEach((middleware) => {
+                if (middleware.route) {
+                    routes.push({
+                        path: middleware.route.path,
+                        methods: Object.keys(middleware.route.methods)
+                    });
+                } else if (middleware.name === 'router') {
+                    // Handle mounted routers
+                    middleware.handle.stack.forEach((handler) => {
+                        if (handler.route) {
+                            routes.push({
+                                path: handler.route.path,
+                                methods: Object.keys(handler.route.methods)
+                            });
+                        }
+                    });
+                }
+            });
+            res.json({ routes });
+        });
+        
+        // Root endpoint
+        this.app.get('/', (req, res) => {
+            res.json({
+                message: 'Coding Judge API',
+                version: '1.0.0',
+                apiBase: apiBase,
+                apiVersion: apiVersion,
+                apiPrefix: apiPrefix,
+                endpoints: {
+                    auth: `${apiPrefix}/auth`,
+                    contests: `${apiPrefix}/contests`,
+                    problems: `${apiPrefix}/problems`,
+                    submissions: `${apiPrefix}/submissions`,
+                    users: `${apiPrefix}/users`,
+                    leaderboard: `${apiPrefix}/leaderboard`,
+                    health: `${apiPrefix}/health`,
+                    docs: `${apiPrefix}/docs`
+                }
+            });
+        });
+        
+        // REMOVED THE PROBLEMATIC 404 HANDLERS
+        
+        // Error handling will handle 404s in the error middleware
+    }
     
     setupErrorHandling() {
         // Error handling middleware (should be last)
@@ -267,21 +323,30 @@ this.app.use((req, res, next) => {
         if (config.features?.enableHealthChecks !== false) {
             setInterval(async () => {
                 try {
+                    // Check MongoDB
                     const mongoose = (await import('mongoose')).default;
-                    const state = mongoose.connection.readyState;
-                    
-                    const states = {
+                    const mongoState = mongoose.connection.readyState;
+                    const mongoStates = {
                         0: 'disconnected',
                         1: 'connected',
                         2: 'connecting',
                         3: 'disconnecting'
                     };
                     
-                    logger.debug(`MongoDB health: ${states[state]}`);
-                    
-                    if (state !== 1) {
-                        logger.warn('MongoDB connection issue detected');
+                    // Check PostgreSQL if enabled
+                    let postgresState = 'not configured';
+                    if (process.env.POSTGRES_URI) {
+                        try {
+                            const { sequelize } = await import('./db/postgres/index.js');
+                            await sequelize.authenticate();
+                            postgresState = 'connected';
+                        } catch (pgError) {
+                            postgresState = 'disconnected';
+                            logger.warn('PostgreSQL health check failed:', pgError.message);
+                        }
                     }
+                    
+                    
                 } catch (error) {
                     logger.error('Health check failed:', error.message);
                 }
@@ -293,9 +358,6 @@ this.app.use((req, res, next) => {
         const serverPort = port || config.server.port || 5000;
         
         this.server = this.app.listen(serverPort, () => {
-            logger.info(`🚀 Server running in ${config.server.nodeEnv} mode on port ${serverPort}`);
-            logger.info(`📚 API Documentation: http://localhost:${serverPort}/api/v1/docs`);
-            logger.info(`🏥 Health check: http://localhost:${serverPort}/api/v1/health`);
         });
         
         // Graceful shutdown

@@ -38,10 +38,10 @@ const Layout = ({ children, showSidebar = false }) => {
 
 const App = () => {
   return (
-    <Router>
-      <AuthProvider>
-        <ThemeProvider>
-          <EditorProvider>
+    <AuthProvider>
+      <ThemeProvider>
+        <EditorProvider>
+          <Router>
             <div className="min-h-screen flex flex-col bg-gray-950 text-white overflow-x-hidden">
               <Header />
               
@@ -171,10 +171,10 @@ const App = () => {
                 }}
               />
             </div>
-          </EditorProvider>
-        </ThemeProvider>
-      </AuthProvider>
-    </Router>
+          </Router>
+        </EditorProvider>
+      </ThemeProvider>
+    </AuthProvider>
   );
 };
 

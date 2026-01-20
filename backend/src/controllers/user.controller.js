@@ -224,92 +224,130 @@ export const updateUserPreferences = asyncHandler(async (req, res) => {
 export const getUserStats = asyncHandler(async (req, res) => {
   const { userId } = req.params;
   
+  console.log('Getting stats for user ID:', userId);
+  
+  // Validate ObjectId
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    console.log('Invalid user ID format:', userId);
+    throw ApiError.badRequest('Invalid user ID format');
+  }
+  
   const user = await User.findById(userId).select('username stats');
   
   if (!user) {
+    console.log('User not found for ID:', userId);
     throw ApiError.notFound('User not found');
   }
   
-  // Get detailed submission stats
-  const submissionStats = await Submission.aggregate([
-    { $match: { user: mongoose.Types.ObjectId(userId) } },
-    { $group: {
-      _id: '$verdict',
-      count: { $sum: 1 }
-    }}
-  ]);
+  console.log('Found user:', user.username);
   
-  // Get language distribution
-  const languageStats = await Submission.aggregate([
-    { $match: { user: mongoose.Types.ObjectId(userId) } },
-    { $group: {
-      _id: '$language',
-      count: { $sum: 1 },
-      accepted: { 
-        $sum: { $cond: [{ $eq: ['$verdict', 'accepted'] }, 1, 0] }
-      }
-    }},
-    { $sort: { count: -1 } }
-  ]);
-  
-  // Get daily activity (last 30 days)
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  
-  const dailyActivity = await Submission.aggregate([
-    { $match: { 
-      user: mongoose.Types.ObjectId(userId),
-      createdAt: { $gte: thirtyDaysAgo }
-    }},
-    { $group: {
-      _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-      count: { $sum: 1 },
-      accepted: { 
-        $sum: { $cond: [{ $eq: ['$verdict', 'accepted'] }, 1, 0] }
-      }
-    }},
-    { $sort: { _id: 1 } }
-  ]);
-  
-  // Get problem solving timeline
-  const solvedTimeline = await Submission.aggregate([
-    { $match: { 
-      user: mongoose.Types.ObjectId(userId),
-      verdict: 'accepted'
-    }},
-    { $lookup: {
-      from: 'problems',
-      localField: 'problem',
-      foreignField: '_id',
-      as: 'problem'
-    }},
-    { $unwind: '$problem' },
-    { $group: {
-      _id: { $dateToString: { format: "%Y-%m", date: "$createdAt" } },
-      problemsSolved: { $addToSet: '$problem._id' }
-    }},
-    { $project: {
-      month: '$_id',
-      count: { $size: '$problemsSolved' },
-      _id: 0
-    }},
-    { $sort: { month: 1 } }
-  ]);
-  
-  res.status(200).json(
-    ApiResponse.success({
-      user: {
-        username: user.username,
-        stats: user.stats
-      },
-      detailedStats: {
-        submissionStats,
-        languageStats,
-        dailyActivity,
-        solvedTimeline
-      }
-    }, 'User statistics fetched successfully')
-  );
+  try {
+    // Get detailed submission stats
+    const submissionStats = await Submission.aggregate([
+      { $match: { user:new mongoose.Types.ObjectId(userId) } },
+      { $group: {
+        _id: '$verdict',
+        count: { $sum: 1 }
+      }}
+    ]);
+    
+    console.log('Submission stats:', submissionStats);
+    
+    // Get language distribution
+    const languageStats = await Submission.aggregate([
+      { $match: { user:new mongoose.Types.ObjectId(userId) } },
+      { $group: {
+        _id: '$language',
+        count: { $sum: 1 },
+        accepted: { 
+          $sum: { $cond: [{ $eq: ['$verdict', 'accepted'] }, 1, 0] }
+        }
+      }},
+      { $sort: { count: -1 } }
+    ]);
+    
+    console.log('Language stats:', languageStats);
+    
+    // Get daily activity (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const dailyActivity = await Submission.aggregate([
+      { $match: { 
+        user:new mongoose.Types.ObjectId(userId),
+        createdAt: { $gte: thirtyDaysAgo }
+      }},
+      { $group: {
+        _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+        count: { $sum: 1 },
+        accepted: { 
+          $sum: { $cond: [{ $eq: ['$verdict', 'accepted'] }, 1, 0] }
+        }
+      }},
+      { $sort: { _id: 1 } }
+    ]);
+    
+    console.log('Daily activity:', dailyActivity.length, 'days');
+    
+    // Get problem solving timeline
+    const solvedTimeline = await Submission.aggregate([
+      { $match: { 
+        user:new mongoose.Types.ObjectId(userId),
+        verdict: 'accepted'
+      }},
+      { $lookup: {
+        from: 'problems',
+        localField: 'problem',
+        foreignField: '_id',
+        as: 'problem'
+      }},
+      { $unwind: '$problem' },
+      { $group: {
+        _id: { $dateToString: { format: "%Y-%m", date: "$createdAt" } },
+        problemsSolved: { $addToSet: '$problem._id' }
+      }},
+      { $project: {
+        month: '$_id',
+        count: { $size: '$problemsSolved' },
+        _id: 0
+      }},
+      { $sort: { month: 1 } }
+    ]);
+    
+    console.log('Solved timeline:', solvedTimeline);
+    
+    res.status(200).json(
+      ApiResponse.success({
+        user: {
+          username: user.username,
+          stats: user.stats
+        },
+        detailedStats: {
+          submissionStats,
+          languageStats,
+          dailyActivity,
+          solvedTimeline
+        }
+      }, 'User statistics fetched successfully')
+    );
+  } catch (error) {
+    console.error('Error in getUserStats:', error);
+    // Return basic stats if aggregation fails
+    res.status(200).json(
+      ApiResponse.success({
+        user: {
+          username: user.username,
+          stats: user.stats
+        },
+        detailedStats: {
+          submissionStats: [],
+          languageStats: [],
+          dailyActivity: [],
+          solvedTimeline: []
+        }
+      }, 'Basic user statistics fetched')
+    );
+  }
 });
 
 // @desc    Get user activity timeline
