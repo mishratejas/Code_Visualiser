@@ -49,6 +49,12 @@ api.interceptors.response.use(
   }
 );
 
+// Individual function exports
+export const getProblemById = (id) => api.get(`/problems/${id}`);
+export const runCode = (data) => api.post('/submissions/run', data);
+export const submitSolution = (data) => api.post('/submissions', data);
+
+// API group exports
 export const authApi = {
   login: (credentials) => api.post('/auth/login', credentials),
   register: (userData) => api.post('/auth/register', userData),
@@ -59,7 +65,7 @@ export const authApi = {
 
 export const problemsApi = {
   getAll: (params) => api.get('/problems', { params }),
-  getById: (id) => api.get(`/problems/${id}`),
+  getById: (id) => api.get(`/problems/${id}`), // This is also here
   create: (problemData) => api.post('/problems', problemData),
   update: (id, problemData) => api.put(`/problems/${id}`, problemData),
   delete: (id) => api.delete(`/problems/${id}`),

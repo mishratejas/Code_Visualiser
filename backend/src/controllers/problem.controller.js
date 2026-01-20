@@ -63,26 +63,60 @@ export const getAllProblems = asyncHandler(async (req, res) => {
 export const getProblem = asyncHandler(async (req, res) => {
   const { id } = req.params;
   
+  console.log('🔍 Fetching problem with ID:', id);
+  
   if (!mongoose.Types.ObjectId.isValid(id)) {
+    console.log('❌ Invalid ID format:', id);
     throw ApiError.badRequest('Invalid problem ID format');
   }
   
-  const problem = await Problem.findOne({
-    _id: id,
-    'metadata.isPublished': true
-  }).select('-testCases.isHidden -createdBy -updatedBy');
-  
-  if (!problem) {
-    throw ApiError.notFound('Problem not found or not published');
+  try {
+    // Use lean() for better performance and convert to plain object
+    const problem = await Problem.findOne({
+      _id: id,
+      'metadata.isPublished': true
+    }).lean();
+    
+    console.log('📦 Problem found:', problem ? 'Yes' : 'No');
+    
+    if (!problem) {
+      console.log('❌ Problem not found or not published');
+      throw ApiError.notFound('Problem not found or not published');
+    }
+    
+    // Increment views (don't affect the response object)
+    await Problem.updateOne(
+      { _id: id },
+      { $inc: { 'metadata.views': 1 } }
+    );
+    
+    // Filter out hidden test cases
+    if (problem.testCases && Array.isArray(problem.testCases)) {
+      console.log(`🔧 Filtering ${problem.testCases.length} test cases`);
+      problem.testCases = problem.testCases
+        .filter(tc => !tc.isHidden)
+        .map(({ isHidden, ...rest }) => rest);
+    }
+    
+    // Remove unwanted fields
+    delete problem.__v;
+    delete problem.createdBy;
+    delete problem.updatedBy;
+    
+    console.log('✅ Sending problem data');
+    
+    res.status(200).json(
+      ApiResponse.success({ problem }, 'Problem fetched successfully')
+    );
+  } catch (error) {
+    console.error('❌ Error in getProblem:', error.message);
+    console.error('Stack:', error.stack);
+    
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw ApiError.internal('Failed to fetch problem: ' + error.message);
   }
-  
-  // Increment view count
-  problem.metadata.views += 1;
-  await problem.save();
-  
-  res.status(200).json(
-    ApiResponse.success({ problem }, 'Problem fetched successfully')
-  );
 });
 
 // @desc    Get problem by slug

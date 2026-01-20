@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { FiClock, FiBarChart2, FiCode, FiLock, FiUnlock } from 'react-icons/fi';
+import { FiClock, FiBarChart2, FiCode, FiLock, FiUnlock, FiUsers } from 'react-icons/fi';
 import { BsCheckCircleFill, BsCircle } from 'react-icons/bs';
 import { cn, formatNumber, getDifficultyColor } from '../../utils/helpers';
 

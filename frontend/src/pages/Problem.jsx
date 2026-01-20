@@ -1,361 +1,647 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { FiArrowLeft, FiClock, FiBarChart2, FiTag, FiCode } from 'react-icons/fi';
-import { BiLike, BiDislike } from 'react-icons/bi';
-import { MdOutlineDescription, MdOutlineSubtitles } from 'react-icons/md';
-import { TbCodeDots } from 'react-icons/tb';
-import ReactMarkdown from 'react-markdown';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { getProblemById, runCode, submitSolution } from '../services/api';
+import { FiChevronRight, FiCode, FiClock, FiBarChart2, FiUsers, FiPlay, FiSend, FiCopy, FiCheck, FiAlertCircle } from 'react-icons/fi';
+import { BsCheckCircle, BsXCircle } from 'react-icons/bs';
 import { toast } from 'react-hot-toast';
-import CodeEditor from '../components/editor/CodeEditor';
-import Loader from '../components/common/Loader';
-import api from '../services/api';
 
 const Problem = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [problem, setProblem] = useState(null);
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [problem, setProblem] = useState({
+    title: '',
+    description: '',
+    difficulty: 'medium',
+    tags: [],
+    inputFormat: '',
+    outputFormat: '',
+    sampleInput: [],
+    sampleOutput: [],
+    testCases: [],
+    constraints: {},
+    hints: [],
+    metadata: {}
+  });
+  
+  const [code, setCode] = useState('');
+  const [language, setLanguage] = useState('python');
   const [activeTab, setActiveTab] = useState('description');
-  const [userSolution, setUserSolution] = useState('');
-  const [submissions, setSubmissions] = useState([]);
+  const [testResults, setTestResults] = useState([]);
+  const [userInput, setUserInput] = useState('');
+  const [customOutput, setCustomOutput] = useState('');
 
   useEffect(() => {
+    const fetchProblem = async () => {
+      try {
+        setLoading(true);
+        const response = await getProblemById(id);
+        
+        if (response.success) {
+          const problemData = response.data?.problem || response.data;
+          
+          console.log('Problem data:', problemData); // Debug log
+          
+          // Extract sampleInput and sampleOutput from testCases
+          const sampleInput = [];
+          const sampleOutput = [];
+          const testCases = problemData.testCases || [];
+          
+          testCases.forEach(testCase => {
+            if (!testCase.isHidden) {
+              sampleInput.push(testCase.input);
+              sampleOutput.push(testCase.expectedOutput);
+            }
+          });
+          
+          const safeProblemData = {
+            ...problemData,
+            testCases: testCases,
+            sampleInput: sampleInput.length > 0 ? sampleInput : problemData.sampleInput || [],
+            sampleOutput: sampleOutput.length > 0 ? sampleOutput : problemData.sampleOutput || [],
+            tags: Array.isArray(problemData.tags) ? problemData.tags : [],
+            hints: Array.isArray(problemData.hints) ? problemData.hints : [],
+            constraints: problemData.constraints || {},
+            metadata: problemData.metadata || {}
+          };
+          
+          setProblem(safeProblemData);
+          
+          // Set default code
+          const defaultCode = getDefaultCode(safeProblemData.title, 'python');
+          setCode(defaultCode);
+        }
+      } catch (err) {
+        console.error('Error fetching problem:', err);
+        toast.error('Failed to load problem');
+        setTimeout(() => navigate('/problems'), 3000);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
     fetchProblem();
-    fetchSubmissions();
-  }, [id]);
+  }, [id, user, navigate]);
+  
+  const getDefaultCode = (title, lang) => {
+    const functionName = title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, '')
+      .replace(/\s+/g, '_');
+    
+    const templates = {
+      python: `class Solution:
+    def ${functionName}(self, nums, target):
+        # Write your solution here
+        # Example: Two Sum problem
+        # nums = list of integers
+        # target = integer
+        # Return indices of two numbers that sum to target
+        pass
 
-  const fetchProblem = async () => {
+# Test your solution
+if __name__ == "__main__":
+    sol = Solution()
+    # Add test cases here
+    print(sol.${functionName}([2, 7, 11, 15], 9))`,
+      
+      javascript: `/**
+ * @param {number[]} nums
+ * @param {number} target
+ * @return {number[]}
+ */
+const ${functionName} = function(nums, target) {
+    // Write your solution here
+    // Example: Two Sum problem
+    // Return indices of two numbers that sum to target
+};
+
+// Test cases
+console.log(${functionName}([2, 7, 11, 15], 9));`,
+      
+      java: `public class Solution {
+    public int[] ${functionName}(int[] nums, int target) {
+        // Write your solution here
+        // Example: Two Sum problem
+        // Return indices of two numbers that sum to target
+        return new int[0];
+    }
+    
+    public static void main(String[] args) {
+        Solution sol = new Solution();
+        // Test your solution here
+        System.out.println(java.util.Arrays.toString(sol.${functionName}(new int[]{2, 7, 11, 15}, 9)));
+    }
+}`
+    };
+    
+    return templates[lang] || templates.python;
+  };
+  
+  const handleRunCode = async () => {
+    if (!code.trim()) {
+      toast.error('Please write some code first');
+      return;
+    }
+    
     try {
-      setLoading(true);
-      const response = await api.get(`/problems/${id}`);
-      setProblem(response.data);
-    } catch (error) {
-      toast.error('Failed to load problem');
-      navigate('/problems');
+      setSubmitting(true);
+      const payload = {
+        problemId: id,
+        code,
+        language,
+        input: userInput || problem.testCases?.[0]?.input || ''  // Use first test case if no custom input
+      };
+      
+      console.log('Running code with payload:', payload);
+      
+      const response = await runCode(payload);
+      
+      console.log('Run code response:', response);
+      
+      if (response.success) {
+        setTestResults([{
+          passed: response.data?.passed || false,
+          runtime: response.data?.executionTime || 0,
+          memory: response.data?.memoryUsed || 0,
+          output: response.data?.output || '',
+          error: response.data?.error
+        }]);
+        setCustomOutput(response.data?.output || '');
+        toast.success('Code executed successfully!');
+      } else {
+        toast.error(response.message || 'Failed to run code');
+      }
+    } catch (err) {
+      console.error('Error running code:', err);
+      if (err.response?.data?.message) {
+        toast.error(err.response.data.message);
+      } else {
+        toast.error('Failed to execute code. Make sure backend is running.');
+      }
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
-
-  const fetchSubmissions = async () => {
+  
+  const handleSubmit = async () => {
+    if (!code.trim()) {
+      toast.error('Please write some code first');
+      return;
+    }
+    
+    if (!user) {
+      toast.error('Please login to submit your solution');
+      navigate('/login', { state: { from: `/problem/${id}` } });
+      return;
+    }
+    
     try {
-      const response = await api.get(`/submissions?problem=${id}&limit=5`);
-      setSubmissions(response.data);
-    } catch (error) {
-      console.error('Failed to fetch submissions');
+      setSubmitting(true);
+      const response = await submitSolution({
+        problemId: id,
+        code,
+        language
+      });
+      
+      console.log('Submit response:', response);
+      
+      if (response.success) {
+        toast.success('Solution submitted successfully!');
+        setTestResults(response.data?.results || []);
+        
+        // Show detailed results
+        if (response.data?.results) {
+          const passed = response.data.results.filter(r => r.passed).length;
+          const total = response.data.results.length;
+          toast.success(`${passed}/${total} test cases passed!`);
+        }
+      } else {
+        toast.error(response.message || 'Submission failed');
+      }
+    } catch (err) {
+      console.error('Error submitting solution:', err);
+      if (err.response?.data?.message) {
+        toast.error(err.response.data.message);
+      } else {
+        toast.error('Failed to submit solution. Check backend connection.');
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const handleCodeChange = (code) => {
-    setUserSolution(code);
+  const copyCode = () => {
+    navigator.clipboard.writeText(code);
+    toast.success('Code copied to clipboard!');
   };
 
-  const handleSubmit = async (submissionData) => {
-    try {
-      const response = await api.post('/submissions', submissionData);
-      toast.success('Solution submitted successfully!');
-      navigate(`/submissions/${response.data._id}`);
-    } catch (error) {
-      toast.error('Failed to submit solution');
+  const getDifficultyColor = (difficulty) => {
+    switch (difficulty?.toLowerCase()) {
+      case 'easy': return 'text-green-400 bg-green-900/30 border-green-700';
+      case 'medium': return 'text-yellow-400 bg-yellow-900/30 border-yellow-700';
+      case 'hard': return 'text-red-400 bg-red-900/30 border-red-700';
+      default: return 'text-gray-400 bg-gray-800 border-gray-700';
     }
+  };
+
+  const getAcceptanceColor = (rate) => {
+    if (rate >= 70) return 'text-green-400';
+    if (rate >= 40) return 'text-yellow-400';
+    return 'text-red-400';
   };
 
   if (loading) {
-    return <Loader />;
-  }
-
-  if (!problem) {
     return (
-      <div className="text-center py-12">
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Problem not found</h2>
-        <Link to="/problems" className="text-blue-600 dark:text-blue-400 hover:underline mt-4 inline-block">
-          Go back to problems
-        </Link>
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-[#1e1e1e] border-t-[#3b82f6] rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading problem...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Problem Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <Link
-            to="/problems"
-            className="flex items-center text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
-          >
-            <FiArrowLeft className="mr-2" /> Back to Problems
-          </Link>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            {problem.title}
-          </h1>
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${problem.difficulty === 'easy'
-              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-              : problem.difficulty === 'medium'
-                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-                : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-            }`}>
-            {problem.difficulty}
-          </span>
-        </div>
-        <div className="flex items-center space-x-4">
-          <Link
-            to={`/submit/${id}`}
-            className="px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:opacity-90 transition"
-          >
-            Submit Solution
-          </Link>
+    <div className="min-h-screen bg-[#0a0a0a] text-gray-100">
+      {/* Header */}
+      <div className="bg-[#1a1a1a] border-b border-[#2d2d2d] px-6 py-4">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <div className="flex items-center space-x-2">
+            <button 
+              onClick={() => navigate('/problems')}
+              className="text-gray-400 hover:text-white transition-colors"
+            >
+              Problems
+            </button>
+            <FiChevronRight className="text-gray-600" />
+            <span className="text-white font-medium">{problem.title}</span>
+          </div>
+          
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
+              <div className={`px-3 py-1 rounded-full border ${getDifficultyColor(problem.difficulty)} text-sm font-medium`}>
+                {problem.difficulty?.toUpperCase()}
+              </div>
+              <div className={`px-3 py-1 rounded bg-[#2d2d2d] text-sm ${getAcceptanceColor(problem.metadata?.acceptanceRate || 0)}`}>
+                {problem.metadata?.acceptanceRate?.toFixed(1) || 0}% Acceptance
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Problem Content - Left Column */}
-        <div className="lg:col-span-2 space-y-6">
+      <div className="max-w-7xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left Panel - Problem Description */}
+        <div className="bg-[#1a1a1a] rounded-lg border border-[#2d2d2d] overflow-hidden">
           {/* Tabs */}
-          <div className="border-b border-gray-200 dark:border-gray-700">
-            <nav className="-mb-px flex space-x-8">
-              {[
-                { id: 'description', label: 'Description', icon: MdOutlineDescription },
-                { id: 'editorial', label: 'Editorial', icon: TbCodeDots },
-                { id: 'solutions', label: 'Solutions', icon: FiCode },
-                { id: 'submissions', label: 'Submissions', icon: MdOutlineSubtitles },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center ${activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                    }`}
-                >
-                  <tab.icon className="mr-2" />
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
+          <div className="flex border-b border-[#2d2d2d]">
+            {['description', 'solutions', 'discussions'].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-6 py-3 font-medium text-sm transition-colors ${
+                  activeTab === tab
+                    ? 'text-white border-b-2 border-[#3b82f6] bg-[#2d2d2d]'
+                    : 'text-gray-400 hover:text-gray-300 hover:bg-[#2d2d2d]/50'
+                }`}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
           </div>
 
-          {/* Tab Content */}
-          <div className="prose dark:prose-invert max-w-none">
+          {/* Content */}
+          <div className="p-6 max-h-[calc(100vh-200px)] overflow-y-auto">
             {activeTab === 'description' && (
-              <div>
-                <ReactMarkdown>{problem.description}</ReactMarkdown>
+              <div className="space-y-6">
+                {/* Title */}
+                <h1 className="text-2xl font-bold text-white">{problem.title}</h1>
                 
-                {/* Example Test Cases */}
-                {problem.testCases && problem.testCases.length > 0 && (
-                  <div className="mt-8">
-                    <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Example Test Cases</h3>
-                    {problem.testCases.slice(0, 2).map((testCase, index) => (
-                      <div key={index} className="mb-6 bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <h4 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Input</h4>
-                            <pre className="bg-gray-800 text-gray-100 p-3 rounded">
-                              {testCase.input}
+                {/* Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-[#2d2d2d] rounded p-3">
+                    <div className="flex items-center space-x-2 text-gray-400 text-sm">
+                      <FiBarChart2 />
+                      <span>Acceptance</span>
+                    </div>
+                    <div className={`text-xl font-bold mt-1 ${getAcceptanceColor(problem.metadata?.acceptanceRate || 0)}`}>
+                      {problem.metadata?.acceptanceRate?.toFixed(1) || 0}%
+                    </div>
+                  </div>
+                  
+                  <div className="bg-[#2d2d2d] rounded p-3">
+                    <div className="flex items-center space-x-2 text-gray-400 text-sm">
+                      <FiUsers />
+                      <span>Submissions</span>
+                    </div>
+                    <div className="text-xl font-bold text-white mt-1">
+                      {problem.metadata?.submissions || 0}
+                    </div>
+                  </div>
+                  
+                  <div className="bg-[#2d2d2d] rounded p-3">
+                    <div className="flex items-center space-x-2 text-gray-400 text-sm">
+                      <FiClock />
+                      <span>Time Limit</span>
+                    </div>
+                    <div className="text-xl font-bold text-white mt-1">
+                      {problem.constraints?.timeLimit || 2000}ms
+                    </div>
+                  </div>
+                  
+                  <div className="bg-[#2d2d2d] rounded p-3">
+                    <div className="flex items-center space-x-2 text-gray-400 text-sm">
+                      <FiCode />
+                      <span>Memory</span>
+                    </div>
+                    <div className="text-xl font-bold text-white mt-1">
+                      {problem.constraints?.memoryLimit || 256}MB
+                    </div>
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <h2 className="text-lg font-semibold text-white mb-3">Description</h2>
+                  <div className="text-gray-300 space-y-3">
+                    <div dangerouslySetInnerHTML={{ __html: problem.description }} />
+                    {!problem.description && (
+                      <p className="text-gray-400 italic">No description provided.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Input/Output Format */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-[#2d2d2d] rounded p-4">
+                    <h3 className="font-semibold text-white mb-2">Input Format</h3>
+                    <pre className="text-sm text-gray-300 whitespace-pre-wrap bg-[#1a1a1a] p-3 rounded font-mono">
+                      {problem.inputFormat || 'No input format specified'}
+                    </pre>
+                  </div>
+                  
+                  <div className="bg-[#2d2d2d] rounded p-4">
+                    <h3 className="font-semibold text-white mb-2">Output Format</h3>
+                    <pre className="text-sm text-gray-300 whitespace-pre-wrap bg-[#1a1a1a] p-3 rounded font-mono">
+                      {problem.outputFormat || 'No output format specified'}
+                    </pre>
+                  </div>
+                </div>
+
+                {/* Examples */}
+                {problem.sampleInput?.length > 0 && (
+                  <div>
+                    <h2 className="text-lg font-semibold text-white mb-3">Examples</h2>
+                    {problem.sampleInput.map((input, index) => (
+                      <div key={index} className="mb-4">
+                        <div className="text-sm text-gray-400 mb-2">Example {index + 1}</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="bg-[#2d2d2d] rounded p-3">
+                            <div className="text-sm text-gray-400 mb-2">Input</div>
+                            <pre className="text-sm text-white bg-[#1a1a1a] p-3 rounded font-mono whitespace-pre-wrap">
+                              {input}
                             </pre>
                           </div>
-                          <div>
-                            <h4 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Output</h4>
-                            <pre className="bg-gray-800 text-gray-100 p-3 rounded">
-                              {testCase.expectedOutput}
-                            </pre>
-                          </div>
+                          {problem.sampleOutput?.[index] && (
+                            <div className="bg-[#2d2d2d] rounded p-3">
+                              <div className="text-sm text-gray-400 mb-2">Output</div>
+                              <pre className="text-sm text-white bg-[#1a1a1a] p-3 rounded font-mono whitespace-pre-wrap">
+                                {problem.sampleOutput[index]}
+                              </pre>
+                            </div>
+                          )}
                         </div>
-                        {testCase.explanation && (
-                          <p className="mt-3 text-gray-600 dark:text-gray-400">
-                            <strong>Explanation:</strong> {testCase.explanation}
-                          </p>
-                        )}
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* Test Cases */}
+                {problem.testCases?.length > 0 && (
+                  <div>
+                    <h2 className="text-lg font-semibold text-white mb-3">Test Cases ({problem.testCases.length})</h2>
+                    <div className="space-y-3">
+                      {problem.testCases.map((testCase, index) => (
+                        <div key={index} className="bg-[#2d2d2d] rounded p-4">
+                          <div className="flex justify-between items-center mb-3">
+                            <div className="text-sm text-gray-400">Test Case {index + 1}</div>
+                            {testCase.isHidden && (
+                              <span className="px-2 py-1 bg-[#3d3d3d] text-gray-300 text-xs rounded">
+                                Hidden
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <div className="text-sm text-gray-400 mb-2">Input</div>
+                              <pre className="text-sm text-white bg-[#1a1a1a] p-3 rounded font-mono whitespace-pre-wrap">
+                                {testCase.input}
+                              </pre>
+                            </div>
+                            <div>
+                              <div className="text-sm text-gray-400 mb-2">Expected Output</div>
+                              <pre className="text-sm text-white bg-[#1a1a1a] p-3 rounded font-mono whitespace-pre-wrap">
+                                {testCase.expectedOutput}
+                              </pre>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
                 {/* Constraints */}
-                {problem.constraints && (
-                  <div className="mt-8">
-                    <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Constraints</h3>
-                    <ul className="list-disc pl-5 space-y-2 text-gray-700 dark:text-gray-300">
-                      {problem.constraints.map((constraint, index) => (
-                        <li key={index}>{constraint}</li>
-                      ))}
+                <div>
+                  <h2 className="text-lg font-semibold text-white mb-3">Constraints</h2>
+                  <div className="bg-[#2d2d2d] rounded p-4">
+                    <ul className="space-y-2 text-gray-300">
+                      <li className="flex items-center">
+                        <span className="w-2 h-2 bg-gray-500 rounded-full mr-3"></span>
+                        <span><strong>Time Limit:</strong> {problem.constraints.timeLimit || 2000} ms</span>
+                      </li>
+                      <li className="flex items-center">
+                        <span className="w-2 h-2 bg-gray-500 rounded-full mr-3"></span>
+                        <span><strong>Memory Limit:</strong> {problem.constraints.memoryLimit || 256} MB</span>
+                      </li>
+                      {problem.constraints.inputConstraints && (
+                        <li className="flex items-center">
+                          <span className="w-2 h-2 bg-gray-500 rounded-full mr-3"></span>
+                          <span><strong>Input:</strong> {problem.constraints.inputConstraints}</span>
+                        </li>
+                      )}
                     </ul>
                   </div>
-                )}
-              </div>
-            )}
+                </div>
 
-            {activeTab === 'editorial' && (
-              <div>
-                <h3 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Editorial</h3>
-                <ReactMarkdown>{problem.editorial || 'Editorial coming soon...'}</ReactMarkdown>
-              </div>
-            )}
-
-            {activeTab === 'solutions' && (
-              <div>
-                <h3 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Solutions</h3>
-                <p className="text-gray-600 dark:text-gray-400">Solutions will be available after contest ends.</p>
-              </div>
-            )}
-
-            {activeTab === 'submissions' && (
-              <div>
-                <h3 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Recent Submissions</h3>
-                {submissions.length > 0 ? (
-                  <div className="space-y-3">
-                    {submissions.map((submission) => (
-                      <div
-                        key={submission._id}
-                        className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
-                      >
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <div className="flex items-center space-x-3">
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${submission.status === 'accepted'
-                                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                                  : submission.status === 'pending'
-                                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-                                    : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                                }`}>
-                                {submission.status}
-                              </span>
-                              <span className="text-sm text-gray-600 dark:text-gray-400">
-                                Language: {submission.language}
-                              </span>
-                            </div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                              Submitted {new Date(submission.submittedAt).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-medium text-gray-900 dark:text-white">
-                              {submission.executionTime} ms
-                            </p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">Execution Time</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                {/* Tags */}
+                {problem.tags?.length > 0 && (
+                  <div>
+                    <h2 className="text-lg font-semibold text-white mb-3">Tags</h2>
+                    <div className="flex flex-wrap gap-2">
+                      {problem.tags.map((tag, index) => (
+                        <span
+                          key={index}
+                          className="px-3 py-1.5 bg-[#2d2d2d] text-gray-300 rounded-full text-sm border border-[#3d3d3d] hover:border-[#3b82f6] transition-colors"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                ) : (
-                  <p className="text-gray-600 dark:text-gray-400">No submissions yet.</p>
                 )}
               </div>
             )}
+
+            {/* Other tabs content would go here */}
           </div>
         </div>
 
-        {/* Right Sidebar */}
+        {/* Right Panel - Code Editor */}
         <div className="space-y-6">
-          {/* Stats Card */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-            <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Problem Stats</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center text-gray-600 dark:text-gray-400">
-                  <FiClock className="mr-2" />
-                  <span>Time Limit</span>
+          {/* Editor Container */}
+          <div className="bg-[#1a1a1a] rounded-lg border border-[#2d2d2d] overflow-hidden">
+            {/* Editor Header */}
+            <div className="flex justify-between items-center px-6 py-3 border-b border-[#2d2d2d]">
+              <div className="flex items-center space-x-4">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Language</label>
+                  <select
+                    value={language}
+                    onChange={(e) => {
+                      setLanguage(e.target.value);
+                      setCode(getDefaultCode(problem.title, e.target.value));
+                    }}
+                    className="bg-[#2d2d2d] border border-[#3d3d3d] rounded px-3 py-1.5 text-white text-sm focus:outline-none focus:border-[#3b82f6]"
+                  >
+                    <option value="python">Python 3</option>
+                    <option value="javascript">JavaScript</option>
+                    <option value="java">Java</option>
+                    <option value="cpp">C++</option>
+                    <option value="c">C</option>
+                  </select>
                 </div>
-                <span className="font-medium text-gray-900 dark:text-white">{problem.timeLimit} ms</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center text-gray-600 dark:text-gray-400">
-                  <FiBarChart2 className="mr-2" />
-                  <span>Memory Limit</span>
-                </div>
-                <span className="font-medium text-gray-900 dark:text-white">{problem.memoryLimit} MB</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center text-gray-600 dark:text-gray-400">
-                  <FiTag className="mr-2" />
-                  <span>Acceptance Rate</span>
-                </div>
-                <span className="font-medium text-gray-900 dark:text-white">{problem.acceptanceRate}%</span>
-              </div>
-            </div>
-
-            <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-gray-600 dark:text-gray-400">Total Submissions</span>
-                <span className="font-bold text-gray-900 dark:text-white">{problem.totalSubmissions}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600 dark:text-gray-400">Accepted</span>
-                <span className="font-bold text-green-600 dark:text-green-400">{problem.acceptedSubmissions}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Tags */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-            <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Tags</h3>
-            <div className="flex flex-wrap gap-2">
-              {problem.tags.map((tag, index) => (
-                <span
-                  key={index}
-                  className="px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm"
+                
+                <button
+                  onClick={copyCode}
+                  className="flex items-center space-x-2 px-3 py-1.5 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-gray-300 rounded text-sm transition-colors"
                 >
-                  {tag}
-                </span>
-              ))}
+                  <FiCopy size={14} />
+                  <span>Copy</span>
+                </button>
+                
+                <button
+                  onClick={() => setCode(getDefaultCode(problem.title, language))}
+                  className="flex items-center space-x-2 px-3 py-1.5 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-gray-300 rounded text-sm transition-colors"
+                >
+                  <span>Reset</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Code Editor */}
+            <div className="p-2">
+              <textarea
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                className="w-full h-96 bg-[#1e1e1e] text-gray-100 font-mono text-sm p-4 rounded border border-[#2d2d2d] focus:outline-none focus:border-[#3b82f6] resize-none"
+                spellCheck="false"
+                placeholder="Write your solution here..."
+              />
+            </div>
+
+            {/* Editor Footer */}
+            <div className="px-6 py-4 border-t border-[#2d2d2d] bg-[#1e1e1e]">
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-gray-400">
+                  {code.length} characters • {code.split('\n').length} lines
+                </div>
+                <div className="flex space-x-3">
+                  <button
+                    onClick={handleRunCode}
+                    disabled={submitting}
+                    className="flex items-center space-x-2 px-4 py-2 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-gray-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <FiPlay size={16} />
+                    <span>{submitting ? 'Running...' : 'Run Code'}</span>
+                  </button>
+                  
+                  <button
+                    onClick={handleSubmit}
+                    disabled={submitting || !user}
+                    className="flex items-center space-x-2 px-4 py-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <FiSend size={16} />
+                    <span>{submitting ? 'Submitting...' : 'Submit Solution'}</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Quick Actions */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-            <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Quick Actions</h3>
-            <div className="space-y-3">
-              <button
-                onClick={() => setActiveTab('editorial')}
-                className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition text-left"
-              >
-                View Editorial
-              </button>
-              <button
-                onClick={() => setActiveTab('solutions')}
-                className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition text-left"
-              >
-                View Solutions
-              </button>
-              <Link
-                to={`/submit/${id}`}
-                className="block w-full px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded hover:opacity-90 transition text-center"
-              >
-                Submit Solution
-              </Link>
+          {/* Test Results */}
+          {testResults.length > 0 && (
+            <div className="bg-[#1a1a1a] rounded-lg border border-[#2d2d2d] overflow-hidden">
+              <div className="px-6 py-3 border-b border-[#2d2d2d]">
+                <h3 className="font-semibold text-white">Test Results</h3>
+              </div>
+              <div className="p-4 space-y-3">
+                {testResults.map((result, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-[#2d2d2d] rounded">
+                    <div className="flex items-center space-x-3">
+                      {result.passed ? (
+                        <BsCheckCircle className="text-green-400" size={20} />
+                      ) : (
+                        <BsXCircle className="text-red-400" size={20} />
+                      )}
+                      <div>
+                        <div className="text-white font-medium">Test Case {index + 1}</div>
+                        <div className="text-sm text-gray-400">
+                          {result.passed ? 'Passed' : 'Failed'} • {result.runtime || 0}ms • {result.memory || 0}MB
+                        </div>
+                      </div>
+                    </div>
+                    <div className={`px-3 py-1 rounded text-sm font-medium ${result.passed ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
+                      {result.passed ? 'PASSED' : 'FAILED'}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Like/Dislike */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-            <div className="flex items-center justify-between">
-              <button className="flex items-center space-x-2 text-gray-600 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-400">
-                <BiLike size={24} />
-                <span>{problem.likes || 0}</span>
-              </button>
-              <button className="flex items-center space-x-2 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400">
-                <BiDislike size={24} />
-                <span>{problem.dislikes || 0}</span>
-              </button>
+          {/* Custom Input/Output */}
+          <div className="bg-[#1a1a1a] rounded-lg border border-[#2d2d2d] overflow-hidden">
+            <div className="px-6 py-3 border-b border-[#2d2d2d]">
+              <h3 className="font-semibold text-white">Custom Test</h3>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Input</label>
+                <textarea
+                  value={userInput}
+                  onChange={(e) => setUserInput(e.target.value)}
+                  className="w-full h-32 bg-[#1e1e1e] text-gray-100 font-mono text-sm p-3 rounded border border-[#2d2d2d] focus:outline-none focus:border-[#3b82f6] resize-none"
+                  placeholder="Enter custom input here... (or leave empty to use first test case)"
+                />
+              </div>
+              
+              {customOutput && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Output</label>
+                  <pre className="w-full bg-[#1e1e1e] text-gray-100 font-mono text-sm p-3 rounded border border-[#2d2d2d] whitespace-pre-wrap">
+                    {customOutput}
+                  </pre>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
-
-      {/* Quick Editor (Optional) */}
-      {window.innerWidth > 1024 && (
-        <div className="mt-6">
-          <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Try It Out</h3>
-          <div className="h-64">
-            <CodeEditor
-              problemId={id}
-              onCodeChange={handleCodeChange}
-              onSubmit={handleSubmit}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 };
