@@ -74,14 +74,24 @@ const Problems = () => {
     }
   };
 
-  const fetchUserSolved = async () => {
-    try {
-      const response = await api.get('/submissions/user/solved');
-      setUserSolved(response.data);
-    } catch (error) {
-      console.error('Failed to fetch solved problems');
+const fetchUserSolved = async () => {
+  try {
+    const response = await api.get('/submissions/user/solved');
+    
+    console.log('Solved problems:', response.data);
+    
+    // Extract the data array from the response
+    if (response.data && response.data.success && Array.isArray(response.data.data)) {
+      setUserSolved(response.data.data); // This should be an array of IDs
+    } else {
+      console.error('Unexpected response format:', response.data);
+      setUserSolved([]);
     }
-  };
+  } catch (error) {
+    console.error('Failed to fetch solved problems:', error);
+    setUserSolved([]);
+  }
+};
 
   const handleTagToggle = (tag) => {
     if (tags.includes(tag)) {
@@ -107,13 +117,13 @@ const Problems = () => {
     }
   };
 
-  const getStatusIcon = (problemId) => {
-    if (userSolved.some(p => p._id === problemId)) {
-      return <BsCheckCircleFill className="text-green-500" />;
-    }
-    // Check if attempted but not solved
-    return <BsCircle className="text-gray-400 dark:text-gray-600" />;
-  };
+const getStatusIcon = (problemId) => {
+  // Make sure userSolved is an array before using .includes
+  if (Array.isArray(userSolved) && userSolved.includes(problemId)) {
+    return <BsCheckCircleFill className="text-green-500" />;
+  }
+  return <BsCircle className="text-gray-400 dark:text-gray-600" />;
+};
 
   if (loading && problems.length === 0) {
     return <Loader />;
@@ -428,55 +438,57 @@ const Problems = () => {
       </div>
 
       {/* Stats Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-blue-100 dark:bg-blue-800 rounded-lg mr-4">
-              <FiCheckCircle className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {userSolved.length}
-              </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                Problems Solved
-              </div>
-            </div>
-          </div>
+<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+  <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl p-6">
+    <div className="flex items-center">
+      <div className="p-3 bg-blue-100 dark:bg-blue-800 rounded-lg mr-4">
+        <FiCheckCircle className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+      </div>
+      <div>
+        <div className="text-2xl font-bold text-gray-900 dark:text-white">
+          {Array.isArray(userSolved) ? userSolved.length : 0}
         </div>
-        <div className="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-xl p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-green-100 dark:bg-green-800 rounded-lg mr-4">
-              <FiCheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {userSolved.filter(p => p.difficulty === 'easy').length}
-              </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                Easy Problems
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-xl p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-purple-100 dark:bg-purple-800 rounded-lg mr-4">
-              <FiClock className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {new Date().getHours()}h
-              </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                Coding Streak
-              </div>
-            </div>
-          </div>
+        <div className="text-sm text-gray-600 dark:text-gray-400">
+          Problems Solved
         </div>
       </div>
     </div>
+  </div>
+  
+  <div className="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-xl p-6">
+    <div className="flex items-center">
+      <div className="p-3 bg-green-100 dark:bg-green-800 rounded-lg mr-4">
+        <FiCheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+      </div>
+      <div>
+        <div className="text-2xl font-bold text-gray-900 dark:text-white">
+          {Array.isArray(userSolved) ? userSolved.length : 0}
+        </div>
+        <div className="text-sm text-gray-600 dark:text-gray-400">
+          Total Solved
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div className="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-xl p-6">
+    <div className="flex items-center">
+      <div className="p-3 bg-purple-100 dark:bg-purple-800 rounded-lg mr-4">
+        <FiClock className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+      </div>
+      <div>
+        <div className="text-2xl font-bold text-gray-900 dark:text-white">
+          {new Date().getHours()}h
+        </div>
+        <div className="text-sm text-gray-600 dark:text-gray-400">
+          Coding Streak
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    </div>
   );
 };
-
 export default Problems;

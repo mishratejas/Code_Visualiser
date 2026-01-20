@@ -10,6 +10,7 @@ import {
 import { authenticate } from '../middlewares/auth.middleware.js';
 import { submissionLimiter } from '../middlewares/rateLimiter.middleware.js';
 import { SubmissionValidation } from '../middlewares/validate.middleware.js';
+import {getUserSolvedSubmissions} from "../controllers/submission.controller.js";
 
 const router = express.Router();
 
@@ -30,7 +31,10 @@ router.post(
   SubmissionValidation.submit,
   runCode
 );
-
+router.get(
+  '/user/solved',
+  getUserSolvedSubmissions  // Add this line
+);
 // Get user submissions with filters
 router.get(
   '/',

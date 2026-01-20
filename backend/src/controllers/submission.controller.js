@@ -560,6 +560,39 @@ export const getProblemSubmissions = asyncHandler(async (req, res) => {
   );
 });
 
+// @desc    Get user's solved problem IDs
+// @route   GET /api/v1/submissions/user/solved
+// @access  Private
+export const getUserSolvedSubmissions = asyncHandler(async (req, res) => {
+  try {
+    const userId = req.user._id;
+    
+    // Get only accepted submissions for this user
+    const solvedSubmissions = await Submission.find({
+      user: userId,
+      verdict: VERDICT.ACCEPTED
+    }).select('problem -_id');
+    
+    // Extract unique problem IDs
+    const solvedProblemIds = [...new Set(
+      solvedSubmissions
+        .map(s => s.problem ? s.problem.toString() : null)
+        .filter(id => id !== null)
+    )];
+    
+    res.status(200).json(
+      ApiResponse.success({
+        success: true,
+        count: solvedProblemIds.length,
+        data: solvedProblemIds
+      }, 'Solved problems fetched successfully')
+    );
+  } catch (error) {
+    console.error('Error fetching solved submissions:', error);
+    throw ApiError.internal('Failed to fetch solved problems');
+  }
+});
+
 // @desc    Get recent submissions for dashboard
 // @route   GET /api/v1/submissions/recent
 // @access  Private

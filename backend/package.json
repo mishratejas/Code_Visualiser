@@ -9,7 +9,7 @@
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "lint": "eslint src/",
     "format": "prettier --write \"src/**/*.js\"",
-    "seed": "node scripts/seed.js"
+    "seed:problems": "node scripts/seedProblems.js"
   },
   "keywords": [],
   "author": "",

@@ -28,12 +28,23 @@ const connectPostgreSQL = async () => {
     await sequelize.authenticate();
     console.log('✅ PostgreSQL connected successfully');
     
-    // Only sync in development, and be careful with alter
     if (process.env.NODE_ENV === 'development') {
+      try {
+        // First fix null values
+        await sequelize.query(`
+          UPDATE contests 
+          SET created_at = NOW() 
+          WHERE created_at IS NULL;
+        `);
+        console.log('✅ Fixed NULL values in contests');
+      } catch (fixError) {
+        console.log('⚠️ Could not fix NULL values:', fixError.message);
+      }
+      
+      // Then sync
       await sequelize.sync({ alter: true });
       console.log('✅ PostgreSQL models synchronized');
     } else {
-      // In production, don't auto-alter tables
       await sequelize.sync({ alter: false });
     }
     
