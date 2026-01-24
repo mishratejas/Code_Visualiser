@@ -19,16 +19,16 @@ export const DIFFICULTY = {
 };
 
 // ============ SUBMISSION VERDICTS ============
+// CORRECT VERDICT VALUES (must match your submission model)
 export const VERDICT = {
   PENDING: 'pending',
   ACCEPTED: 'accepted',
-  WRONG_ANSWER: 'wrong-answer',
-  TIME_LIMIT_EXCEEDED: 'time-limit-exceeded',
-  RUNTIME_ERROR: 'runtime-error',
-  COMPILATION_ERROR: 'compilation-error',
-  MEMORY_LIMIT_EXCEEDED: 'memory-limit-exceeded'
+  WRONG_ANSWER: 'wrong_answer',  
+  TIME_LIMIT_EXCEEDED: 'time_limit_exceeded', 
+  RUNTIME_ERROR: 'runtime_error',  
+  COMPILATION_ERROR: 'compilation_error',  
+  MEMORY_LIMIT_EXCEEDED: 'memory_limit_exceeded'  
 };
-
 // ============ PROGRAMMING LANGUAGES ============
 export const LANGUAGES = {
   PYTHON: 'python',

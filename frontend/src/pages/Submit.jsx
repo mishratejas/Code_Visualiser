@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { FiCode, FiPlay, FiSave, FiCopy, FiAlertCircle, FiCheck } from 'react-icons/fi';
-import { BsLightning } from 'react-icons/bs';
+import { FiCode, FiPlay, FiSave, FiCopy, FiAlertCircle, FiCheck, FiClock } from 'react-icons/fi';
+import { BsLightning, BsCheckCircle, BsXCircle } from 'react-icons/bs';
 import { toast } from 'react-hot-toast';
-import api from '../services/api';
-import CodeEditor from '../components/editor/CodeEditor';
+import { problemService } from '../services/problems';
+import submissionService from '../services/submissions';
 import Loader from '../components/common/Loader';
 import Modal from '../components/common/Modal';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
+import CodeEditor from '../components/editor/CodeEditor';
 import { formatExecutionTime, formatMemory } from '../utils/formatters';
+import { LANGUAGE_CONFIG } from '../utils/constants';
 
 const Submit = () => {
   const { problemId } = useParams();
@@ -18,15 +20,17 @@ const Submit = () => {
   const [problem, setProblem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [runningTests, setRunningTests] = useState(false);
   const [code, setCode] = useState('');
   const [language, setLanguage] = useState('javascript');
   const [showTestModal, setShowTestModal] = useState(false);
-  const [testResults, setTestResults] = useState(null);
+  const [testResults, setTestResults] = useState([]);
   const [selectedTestCase, setSelectedTestCase] = useState(0);
   const [customInput, setCustomInput] = useState('');
   const [customOutput, setCustomOutput] = useState('');
   const [runningCustomTest, setRunningCustomTest] = useState(false);
   const [submissionHistory, setSubmissionHistory] = useState([]);
+  const [codeStatus, setCodeStatus] = useState('idle');
 
   useEffect(() => {
     fetchProblemDetails();
@@ -36,19 +40,22 @@ const Submit = () => {
   const fetchProblemDetails = async () => {
     try {
       setLoading(true);
-      const response = await api.get(`/problems/${problemId}`);
-      setProblem(response.data);
+      const response = await problemService.getProblemById(problemId);
+      setProblem(response.data || response);
       
-      // Load saved code
+      // Load saved code or default template
       const savedCode = localStorage.getItem(`code_${problemId}_${language}`);
       if (savedCode) {
         setCode(savedCode);
       } else {
-        // Load default code based on language
-        setCode(getDefaultCode(language));
+        const defaultCode = submissionService.getDefaultCodeTemplate(
+          response.data?.title || 'Solution',
+          language
+        );
+        setCode(defaultCode);
       }
     } catch (error) {
-      toast.error('Failed to load problem');
+      toast.error('Failed to load problem details');
       navigate('/problems');
     } finally {
       setLoading(false);
@@ -57,54 +64,19 @@ const Submit = () => {
 
   const fetchSubmissionHistory = async () => {
     try {
-      const response = await api.get(`/submissions?problem=${problemId}&limit=5`);
-      setSubmissionHistory(response.data);
+      const response = await submissionService.getProblemSubmissions(problemId, { limit: 5 });
+      setSubmissionHistory(response.data || response || []);
     } catch (error) {
-      console.error('Failed to fetch submission history');
+      console.error('Failed to fetch submission history:', error);
+      setSubmissionHistory([]);
     }
-  };
-
-  const getDefaultCode = (lang) => {
-    const defaults = {
-      javascript: `function solve(input) {
-    // Write your solution here
-    return input;
-}`,
-      python: `def solve(input):
-    # Write your solution here
-    return input`,
-      java: `public class Solution {
-    public Object solve(Object input) {
-        // Write your solution here
-        return input;
-    }
-}`,
-      cpp: `#include <bits/stdc++.h>
-using namespace std;
-
-class Solution {
-public:
-    vector<int> solve(vector<int>& input) {
-        // Write your solution here
-        return input;
-    }
-};`,
-      c: `#include <stdio.h>
-#include <stdlib.h>
-
-int* solve(int* input, int inputSize, int* returnSize) {
-    // Write your solution here
-    *returnSize = inputSize;
-    return input;
-}`,
-    };
-    return defaults[lang] || defaults.javascript;
   };
 
   const handleCodeChange = (newCode) => {
     setCode(newCode);
-    // Auto-save
+    // Auto-save to localStorage
     localStorage.setItem(`code_${problemId}_${language}`, newCode);
+    setCodeStatus('modified');
   };
 
   const handleLanguageChange = (newLanguage) => {
@@ -114,7 +86,11 @@ int* solve(int* input, int inputSize, int* returnSize) {
     if (savedCode) {
       setCode(savedCode);
     } else {
-      setCode(getDefaultCode(newLanguage));
+      const defaultCode = submissionService.getDefaultCodeTemplate(
+        problem?.title || 'Solution',
+        newLanguage
+      );
+      setCode(defaultCode);
     }
   };
 
@@ -125,19 +101,27 @@ int* solve(int* input, int inputSize, int* returnSize) {
     }
 
     setRunningCustomTest(true);
+    setCodeStatus('running');
     try {
-      const response = await api.post('/problems/run', {
+      const response = await submissionService.runCode({
         code,
         language,
         input: customInput,
         problemId,
       });
       
-      setCustomOutput(response.output || 'No output');
-      toast.success('Test executed successfully!');
+      if (response.success) {
+        setCustomOutput(response.data?.output || 'No output');
+        setCodeStatus('success');
+        toast.success('Test executed successfully!');
+      } else {
+        setCustomOutput(`Error: ${response.message}`);
+        setCodeStatus('error');
+        toast.error('Test execution failed');
+      }
     } catch (error) {
-      const message = error.response?.data?.message || 'Failed to run test';
-      setCustomOutput(`Error: ${message}`);
+      setCustomOutput(`Error: ${error.message}`);
+      setCodeStatus('error');
       toast.error('Test execution failed');
     } finally {
       setRunningCustomTest(false);
@@ -145,36 +129,49 @@ int* solve(int* input, int inputSize, int* returnSize) {
   };
 
   const handleRunAllTests = async () => {
-    if (!code.trim()) {
-      toast.error('Please write some code first');
+    // Validate code first
+    const validation = submissionService.validateCode(code, language);
+    if (!validation.valid) {
+      toast.error(validation.error);
       return;
     }
 
-    setSubmitting(true);
+    setRunningTests(true);
+    setCodeStatus('running');
     try {
-      const response = await api.post('/problems/run-tests', {
-        code,
-        language,
-        problemId,
-      });
+      const response = await submissionService.runTestCases(problemId, code, language);
       
-      setTestResults(response);
-      setShowTestModal(true);
-      toast.success('Tests completed!');
+      if (response.success) {
+        setTestResults(response.data || []);
+        setShowTestModal(true);
+        setCodeStatus('success');
+        
+        // Show summary
+        const passed = (response.data || []).filter(r => r.passed).length;
+        const total = (response.data || []).length;
+        toast.success(`${passed}/${total} test cases passed!`);
+      } else {
+        toast.error(response.message || 'Failed to run tests');
+        setCodeStatus('error');
+      }
     } catch (error) {
-      toast.error('Failed to run tests');
+      toast.error(error.message || 'Failed to run tests');
+      setCodeStatus('error');
     } finally {
-      setSubmitting(false);
+      setRunningTests(false);
     }
   };
 
   const handleSubmit = async () => {
-    if (!code.trim()) {
-      toast.error('Please write some code first');
+    // Validate code first
+    const validation = submissionService.validateCode(code, language);
+    if (!validation.valid) {
+      toast.error(validation.error);
       return;
     }
 
     setSubmitting(true);
+    setCodeStatus('running');
     try {
       const submission = {
         problemId,
@@ -182,12 +179,24 @@ int* solve(int* input, int inputSize, int* returnSize) {
         language,
       };
 
-      const response = await api.post('/submissions', submission);
+      const response = await submissionService.submitSolution(submission);
       
-      toast.success('Solution submitted successfully!');
-      navigate(`/submissions/${response._id}`);
+      if (response.success) {
+        toast.success('Solution submitted successfully!');
+        
+        // Navigate to submission details
+        if (response.data?._id) {
+          navigate(`/submissions/${response.data._id}`);
+        } else {
+          navigate('/submissions');
+        }
+      } else {
+        toast.error(response.message || 'Submission failed');
+        setCodeStatus('error');
+      }
     } catch (error) {
-      toast.error('Submission failed');
+      toast.error(error.message || 'Submission failed');
+      setCodeStatus('error');
     } finally {
       setSubmitting(false);
     }
@@ -200,22 +209,25 @@ int* solve(int* input, int inputSize, int* returnSize) {
 
   const saveCode = () => {
     localStorage.setItem(`code_${problemId}_${language}`, code);
+    setCodeStatus('saved');
     toast.success('Code saved locally');
   };
 
   const resetCode = () => {
-    setCode(getDefaultCode(language));
+    const defaultCode = submissionService.getDefaultCodeTemplate(
+      problem?.title || 'Solution',
+      language
+    );
+    setCode(defaultCode);
     localStorage.removeItem(`code_${problemId}_${language}`);
+    setCodeStatus('reset');
     toast.success('Code reset to default');
   };
 
-  const languages = [
-    { value: 'javascript', label: 'JavaScript' },
-    { value: 'python', label: 'Python' },
-    { value: 'java', label: 'Java' },
-    { value: 'cpp', label: 'C++' },
-    { value: 'c', label: 'C' },
-  ];
+  const languages = Object.entries(LANGUAGE_CONFIG).map(([value, config]) => ({
+    value,
+    label: config.name,
+  }));
 
   if (loading) {
     return <Loader />;
@@ -229,15 +241,15 @@ int* solve(int* input, int inputSize, int* returnSize) {
           <div className="flex items-center space-x-2 mb-2">
             <Link
               to={`/problem/${problemId}`}
-              className="text-blue-600 dark:text-blue-400 hover:underline"
+              className="text-blue-600 dark:text-blue-400 hover:underline flex items-center"
             >
-              &larr; Back to Problem
+              ← Back to Problem
             </Link>
             <span className="text-gray-400">•</span>
             <span className="text-gray-600 dark:text-gray-400">Submit Solution</span>
           </div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            {problem.title}
+            {problem?.title || 'Submit Solution'}
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2">
             Write your solution and submit for evaluation
@@ -286,27 +298,31 @@ int* solve(int* input, int inputSize, int* returnSize) {
                   </select>
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Time Limit
-                  </label>
-                  <div className="px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <span className="font-medium text-gray-900 dark:text-white">
-                      {problem.timeLimit} ms
-                    </span>
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Memory Limit
-                  </label>
-                  <div className="px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <span className="font-medium text-gray-900 dark:text-white">
-                      {problem.memoryLimit} MB
-                    </span>
-                  </div>
-                </div>
+                {problem?.constraints && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Time Limit
+                      </label>
+                      <div className="px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {problem.constraints.timeLimit || 2000} ms
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Memory Limit
+                      </label>
+                      <div className="px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {problem.constraints.memoryLimit || 256} MB
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
               
               <div className="flex items-center space-x-2">
@@ -344,15 +360,37 @@ int* solve(int* input, int inputSize, int* returnSize) {
                 onCodeChange={handleCodeChange}
                 onSubmit={handleSubmit}
                 language={language}
-                onLanguageChange={setLanguage}
+                onLanguageChange={handleLanguageChange}
               />
             </div>
 
+            {/* Status Bar */}
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <div className="flex items-center space-x-4 text-sm">
+                <div className="flex items-center">
+                  <div className={`w-2 h-2 rounded-full mr-2 ${
+                    codeStatus === 'running' ? 'bg-blue-500 animate-pulse' :
+                    codeStatus === 'success' ? 'bg-green-500' :
+                    codeStatus === 'error' ? 'bg-red-500' :
+                    codeStatus === 'saved' ? 'bg-green-500' :
+                    codeStatus === 'reset' ? 'bg-yellow-500' :
+                    'bg-gray-400'
+                  }`}></div>
+                  <span className="text-gray-700 dark:text-gray-300 capitalize">
+                    {codeStatus === 'idle' ? 'Ready' : codeStatus}
+                  </span>
+                </div>
+                <span className="text-gray-500 dark:text-gray-400">
+                  {code.length} chars • {code.split('\n').length} lines
+                </span>
+              </div>
+            </div>
+
             {/* Action Buttons */}
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-3 mt-4">
               <Button
                 onClick={handleRunAllTests}
-                loading={submitting}
+                loading={runningTests}
                 variant="secondary"
                 startIcon={<FiPlay />}
               >
@@ -387,50 +425,51 @@ int* solve(int* input, int inputSize, int* returnSize) {
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-600 dark:text-gray-400">Difficulty</span>
-                <span className={`font-medium ${problem.difficulty === 'easy'
-                    ? 'text-green-600 dark:text-green-400'
-                    : problem.difficulty === 'medium'
-                      ? 'text-yellow-600 dark:text-yellow-400'
-                      : 'text-red-600 dark:text-red-400'
-                  }`}>
-                  {problem.difficulty}
+                <span className={`font-medium ${
+                  problem?.difficulty === 'easy' ? 'text-green-600 dark:text-green-400' :
+                  problem?.difficulty === 'medium' ? 'text-yellow-600 dark:text-yellow-400' :
+                  'text-red-600 dark:text-red-400'
+                }`}>
+                  {problem?.difficulty || 'Medium'}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600 dark:text-gray-400">Acceptance Rate</span>
                 <span className="font-medium text-gray-900 dark:text-white">
-                  {problem.acceptanceRate}%
+                  {problem?.acceptanceRate?.toFixed(1) || problem?.metadata?.acceptanceRate?.toFixed(1) || 0}%
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600 dark:text-gray-400">Total Submissions</span>
                 <span className="font-medium text-gray-900 dark:text-white">
-                  {problem.totalSubmissions}
+                  {problem?.totalSubmissions || problem?.metadata?.submissions || 0}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600 dark:text-gray-400">Accepted</span>
                 <span className="font-medium text-green-600 dark:text-green-400">
-                  {problem.acceptedSubmissions}
+                  {problem?.acceptedSubmissions || 0}
                 </span>
               </div>
             </div>
             
-            <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-              <h4 className="font-medium text-gray-900 dark:text-white mb-3">
-                Tags
-              </h4>
-              <div className="flex flex-wrap gap-2">
-                {problem.tags.map((tag, index) => (
-                  <span
-                    key={index}
-                    className="px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm"
-                  >
-                    {tag}
-                  </span>
-                ))}
+            {problem?.tags && problem.tags.length > 0 && (
+              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                <h4 className="font-medium text-gray-900 dark:text-white mb-3">
+                  Tags
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {problem.tags.slice(0, 5).map((tag, index) => (
+                    <span
+                      key={index}
+                      className="px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </Card>
 
           {/* Recent Submissions */}
@@ -440,26 +479,26 @@ int* solve(int* input, int inputSize, int* returnSize) {
             </h3>
             {submissionHistory.length > 0 ? (
               <div className="space-y-3">
-                {submissionHistory.map((submission) => (
+                {submissionHistory.slice(0, 5).map((submission) => (
                   <div
                     key={submission._id}
                     className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition"
                   >
                     <div className="flex justify-between items-center mb-2">
-                      <span className={`text-sm font-medium ${submission.status === 'accepted'
-                          ? 'text-green-600 dark:text-green-400'
-                          : submission.status === 'pending'
-                            ? 'text-blue-600 dark:text-blue-400'
-                            : 'text-red-600 dark:text-red-400'
-                        }`}>
+                      <span className={`text-sm font-medium ${
+                        submission.status === 'accepted' ? 'text-green-600 dark:text-green-400' :
+                        submission.status === 'pending' ? 'text-blue-600 dark:text-blue-400' :
+                        'text-red-600 dark:text-red-400'
+                      }`}>
                         {submission.status}
                       </span>
                       <span className="text-xs text-gray-500 dark:text-gray-400">
                         {formatExecutionTime(submission.executionTime)}
                       </span>
                     </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      Language: {submission.language}
+                    <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                      <span>Language: {submission.language}</span>
+                      <span>{formatMemory(submission.memoryUsed)}</span>
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       {new Date(submission.submittedAt).toLocaleDateString()}
@@ -510,42 +549,44 @@ int* solve(int* input, int inputSize, int* returnSize) {
       >
         <div className="space-y-6">
           {/* Test Cases Navigation */}
-          <div className="flex space-x-2 overflow-x-auto pb-2">
-            {testResults?.map((test, index) => (
-              <button
-                key={index}
-                onClick={() => setSelectedTestCase(index)}
-                className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap ${selectedTestCase === index
-                    ? test.passed
-                      ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
-                      : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                  }`}
-              >
-                Test {index + 1}
-                {test.passed ? (
-                  <FiCheck className="inline ml-2" />
-                ) : (
-                  <FiAlertCircle className="inline ml-2" />
-                )}
-              </button>
-            ))}
-          </div>
+          {testResults.length > 0 && (
+            <div className="flex space-x-2 overflow-x-auto pb-2">
+              {testResults.map((test, index) => (
+                <button
+                  key={index}
+                  onClick={() => setSelectedTestCase(index)}
+                  className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap ${selectedTestCase === index
+                      ? test.passed
+                        ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                        : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                    }`}
+                >
+                  Test {index + 1}
+                  {test.passed ? (
+                    <BsCheckCircle className="inline ml-2" />
+                  ) : (
+                    <BsXCircle className="inline ml-2" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Selected Test Case Details */}
-          {testResults && testResults[selectedTestCase] && (
+          {testResults.length > 0 && testResults[selectedTestCase] && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <h4 className="font-medium text-gray-900 dark:text-white mb-2">Input</h4>
                   <pre className="bg-gray-800 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm">
-                    {testResults[selectedTestCase].input}
+                    {testResults[selectedTestCase].input || 'No input'}
                   </pre>
                 </div>
                 <div>
                   <h4 className="font-medium text-gray-900 dark:text-white mb-2">Expected Output</h4>
                   <pre className="bg-gray-800 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm">
-                    {testResults[selectedTestCase].expectedOutput}
+                    {testResults[selectedTestCase].expectedOutput || 'No expected output'}
                   </pre>
                 </div>
               </div>
@@ -583,13 +624,13 @@ int* solve(int* input, int inputSize, int* returnSize) {
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                   <div className="text-sm text-gray-600 dark:text-gray-400">Time</div>
                   <div className="font-medium text-gray-900 dark:text-white">
-                    {formatExecutionTime(testResults[selectedTestCase].executionTime)}
+                    {formatExecutionTime(testResults[selectedTestCase].executionTime || 0)}
                   </div>
                 </div>
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                   <div className="text-sm text-gray-600 dark:text-gray-400">Memory</div>
                   <div className="font-medium text-gray-900 dark:text-white">
-                    {formatMemory(testResults[selectedTestCase].memoryUsed)}
+                    {formatMemory(testResults[selectedTestCase].memoryUsed || 0)}
                   </div>
                 </div>
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">

@@ -266,7 +266,11 @@ problemSchema.index({ difficultyScore: 1 });
 problemSchema.index({ popularityScore: -1 });
 
 // Pre-save middleware
-problemSchema.pre('save', function(next) {
+problemSchema.pre('save', async function(next) {
+  if (typeof next !== 'function') {
+    console.error('Middleware error: next is not a function');
+    return;
+  }
   if (!this.slug) {
     this.slug = this.title
       .toLowerCase()

@@ -90,7 +90,10 @@ const submissionSchema = new mongoose.Schema({
   
   executionTime: Number,
   
-  codeSize: Number,
+  codeSize: {
+    type: Number,
+    default: 0
+  },
   
   aiAnalysis: {
     complexity: {
@@ -165,12 +168,29 @@ submissionSchema.index({ createdAt: -1 });
 submissionSchema.index({ 'aiAnalysis.codeQuality': -1 });
 submissionSchema.index({ user: 1, contestId: 1 });
 
-// Pre-save middleware
-submissionSchema.pre('save', function(next) {
-  if (this.code) {
-    this.codeSize = Buffer.byteLength(this.code, 'utf8');
+// FIXED: Pre-save middleware
+submissionSchema.pre('save', async function(next) {
+  try {
+    // Calculate code size
+    if (this.code && typeof this.code === 'string') {
+      this.codeSize = Buffer.byteLength(this.code, 'utf8');
+    }
+    
+    // Make sure executedAt is set
+    if (!this.executedAt) {
+      this.executedAt = new Date();
+    }
+    
+    // Call next() to continue
+    if (next && typeof next === 'function') {
+      next();
+    }
+  } catch (error) {
+    // If there's an error, pass it to next
+    if (next && typeof next === 'function') {
+      next(error);
+    }
   }
-  next();
 });
 
 // Methods
@@ -189,7 +209,7 @@ submissionSchema.methods.addExecutionResult = function(result) {
 // Static methods
 submissionSchema.statics.getUserStats = async function(userId) {
   const stats = await this.aggregate([
-    { $match: { user: mongoose.Types.ObjectId(userId) } },
+    { $match: { user: new mongoose.Types.ObjectId(userId) } },
     { $group: {
       _id: null,
       totalSubmissions: { $sum: 1 },
@@ -213,7 +233,7 @@ submissionSchema.statics.getUserStats = async function(userId) {
 
 submissionSchema.statics.getProblemStats = async function(problemId) {
   const stats = await this.aggregate([
-    { $match: { problem: mongoose.Types.ObjectId(problemId) } },
+    { $match: { problem: new mongoose.Types.ObjectId(problemId) } },
     { $group: {
       _id: '$verdict',
       count: { $sum: 1 },
