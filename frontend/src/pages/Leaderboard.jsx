@@ -28,25 +28,49 @@ const Leaderboard = () => {
     fetchUserStats();
   }, [timeRange]);
 
-  const fetchLeaderboard = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get('/leaderboard', { params: { range: timeRange } });
-      setLeaderboard(response.data);
-      
-      // Find current user's rank
-      const currentUser = JSON.parse(localStorage.getItem('user'));
-      if (currentUser) {
-        const rank = response.data.findIndex(user => user._id === currentUser.id);
-        setUserRank(rank >= 0 ? rank + 1 : null);
+const fetchLeaderboard = async () => {
+  try {
+    setLoading(true);
+    const response = await api.get('/leaderboard', { params: { range: timeRange } });
+    
+    // FIXED: Handle different response structures
+    let leaderboardData = [];
+    
+    if (response && response.data) {
+      // Case 1: { data: { leaderboard: [...] } }
+      if (response.data.leaderboard && Array.isArray(response.data.leaderboard)) {
+        leaderboardData = response.data.leaderboard;
       }
-    } catch (error) {
-      toast.error('Failed to fetch leaderboard');
-    } finally {
-      setLoading(false);
+      // Case 2: { data: [...] } - direct array
+      else if (Array.isArray(response.data)) {
+        leaderboardData = response.data;
+      }
+      // Case 3: Direct array response
+      else if (Array.isArray(response)) {
+        leaderboardData = response;
+      }
+      else {
+        console.warn('Unexpected leaderboard response format:', response);
+        leaderboardData = [];
+      }
     }
-  };
-
+    
+    setLeaderboard(leaderboardData);
+    
+    // Find current user's rank
+    const currentUser = JSON.parse(localStorage.getItem('user'));
+    if (currentUser && leaderboardData.length > 0) {
+      const rank = leaderboardData.findIndex(user => user._id === currentUser._id || user._id === currentUser.id);
+      setUserRank(rank >= 0 ? rank + 1 : null);
+    }
+  } catch (error) {
+    console.error('Failed to fetch leaderboard:', error);
+    toast.error('Failed to fetch leaderboard');
+    setLeaderboard([]); // Set empty array on error
+  } finally {
+    setLoading(false);
+  }
+};
   const fetchUserStats = async () => {
     try {
       const currentUser = JSON.parse(localStorage.getItem('user'));
@@ -59,10 +83,13 @@ const Leaderboard = () => {
     }
   };
 
-  const filteredLeaderboard = leaderboard.filter(user =>
-    user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+ const filteredLeaderboard = Array.isArray(leaderboard) 
+  ? leaderboard.filter(user =>
+      user.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.name?.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  : [];
+
 
   const getRankColor = (rank) => {
     if (rank === 1) return 'from-yellow-400 to-yellow-600';

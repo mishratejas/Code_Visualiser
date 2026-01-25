@@ -79,26 +79,37 @@ const fetchUserSolved = async () => {
     const response = await api.get('/submissions/user/solved');
     console.log('Solved problems response:', response);
     
-    // Handle different response structures
+    // FIXED: Handle the actual API response structure
+    let solvedIds = [];
+    
+    // The API returns: { success: true, statusCode: 200, message: '...', data: {...}, meta: {...} }
+    // And data contains: { solvedProblems: [...array of problem IDs...] }
+    
     if (response && response.data) {
-      // Structure: { success: true, data: [...] }
-      if (response.success && Array.isArray(response.data)) {
-        setUserSolved(response.data);
-      } 
-      // Structure: { data: [...] }
+      // Case 1: { data: { solvedProblems: [...] } }
+      if (response.data.solvedProblems && Array.isArray(response.data.solvedProblems)) {
+        solvedIds = response.data.solvedProblems;
+      }
+      // Case 2: { data: { data: { solvedProblems: [...] } } }
+      else if (response.data.data && response.data.data.solvedProblems && Array.isArray(response.data.data.solvedProblems)) {
+        solvedIds = response.data.data.solvedProblems;
+      }
+      // Case 3: { data: [...] } - direct array
       else if (Array.isArray(response.data)) {
-        setUserSolved(response.data);
+        solvedIds = response.data;
       }
-      // Structure: [...]
+      // Case 4: Direct array response
       else if (Array.isArray(response)) {
-        setUserSolved(response);
-      } else {
-        console.warn('Unexpected solved problems format:', response);
-        setUserSolved([]);
+        solvedIds = response;
       }
-    } else {
-      setUserSolved([]);
+      else {
+        console.log('Using fallback: response structure not recognized');
+        solvedIds = [];
+      }
     }
+    
+    console.log('Extracted solved problem IDs:', solvedIds);
+    setUserSolved(solvedIds);
   } catch (error) {
     console.error('Failed to fetch solved problems:', error);
     setUserSolved([]);

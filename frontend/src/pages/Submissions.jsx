@@ -56,8 +56,18 @@ const Submissions = () => {
       };
 
       const response = await api.get('/submissions', { params });
-      setSubmissions(response.data.submissions);
-      setTotalPages(response.data.totalPages);
+      
+      // FIXED: Handle different response structures
+      const submissionsData = response.submissions || 
+                             response.data?.submissions || 
+                             response.data || 
+                             [];
+      const totalPagesData = response.totalPages || 
+                            response.data?.totalPages || 
+                            1;
+      
+      setSubmissions(submissionsData);
+      setTotalPages(totalPagesData);
 
       // Update URL params
       const newParams = new URLSearchParams();
@@ -260,25 +270,26 @@ const Submissions = () => {
                         ? 'text-blue-600 dark:text-blue-400'
                         : 'text-red-600 dark:text-red-400'
                     }`}>
-                    {submission.status.replace(/_/g, ' ')}
+                    {/* FIXED: Added null check before replace */}
+                    {submission.status ? submission.status.replace(/_/g, ' ') : 'Unknown'}
                   </span>
                 </div>
                 <div className="col-span-4">
                   <Link
-                    to={`/problem/${submission.problem?._id}`}
+                    to={`/problem/${submission.problem?._id || '#'}`}
                     className="font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition"
                   >
-                    {submission.problem?.title}
+                    {submission.problem?.title || 'Unknown Problem'}
                   </Link>
                   <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    {new Date(submission.submittedAt).toLocaleString()}
+                    {new Date(submission.submittedAt || submission.createdAt || Date.now()).toLocaleString()}
                   </div>
                 </div>
                 <div className="col-span-2">
                   <div className="flex items-center">
                     <FiCode className="mr-2 text-gray-400" />
                     <span className="text-gray-700 dark:text-gray-300">
-                      {submission.language}
+                      {submission.language || 'Unknown'}
                     </span>
                   </div>
                 </div>
@@ -286,7 +297,7 @@ const Submissions = () => {
                   <div className="flex items-center">
                     <FiCpu className="mr-2 text-gray-400" />
                     <span className="text-gray-700 dark:text-gray-300">
-                      {submission.executionTime} ms
+                      {submission.executionTime || submission.runtime || 0} ms
                     </span>
                   </div>
                 </div>
@@ -296,7 +307,7 @@ const Submissions = () => {
                       <div className="h-2 w-2 rounded-full bg-gray-400"></div>
                     </div>
                     <span className="text-gray-700 dark:text-gray-300">
-                      {formatBytes(submission.memoryUsed)}
+                      {formatBytes(submission.memoryUsed || submission.memory || 0)}
                     </span>
                   </div>
                 </div>

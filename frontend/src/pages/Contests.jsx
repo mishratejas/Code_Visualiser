@@ -17,22 +17,47 @@ const Contests = () => {
     fetchContests();
   }, [filter]);
 
-  const fetchContests = async () => {
-    try {
-      setLoading(true);
-      const params = {};
-      if (filter !== 'all') {
-        params.status = filter;
-      }
-      const response = await api.get('/contests', { params });
-      setContests(response.data);
-    } catch (error) {
-      toast.error('Failed to fetch contests');
-    } finally {
-      setLoading(false);
+ const fetchContests = async () => {
+  try {
+    setLoading(true);
+    const params = {};
+    if (filter !== 'all') {
+      params.status = filter;
     }
-  };
-
+    
+    const response = await api.get('/contests', { params });
+    
+    // FIXED: Handle different response structures
+    let contestsData = [];
+    
+    if (response && response.data) {
+      // Case 1: { data: { contests: [...] } }
+      if (response.data.contests && Array.isArray(response.data.contests)) {
+        contestsData = response.data.contests;
+      }
+      // Case 2: { data: [...] } - direct array
+      else if (Array.isArray(response.data)) {
+        contestsData = response.data;
+      }
+      // Case 3: Direct array response
+      else if (Array.isArray(response)) {
+        contestsData = response;
+      }
+      else {
+        console.warn('Unexpected contests response format:', response);
+        contestsData = [];
+      }
+    }
+    
+    setContests(contestsData);
+  } catch (error) {
+    console.error('Failed to fetch contests:', error);
+    toast.error('Failed to fetch contests');
+    setContests([]); // Set empty array on error
+  } finally {
+    setLoading(false);
+  }
+};
   const getContestStatus = (contest) => {
     const now = new Date();
     const start = new Date(contest.startTime);

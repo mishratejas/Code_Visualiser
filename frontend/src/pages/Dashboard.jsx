@@ -29,6 +29,7 @@ const Dashboard = () => {
   const [upcomingContests, setUpcomingContests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [chartsReady, setChartsReady] = useState(false);
 
   useEffect(() => {
     if (user && user._id) {
@@ -37,6 +38,12 @@ const Dashboard = () => {
       setLoading(false);
     }
   }, [user]);
+
+  useEffect(() => {
+  // Delay chart rendering to ensure containers are mounted
+  const timer = setTimeout(() => setChartsReady(true), 100);
+  return () => clearTimeout(timer);
+}, []);
 
   const fetchDashboardData = async () => {
     try {
@@ -324,132 +331,134 @@ const Dashboard = () => {
         />
       </div>
 
-      {/* Charts Section - Enhanced - FIXED */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Activity Chart - Enhanced */}
-        <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl p-6 border border-gray-700/50">
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h3 className="text-xl font-bold text-white">Weekly Activity</h3>
-              <p className="text-gray-400 text-sm mt-1">Submissions & Solved Problems</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1 text-sm">
-                <div className="w-3 h-3 rounded-full bg-gradient-to-r from-blue-500 to-purple-500"></div>
-                Submissions
-              </span>
-              <span className="flex items-center gap-1 text-sm">
-                <div className="w-3 h-3 rounded-full bg-gradient-to-r from-green-500 to-emerald-500"></div>
-                Solved
-              </span>
-            </div>
-          </div>
-          {/* FIXED: Added fixed height container */}
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={activityData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeOpacity={0.5} />
-                <XAxis dataKey="day" stroke="#9CA3AF" fontSize={12} />
-                <YAxis stroke="#9CA3AF" fontSize={12} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1F2937',
-                    border: 'none',
-                    borderRadius: '8px',
-                    backdropFilter: 'blur(10px)',
-                  }}
-                  formatter={(value) => [value, 'count']}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="submissions"
-                  stackId="1"
-                  stroke="url(#colorSubmissions)"
-                  fill="url(#colorSubmissions)"
-                  strokeWidth={2}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="solved"
-                  stackId="2"
-                  stroke="url(#colorSolved)"
-                  fill="url(#colorSolved)"
-                  strokeWidth={2}
-                />
-                <defs>
-                  <linearGradient id="colorSubmissions" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.1}/>
-                  </linearGradient>
-                  <linearGradient id="colorSolved" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#10B981" stopOpacity={0.1}/>
-                  </linearGradient>
-                </defs>
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Difficulty Distribution - Enhanced */}
-        <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl p-6 border border-gray-700/50">
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h3 className="text-xl font-bold text-white">Difficulty Distribution</h3>
-              <p className="text-gray-400 text-sm mt-1">Problems solved by difficulty level</p>
-            </div>
-            <div className="text-sm text-gray-400">
-              Total: {difficultyData.reduce((sum, item) => sum + item.value, 0)}
-            </div>
-          </div>
-          {/* FIXED: Added fixed height container */}
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={difficultyData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={2}
-                  dataKey="value"
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  labelLine={false}
-                >
-                  {difficultyData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1F2937',
-                    border: 'none',
-                    borderRadius: '8px',
-                    backdropFilter: 'blur(10px)',
-                  }}
-                  formatter={(value, name) => [value, `${name} Problems`]}
-                />
-                <Legend 
-                  wrapperStyle={{ paddingTop: '20px' }}
-                  formatter={(value) => <span className="text-gray-300 text-sm">{value}</span>}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="mt-4 grid grid-cols-3 gap-3">
-            {difficultyData.map((item, index) => (
-              <div key={index} className="text-center p-3 rounded-lg bg-gray-800/50">
-                <div className="flex items-center justify-center gap-2 mb-1">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
-                  <span className="text-sm text-gray-300">{item.name}</span>
-                </div>
-                <div className="text-xl font-bold">{item.value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+{/* Charts Section - FIXED for Recharts height issue */}
+<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  {/* Activity Chart */}
+  <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl p-6 border border-gray-700/50">
+    <div className="flex justify-between items-center mb-6">
+      <div>
+        <h3 className="text-xl font-bold text-white">Weekly Activity</h3>
+        <p className="text-gray-400 text-sm mt-1">Submissions & Solved Problems</p>
       </div>
+      <div className="flex items-center gap-2">
+        <span className="flex items-center gap-1 text-sm">
+          <div className="w-3 h-3 rounded-full bg-gradient-to-r from-blue-500 to-purple-500"></div>
+          Submissions
+        </span>
+        <span className="flex items-center gap-1 text-sm">
+          <div className="w-3 h-3 rounded-full bg-gradient-to-r from-green-500 to-emerald-500"></div>
+          Solved
+        </span>
+      </div>
+    </div>
+    <div style={{ width: '100%', height: '300px' }}>
+      {chartsReady && (
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={activityData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeOpacity={0.5} />
+            <XAxis dataKey="day" stroke="#9CA3AF" fontSize={12} />
+            <YAxis stroke="#9CA3AF" fontSize={12} />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#1F2937',
+                border: 'none',
+                borderRadius: '8px',
+                backdropFilter: 'blur(10px)',
+              }}
+              formatter={(value) => [value, 'count']}
+            />
+            <Area
+              type="monotone"
+              dataKey="submissions"
+              stackId="1"
+              stroke="url(#colorSubmissions)"
+              fill="url(#colorSubmissions)"
+              strokeWidth={2}
+            />
+            <Area
+              type="monotone"
+              dataKey="solved"
+              stackId="2"
+              stroke="url(#colorSolved)"
+              fill="url(#colorSolved)"
+              strokeWidth={2}
+            />
+            <defs>
+              <linearGradient id="colorSubmissions" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.8}/>
+                <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.1}/>
+              </linearGradient>
+              <linearGradient id="colorSolved" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
+                <stop offset="95%" stopColor="#10B981" stopOpacity={0.1}/>
+              </linearGradient>
+            </defs>
+          </AreaChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  </div>
+
+  {/* Difficulty Distribution */}
+  <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl p-6 border border-gray-700/50">
+    <div className="flex justify-between items-center mb-6">
+      <div>
+        <h3 className="text-xl font-bold text-white">Difficulty Distribution</h3>
+        <p className="text-gray-400 text-sm mt-1">Problems solved by difficulty level</p>
+      </div>
+      <div className="text-sm text-gray-400">
+        Total: {difficultyData.reduce((sum, item) => sum + item.value, 0)}
+      </div>
+    </div>
+    <div style={{ width: '100%', height: '300px' }}>
+      {chartsReady && (
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={difficultyData}
+              cx="50%"
+              cy="50%"
+              innerRadius={60}
+              outerRadius={100}
+              paddingAngle={2}
+              dataKey="value"
+              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+              labelLine={false}
+            >
+              {difficultyData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#1F2937',
+                border: 'none',
+                borderRadius: '8px',
+                backdropFilter: 'blur(10px)',
+              }}
+              formatter={(value, name) => [value, `${name} Problems`]}
+            />
+            <Legend 
+              wrapperStyle={{ paddingTop: '20px' }}
+              formatter={(value) => <span className="text-gray-300 text-sm">{value}</span>}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+    <div className="mt-4 grid grid-cols-3 gap-3">
+      {difficultyData.map((item, index) => (
+        <div key={index} className="text-center p-3 rounded-lg bg-gray-800/50">
+          <div className="flex items-center justify-center gap-2 mb-1">
+            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
+            <span className="text-sm text-gray-300">{item.name}</span>
+          </div>
+          <div className="text-xl font-bold">{item.value}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+</div>
 
       {/* Bottom Section - Enhanced */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
