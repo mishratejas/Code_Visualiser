@@ -25,7 +25,7 @@ const Contest = sequelize.define('Contest', {
   },
   
   contest_type: {
-    type: DataTypes.STRING,  //temporarily change
+    type: DataTypes.STRING,
     defaultValue: 'practice',
     field: 'contest_type'
   },

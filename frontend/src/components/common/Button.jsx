@@ -1,3 +1,4 @@
+// frontend/src/components/common/Button.jsx - FIXED
 import React from 'react';
 import { FiLoader } from 'react-icons/fi';
 

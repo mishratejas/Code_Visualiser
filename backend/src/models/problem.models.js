@@ -237,14 +237,16 @@ const problemSchema = new mongoose.Schema({
 
 // Virtuals
 problemSchema.virtual('totalTestCases').get(function() {
-  return this.testCases.length;
+  return (this.testCases && Array.isArray(this.testCases)) ? this.testCases.length : 0;
 });
 
 problemSchema.virtual('publicTestCases').get(function() {
+  if (!this.testCases || !Array.isArray(this.testCases)) return [];
   return this.testCases.filter(tc => !tc.isHidden);
 });
 
 problemSchema.virtual('hiddenTestCases').get(function() {
+  if (!this.testCases || !Array.isArray(this.testCases)) return [];
   return this.testCases.filter(tc => tc.isHidden);
 });
 

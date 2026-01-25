@@ -10,17 +10,23 @@ const TestCase = ({
   isHidden = false, 
   explanation = '', 
   result = null,
-  isActive = false,
-  onToggle = () => {}
+  isExpanded = false
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [localExpanded, setLocalExpanded] = useState(isExpanded);
 
   const passed = result?.passed || false;
   const status = passed ? 'passed' : (result ? 'failed' : 'pending');
   
+  // FIX: Format text to handle \n properly
+  const formatText = (text) => {
+    if (!text) return '';
+    // Replace escaped newlines with actual newlines
+    return text.replace(/\\n/g, '\n');
+  };
+
   const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(formatText(text));
     setCopied(true);
     toast.success('Copied to clipboard!');
     setTimeout(() => setCopied(false), 2000);
@@ -143,7 +149,7 @@ const TestCase = ({
               </div>
               <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
                 <pre className="text-sm whitespace-pre-wrap break-words font-mono text-gray-100">
-                  {input || "No input"}
+                  {formatText(input) || "No input"}
                 </pre>
               </div>
             </div>
@@ -154,7 +160,7 @@ const TestCase = ({
               </div>
               <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
                 <pre className="text-sm whitespace-pre-wrap break-words font-mono text-gray-100">
-                  {expectedOutput || "No output"}
+                  {formatText(expectedOutput) || "No output"}
                 </pre>
               </div>
             </div>
@@ -168,7 +174,7 @@ const TestCase = ({
               </div>
               <div className={`rounded-xl p-4 border ${passed ? 'border-green-200/50 dark:border-green-800/30 bg-green-50/30 dark:bg-green-900/10' : 'border-red-200/50 dark:border-red-800/30 bg-red-50/30 dark:bg-red-900/10'}`}>
                 <pre className="text-sm whitespace-pre-wrap break-words font-mono">
-                  {result.actualOutput || "No output"}
+                  {formatText(result.actualOutput) || "No output"}
                 </pre>
               </div>
             </div>

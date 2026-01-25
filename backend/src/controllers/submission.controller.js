@@ -722,76 +722,102 @@ export const submitCode = asyncHandler(async (req, res) => {
 // @route   GET /api/v1/submissions
 // @access  Private
 export const getUserSubmissions = asyncHandler(async (req, res) => {
-  const { 
-    page = 1, 
-    limit = 20,
-    problemId,
-    verdict,
-    language,
-    startDate,
-    endDate,
-    sortBy = '-createdAt'
-  } = req.query;
-  
-  const filter = { user: req.user._id };
-  
-  if (problemId) filter.problem = problemId;
-  if (verdict) filter.verdict = verdict;
-  if (language) filter.language = language;
-  
-  if (startDate || endDate) {
-    filter.createdAt = {};
-    if (startDate) filter.createdAt.$gte = new Date(startDate);
-    if (endDate) filter.createdAt.$lte = new Date(endDate);
-  }
-  
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-  const limitNum = Math.min(parseInt(limit), 100);
-  
-  let sort = {};
-  if (sortBy.startsWith('-')) {
-    sort[sortBy.substring(1)] = -1;
-  } else {
-    sort[sortBy] = 1;
-  }
-  
-  const [submissions, total] = await Promise.all([
-    Submission.find(filter)
-      .populate('problem', 'title slug difficulty')
+  try {
+    const { 
+      page = 1, 
+      limit = 20,
+      problemId,
+      verdict,
+      language,
+      startDate,
+      endDate,
+      sortBy = '-createdAt'
+    } = req.query;
+    
+    console.log('📊 Getting user submissions with filters:', { 
+      page, limit, problemId, verdict, language, sortBy 
+    });
+    
+    const filter = { user: req.user._id };
+    
+    if (problemId) filter.problem = problemId;
+    if (verdict) filter.verdict = verdict;
+    if (language) filter.language = language;
+    
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      if (endDate) filter.createdAt.$lte = new Date(endDate);
+    }
+    
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const limitNum = Math.min(parseInt(limit), 100);
+    
+    let sort = {};
+    if (sortBy.startsWith('-')) {
+      sort[sortBy.substring(1)] = -1;
+    } else {
+      sort[sortBy] = 1;
+    }
+    
+    // FIX: Use lean() to get plain objects, not mongoose documents
+    const submissions = await Submission.find(filter)
+      .populate({
+        path: 'problem',
+        select: 'title slug difficulty',
+        // FIX: Use transform to ensure problem is a plain object
+        transform: (doc) => {
+          if (!doc) return null;
+          return {
+            _id: doc._id,
+            title: doc.title || 'Unknown Problem',
+            slug: doc.slug || '',
+            difficulty: doc.difficulty || 'medium'
+          };
+        }
+      })
       .select('-code -executionResults -aiAnalysis')
       .sort(sort)
       .skip(skip)
-      .limit(limitNum),
-    Submission.countDocuments(filter)
-  ]);
-  
-  const stats = await Submission.aggregate([
-    { $match: filter },
-    { $group: {
-      _id: null,
-      total: { $sum: 1 },
-      accepted: { 
-        $sum: { $cond: [{ $eq: ['$verdict', VERDICT.ACCEPTED] }, 1, 0] }
-      },
-      avgRuntime: { $avg: { $cond: [{ $eq: ['$verdict', VERDICT.ACCEPTED] }, '$runtime', null] } }
-    }}
-  ]);
-  
-  res.status(200).json(
-    ApiResponse.paginated(
-      {
-        submissions,
-        stats: stats[0] || { total: 0, accepted: 0, avgRuntime: 0 }
-      },
-      {
-        page: parseInt(page),
-        limit: limitNum,
-        total,
-        pages: Math.ceil(total / limitNum)
-      },
-      'Submissions fetched successfully'
-    )
-  );
+      .limit(limitNum)
+      .lean(); // ADD THIS: Get plain objects instead of mongoose documents
+    
+    const total = await Submission.countDocuments(filter);
+    
+    const stats = await Submission.aggregate([
+      { $match: filter },
+      { $group: {
+        _id: null,
+        total: { $sum: 1 },
+        accepted: { 
+          $sum: { $cond: [{ $eq: ['$verdict', VERDICT.ACCEPTED] }, 1, 0] }
+        },
+        avgRuntime: { $avg: { $cond: [{ $eq: ['$verdict', VERDICT.ACCEPTED] }, '$runtime', null] } }
+      }}
+    ]);
+    
+    console.log(`✅ Found ${submissions.length} submissions out of ${total} total`);
+    
+    res.status(200).json(
+      ApiResponse.success(
+        {
+          submissions,
+          pagination: {
+            page: parseInt(page),
+            limit: limitNum,
+            total,
+            pages: Math.ceil(total / limitNum)
+          },
+          stats: stats[0] || { total: 0, accepted: 0, avgRuntime: 0 }
+        },
+        'Submissions fetched successfully'
+      )
+    );
+  } catch (error) {
+    console.error('❌ Error in getUserSubmissions:', error);
+    console.error('Stack trace:', error.stack);
+    throw ApiError.internal('Failed to fetch submissions: ' + error.message);
+  }
 });
 
 // @desc    Get single submission with details
@@ -917,31 +943,44 @@ export const getUserSolvedSubmissions = asyncHandler(async (req, res) => {
 // @route   GET /api/v1/submissions/recent
 // @access  Private
 export const getRecentSubmissions = asyncHandler(async (req, res) => {
-  const { limit = 10 } = req.query;
-  
-  const submissions = await Submission.find({ user: req.user._id })
-    .populate('problem', 'title slug difficulty')
-    .select('verdict runtime language createdAt')
-    .sort({ createdAt: -1 })
-    .limit(Math.min(parseInt(limit), 50));
-  
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  const todaySubmissions = await Submission.countDocuments({
-    user: req.user._id,
-    createdAt: { $gte: today }
-  });
-  
-  res.status(200).json(
-    ApiResponse.success({
-      submissions,
-      stats: {
-        todaySubmissions,
-        totalSubmissions: submissions.length
-      }
-    }, 'Recent submissions fetched')
-  );
+  try {
+    const { limit = 10 } = req.query;
+    
+    console.log('📊 Getting recent submissions for user:', req.user?._id);
+    
+    if (!req.user?._id) {
+      throw ApiError.unauthorized('User not authenticated');
+    }
+    
+    const submissions = await Submission.find({ user: req.user._id })
+      .populate('problem', 'title slug difficulty')
+      .select('verdict runtime language createdAt codeSize')
+      .sort({ createdAt: -1 })
+      .limit(Math.min(parseInt(limit), 50));
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const todaySubmissions = await Submission.countDocuments({
+      user: req.user._id,
+      createdAt: { $gte: today }
+    });
+    
+    console.log(`✅ Found ${submissions.length} recent submissions`);
+    
+    res.status(200).json(
+      ApiResponse.success({
+        submissions,
+        stats: {
+          todaySubmissions,
+          totalSubmissions: submissions.length
+        }
+      }, 'Recent submissions fetched')
+    );
+  } catch (error) {
+    console.error('❌ Error in getRecentSubmissions:', error);
+    throw ApiError.internal('Failed to fetch recent submissions: ' + error.message);
+  }
 });
 
 // @desc    Run code without submission (sandbox)

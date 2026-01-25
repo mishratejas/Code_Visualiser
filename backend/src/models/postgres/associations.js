@@ -1,43 +1,70 @@
-import User from './User.models.js';
-import Contest from './Contest.models.js';
-import ContestParticipant from './ContestParticipant.models.js';
+import { sequelize } from '../../db/postgres/index.js';
 
-export const setupAssociations = () => {
+// Define associations - Use lazy imports
+export const defineAssociations = async () => {
   try {
-    // User-Contest relationships (contest creator)
-    Contest.belongsTo(User, { 
-      foreignKey: 'created_by', 
-      as: 'creator',
-      targetKey: 'id'
-    });
+    // Lazy import models to avoid circular dependencies
+    const Contest = (await import('./Contest.models.js')).default;
+    const User = (await import('./User.models.js')).default;
+    const ContestParticipant = (await import('./ContestParticipant.models.js')).default;
     
-    User.hasMany(Contest, { 
-      foreignKey: 'created_by', 
+    // 1. Contest belongs to a User as creator
+    Contest.belongsTo(User, {
+      foreignKey: 'created_by',
+      as: 'creator'
+    });
+
+    // 2. User has many created contests
+    User.hasMany(Contest, {
+      foreignKey: 'created_by',
       as: 'createdContests'
     });
-    
-    // Contest-ContestParticipant relationships
-    Contest.hasMany(ContestParticipant, { 
-      foreignKey: 'contest_id', 
-      as: 'participants' 
+
+    // 3. Contest has many Participants through ContestParticipant
+    Contest.hasMany(ContestParticipant, {
+      foreignKey: 'contest_id',
+      as: 'participants'
     });
     
-    ContestParticipant.belongsTo(Contest, { 
-      foreignKey: 'contest_id' 
+    // 4. User has many ContestParticipant entries
+    User.hasMany(ContestParticipant, {
+      foreignKey: 'user_id',
+      as: 'contestRegistrations'
     });
     
-    // User-ContestParticipant relationships
-    User.hasMany(ContestParticipant, { 
-      foreignKey: 'user_id', 
-      as: 'contestParticipations' 
+    // 5. ContestParticipant belongs to Contest and User
+    ContestParticipant.belongsTo(Contest, {
+      foreignKey: 'contest_id',
+      as: 'contest'
     });
     
-    ContestParticipant.belongsTo(User, { 
-      foreignKey: 'user_id' 
+    ContestParticipant.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user'
     });
     
-    console.log('✅ Database associations set up successfully');
+    // 6. Contest belongs to many Users through ContestParticipant
+    Contest.belongsToMany(User, {
+      through: ContestParticipant,
+      foreignKey: 'contest_id',
+      otherKey: 'user_id',
+      as: 'users'
+    });
+    
+    // 7. User belongs to many Contests through ContestParticipant
+    User.belongsToMany(Contest, {
+      through: ContestParticipant,
+      foreignKey: 'user_id',
+      otherKey: 'contest_id',
+      as: 'contests'
+    });
+    
+    console.log('✅ PostgreSQL associations defined successfully');
+    return true;
   } catch (error) {
-    console.error('❌ Error setting up associations:', error);
+    console.error('❌ Error defining associations:', error);
+    return false;
   }
 };
+
+export default defineAssociations;

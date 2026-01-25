@@ -26,7 +26,7 @@ const User = sequelize.define('User', {
   password_hash: {
     type: DataTypes.STRING(255),
     allowNull: false,
-    field: 'password_hash' // Explicitly map to snake_case column
+    field: 'password_hash'
   },
   
   role: {
@@ -151,8 +151,8 @@ const User = sequelize.define('User', {
   }
 }, {
   tableName: 'users',
-  timestamps: true, // This will use createdAt and updatedAt
-  underscored: true, // This tells Sequelize to use snake_case for timestamps
+  timestamps: true,
+  underscored: true,
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 });

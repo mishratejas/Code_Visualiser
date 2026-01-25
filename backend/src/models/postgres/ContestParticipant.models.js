@@ -1,7 +1,5 @@
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../../db/postgres/index.js';
-import User from './User.models.js';
-import Contest from './Contest.models.js';
 
 const ContestParticipant = sequelize.define('ContestParticipant', {
   id: {
@@ -13,19 +11,11 @@ const ContestParticipant = sequelize.define('ContestParticipant', {
   user_id: {
     type: DataTypes.INTEGER,
     allowNull: false,
-    references: {
-      model: User,
-      key: 'id'
-    }
   },
   
   contest_id: {
     type: DataTypes.INTEGER,
     allowNull: false,
-    references: {
-      model: Contest,
-      key: 'id'
-    }
   },
   
   score: {
@@ -74,12 +64,5 @@ const ContestParticipant = sequelize.define('ContestParticipant', {
     }
   ]
 });
-
-// Relationships
-ContestParticipant.belongsTo(User, { foreignKey: 'user_id' });
-ContestParticipant.belongsTo(Contest, { foreignKey: 'contest_id' });
-
-User.hasMany(ContestParticipant, { foreignKey: 'user_id' });
-Contest.hasMany(ContestParticipant, { foreignKey: 'contest_id' });
 
 export default ContestParticipant;

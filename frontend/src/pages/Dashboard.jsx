@@ -50,12 +50,23 @@ const Dashboard = () => {
       }
 
       try {
-        // Fetch submissions
-        const submissionsRes = await api.get('/submissions', { 
-          params: { limit: 10 } 
-        }).catch(() => ({ data: { submissions: [] } }));
+        // Fetch submissions - FIXED: Handle different response structures
+        let submissionsData = [];
+        try {
+          const submissionsRes = await api.get('/submissions', { 
+            params: { limit: 10 } 
+          });
+          // Handle different response structures
+          submissionsData = submissionsRes.submissions || 
+                          submissionsRes.data?.submissions || 
+                          submissionsRes.data || 
+                          [];
+        } catch (submissionsError) {
+          console.log('Submissions endpoint error, using empty array:', submissionsError);
+          submissionsData = [];
+        }
         
-        setRecentSubmissions(submissionsRes.data?.submissions || submissionsRes.data || []);
+        setRecentSubmissions(submissionsData);
 
         // Fetch upcoming contests with fallback
         let contestsData = [];
@@ -63,7 +74,10 @@ const Dashboard = () => {
           const contestsRes = await api.get('/contests', { 
             params: { status: 'upcoming', limit: 3 } 
           });
-          contestsData = contestsRes.data?.contests || contestsRes.data || [];
+          contestsData = contestsRes.contests || 
+                        contestsRes.data?.contests || 
+                        contestsRes.data || 
+                        [];
         } catch (contestError) {
           console.log('Contests endpoint not available, using mock data');
           contestsData = [
@@ -103,7 +117,7 @@ const Dashboard = () => {
         let userStats = {};
         try {
           const statsRes = await api.get(`/users/${user._id}/stats`);
-          userStats = statsRes.data || {};
+          userStats = statsRes.data || statsRes || {};
         } catch (statsError) {
           console.log('User stats endpoint not available, using fallback');
           userStats = {
@@ -310,7 +324,7 @@ const Dashboard = () => {
         />
       </div>
 
-      {/* Charts Section - Enhanced */}
+      {/* Charts Section - Enhanced - FIXED */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Activity Chart - Enhanced */}
         <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl p-6 border border-gray-700/50">
@@ -330,48 +344,51 @@ const Dashboard = () => {
               </span>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={activityData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeOpacity={0.5} />
-              <XAxis dataKey="day" stroke="#9CA3AF" fontSize={12} />
-              <YAxis stroke="#9CA3AF" fontSize={12} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#1F2937',
-                  border: 'none',
-                  borderRadius: '8px',
-                  backdropFilter: 'blur(10px)',
-                }}
-                formatter={(value) => [value, 'count']}
-              />
-              <Area
-                type="monotone"
-                dataKey="submissions"
-                stackId="1"
-                stroke="url(#colorSubmissions)"
-                fill="url(#colorSubmissions)"
-                strokeWidth={2}
-              />
-              <Area
-                type="monotone"
-                dataKey="solved"
-                stackId="2"
-                stroke="url(#colorSolved)"
-                fill="url(#colorSolved)"
-                strokeWidth={2}
-              />
-              <defs>
-                <linearGradient id="colorSubmissions" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.1}/>
-                </linearGradient>
-                <linearGradient id="colorSolved" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#10B981" stopOpacity={0.1}/>
-                </linearGradient>
-              </defs>
-            </AreaChart>
-          </ResponsiveContainer>
+          {/* FIXED: Added fixed height container */}
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={activityData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeOpacity={0.5} />
+                <XAxis dataKey="day" stroke="#9CA3AF" fontSize={12} />
+                <YAxis stroke="#9CA3AF" fontSize={12} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#1F2937',
+                    border: 'none',
+                    borderRadius: '8px',
+                    backdropFilter: 'blur(10px)',
+                  }}
+                  formatter={(value) => [value, 'count']}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="submissions"
+                  stackId="1"
+                  stroke="url(#colorSubmissions)"
+                  fill="url(#colorSubmissions)"
+                  strokeWidth={2}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="solved"
+                  stackId="2"
+                  stroke="url(#colorSolved)"
+                  fill="url(#colorSolved)"
+                  strokeWidth={2}
+                />
+                <defs>
+                  <linearGradient id="colorSubmissions" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.1}/>
+                  </linearGradient>
+                  <linearGradient id="colorSolved" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#10B981" stopOpacity={0.1}/>
+                  </linearGradient>
+                </defs>
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
         {/* Difficulty Distribution - Enhanced */}
@@ -385,7 +402,8 @@ const Dashboard = () => {
               Total: {difficultyData.reduce((sum, item) => sum + item.value, 0)}
             </div>
           </div>
-          <div className="flex items-center justify-center h-64">
+          {/* FIXED: Added fixed height container */}
+          <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -458,15 +476,15 @@ const Dashboard = () => {
                   className="group flex items-center justify-between p-4 bg-gray-800/50 rounded-xl hover:bg-gray-700/50 transition-all duration-300 hover:scale-[1.02]"
                 >
                   <div className="flex items-center gap-4">
-                    <div className={`p-2 rounded-lg ${submission.status === 'accepted' 
+                    <div className={`p-2 rounded-lg ${submission.verdict === 'accepted' 
                       ? 'bg-green-500/20 text-green-400' 
-                      : submission.status === 'pending'
+                      : submission.verdict === 'pending'
                         ? 'bg-yellow-500/20 text-yellow-400'
                         : 'bg-red-500/20 text-red-400'
                     }`}>
-                      {submission.status === 'accepted' ? (
+                      {submission.verdict === 'accepted' ? (
                         <FiCheckCircle className="h-5 w-5" />
-                      ) : submission.status === 'pending' ? (
+                      ) : submission.verdict === 'pending' ? (
                         <FiClock className="h-5 w-5" />
                       ) : (
                         <FiZap className="h-5 w-5" />
@@ -484,23 +502,23 @@ const Dashboard = () => {
                           {submission.language || 'Unknown'}
                         </span>
                         <span>•</span>
-                        <span>{new Date(submission.submittedAt || Date.now()).toLocaleDateString()}</span>
+                        <span>{new Date(submission.createdAt || Date.now()).toLocaleDateString()}</span>
                       </div>
                     </div>
                   </div>
                   <div className="text-right">
                     <span
-                      className={`px-3 py-1 rounded-full text-sm font-semibold ${submission.status === 'accepted'
+                      className={`px-3 py-1 rounded-full text-sm font-semibold ${submission.verdict === 'accepted'
                           ? 'bg-green-500/20 text-green-300 border border-green-500/30'
-                          : submission.status === 'pending'
+                          : submission.verdict === 'pending'
                             ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
                             : 'bg-red-500/20 text-red-300 border border-red-500/30'
                         }`}
                     >
-                      {submission.status?.toUpperCase() || 'UNKNOWN'}
+                      {submission.verdict?.toUpperCase() || 'UNKNOWN'}
                     </span>
                     <div className="text-sm text-gray-400 mt-1">
-                      {submission.executionTime || 0} ms
+                      {submission.runtime || 0} ms
                     </div>
                   </div>
                 </div>

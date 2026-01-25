@@ -77,14 +77,26 @@ const Problems = () => {
 const fetchUserSolved = async () => {
   try {
     const response = await api.get('/submissions/user/solved');
+    console.log('Solved problems response:', response);
     
-    console.log('Solved problems:', response.data);
-    
-    // Extract the data array from the response
-    if (response.data && response.data.success && Array.isArray(response.data.data)) {
-      setUserSolved(response.data.data); // This should be an array of IDs
+    // Handle different response structures
+    if (response && response.data) {
+      // Structure: { success: true, data: [...] }
+      if (response.success && Array.isArray(response.data)) {
+        setUserSolved(response.data);
+      } 
+      // Structure: { data: [...] }
+      else if (Array.isArray(response.data)) {
+        setUserSolved(response.data);
+      }
+      // Structure: [...]
+      else if (Array.isArray(response)) {
+        setUserSolved(response);
+      } else {
+        console.warn('Unexpected solved problems format:', response);
+        setUserSolved([]);
+      }
     } else {
-      console.error('Unexpected response format:', response.data);
       setUserSolved([]);
     }
   } catch (error) {

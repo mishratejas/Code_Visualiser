@@ -12,25 +12,34 @@ import mongoose from 'mongoose';
 export const getUserProfile = asyncHandler(async (req, res) => {
   const { identifier } = req.params;
   
+  console.log('🔍 Getting user profile for:', identifier);
+  
   // Determine if identifier is ObjectId or username
   const isObjectId = mongoose.Types.ObjectId.isValid(identifier);
   const query = isObjectId ? { _id: identifier } : { username: identifier };
   
+  console.log('Query:', query);
+  
   // Select fields based on who's viewing
   const isSelfViewing = req.user && (
     (isObjectId && req.user._id.toString() === identifier) ||
-    (!isObjectId && req.user.username === identifier)
+    (!isObjectId && req.user?.username === identifier)
   );
   
   const selectFields = isSelfViewing 
     ? '-password -security.twoFactorSecret'
     : 'username profile.name profile.avatar profile.bio profile.country profile.university profile.github profile.linkedin profile.website stats role isProfileComplete createdAt';
   
+  console.log('Select fields:', selectFields);
+  
   const user = await User.findOne(query).select(selectFields);
   
   if (!user) {
+    console.log('❌ User not found:', identifier);
     throw ApiError.notFound('User not found');
   }
+  
+  console.log('✅ Found user:', user.username);
   
   // Get user's recent activity
   const recentSubmissions = await Submission.find({ user: user._id })
@@ -63,9 +72,18 @@ export const getUserProfile = asyncHandler(async (req, res) => {
     }}
   ]);
   
-  // Prepare response
+  // Prepare response - FIXED: Use safe object handling
   const response = {
-    user: user.toObject(),
+    user: {
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+      profile: user.profile || {},
+      stats: user.stats || {},
+      role: user.role,
+      isProfileComplete: user.isProfileComplete,
+      createdAt: user.createdAt
+    },
     stats: {
       recentSubmissions,
       solvedByDifficulty: solvedStats.reduce((acc, curr) => {
@@ -78,14 +96,14 @@ export const getUserProfile = asyncHandler(async (req, res) => {
   // Add additional info if viewing own profile
   if (isSelfViewing) {
     // Get bookmarked problems
-    const bookmarks = await Problem.find({ _id: { $in: user.bookmarks } })
+    const bookmarks = await Problem.find({ _id: { $in: user.bookmarks || [] } })
       .select('title slug difficulty')
       .limit(10);
     
     // Get attempted but unsolved problems
     const attemptedUnsolved = await Problem.find({ 
       _id: { 
-        $in: user.attemptedProblems
+        $in: (user.attemptedProblems || [])
           .filter(ap => !ap.solved)
           .map(ap => ap.problem)
       }
@@ -96,13 +114,15 @@ export const getUserProfile = asyncHandler(async (req, res) => {
     response.additionalInfo = {
       bookmarks,
       attemptedUnsolved,
-      preferences: user.preferences,
+      preferences: user.preferences || {},
       security: {
-        twoFactorEnabled: user.security.twoFactorEnabled,
-        lastLogin: user.security.lastLogin
+        twoFactorEnabled: user.security?.twoFactorEnabled || false,
+        lastLogin: user.security?.lastLogin || null
       }
     };
   }
+  
+  console.log('✅ Sending user profile response');
   
   res.status(200).json(
     ApiResponse.success(response, 'User profile fetched successfully')
