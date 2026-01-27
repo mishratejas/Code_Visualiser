@@ -908,35 +908,47 @@ export const getProblemSubmissions = asyncHandler(async (req, res) => {
   );
 });
 
-// @desc    Get user's solved problem IDs
+// @desc    Get user's solved submissions
 // @route   GET /api/v1/submissions/user/solved
 // @access  Private
 export const getUserSolvedSubmissions = asyncHandler(async (req, res) => {
-  try {
-    const userId = req.user._id;
-    
-    const solvedSubmissions = await Submission.find({
-      user: userId,
-      verdict: VERDICT.ACCEPTED
-    }).select('problem -_id');
-    
-    const solvedProblemIds = [...new Set(
-      solvedSubmissions
-        .map(s => s.problem ? s.problem.toString() : null)
-        .filter(id => id !== null)
-    )];
-    
-    res.status(200).json(
-      ApiResponse.success({
-        success: true,
-        count: solvedProblemIds.length,
-        data: solvedProblemIds
-      }, 'Solved problems fetched successfully')
-    );
-  } catch (error) {
-    console.error('Error fetching solved submissions:', error);
-    throw ApiError.internal('Failed to fetch solved problems');
-  }
+  const userId = req.user._id;
+
+  console.log('📊 Fetching solved problems for user:', userId);
+
+  const allSubmissions = await Submission.find({
+    user: userId
+  }).select('problem verdict').lean();
+
+  const attemptedProblems = new Set();
+  const solvedProblems = new Set();
+
+  allSubmissions.forEach(sub => {
+    const problemId = sub.problem.toString();
+    if (sub.verdict === 'accepted') {
+      solvedProblems.add(problemId);
+    } else {
+      if (!solvedProblems.has(problemId)) {
+        attemptedProblems.add(problemId);
+      }
+    }
+  });
+
+  // Remove solved from attempted
+  solvedProblems.forEach(id => attemptedProblems.delete(id));
+
+  const response = {
+    solvedProblems: Array.from(solvedProblems),
+    attemptedProblems: Array.from(attemptedProblems),
+    totalSolved: solvedProblems.size,
+    totalAttempted: attemptedProblems.size
+  };
+
+  console.log('✅ Solved:', response.totalSolved, 'Attempted:', response.totalAttempted);
+
+  res.status(200).json(
+    ApiResponse.success(response, 'Solved problems fetched successfully')
+  );
 });
 
 // @desc    Get recent submissions for dashboard

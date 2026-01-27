@@ -99,12 +99,19 @@ const Submissions = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
-
-  const getStatusIcon = (submission) => {
-    const statusConfig = statusOptions.find(s => s.value === submission.status);
-    if (!statusConfig) return null;
-    const Icon = statusConfig.icon;
-    return <Icon className={`${statusConfig.color} mr-2`} />;
+const getVerdictInfo = (verdictValue) => {
+  const normalizedVerdict = (verdictValue || '').toLowerCase().replace(/ /g, '_');
+  const verdictConfig = statusOptions.find(v => v.value === normalizedVerdict);
+  
+  if (!verdictConfig) {
+    return {
+      label: verdictValue || 'Unknown',
+      icon: TbAlertCircle,
+      color: 'text-gray-500'
+    };
+  }
+  
+  return verdictConfig;
   };
 
   const formatBytes = (bytes) => {
@@ -257,62 +264,63 @@ const Submissions = () => {
         {/* Submissions */}
         {submissions.length > 0 ? (
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
-            {submissions.map((submission) => (
-              <div
-                key={submission._id}
-                className="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition"
-              >
-                <div className="col-span-2 flex items-center">
-                  {getStatusIcon(submission)}
-                  <span className={`text-sm font-medium capitalize ${submission.status === 'accepted'
-                      ? 'text-green-600 dark:text-green-400'
-                      : submission.status === 'pending'
-                        ? 'text-blue-600 dark:text-blue-400'
-                        : 'text-red-600 dark:text-red-400'
-                    }`}>
-                    {/* FIXED: Added null check before replace */}
-                    {submission.status ? submission.status.replace(/_/g, ' ') : 'Unknown'}
-                  </span>
-                </div>
-                <div className="col-span-4">
-                  <Link
-                    to={`/problem/${submission.problem?._id || '#'}`}
-                    className="font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition"
-                  >
-                    {submission.problem?.title || 'Unknown Problem'}
-                  </Link>
-                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    {new Date(submission.submittedAt || submission.createdAt || Date.now()).toLocaleString()}
-                  </div>
-                </div>
-                <div className="col-span-2">
-                  <div className="flex items-center">
-                    <FiCode className="mr-2 text-gray-400" />
-                    <span className="text-gray-700 dark:text-gray-300">
-                      {submission.language || 'Unknown'}
-                    </span>
-                  </div>
-                </div>
-                <div className="col-span-2">
-                  <div className="flex items-center">
-                    <FiCpu className="mr-2 text-gray-400" />
-                    <span className="text-gray-700 dark:text-gray-300">
-                      {submission.executionTime || submission.runtime || 0} ms
-                    </span>
-                  </div>
-                </div>
-                <div className="col-span-2">
-                  <div className="flex items-center">
-                    <div className="mr-2">
-                      <div className="h-2 w-2 rounded-full bg-gray-400"></div>
-                    </div>
-                    <span className="text-gray-700 dark:text-gray-300">
-                      {formatBytes(submission.memoryUsed || submission.memory || 0)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
+            {submissions.map((submission) => {
+  // Get verdict info
+  const verdict = submission.verdict || submission.status;
+  const verdictInfo = getVerdictInfo(verdict);
+  const Icon = verdictInfo.icon;
+  
+  return (
+    <div
+      key={submission._id}
+      className="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition"
+    >
+      <div className="col-span-2 flex items-center">
+        <Icon className={`${verdictInfo.color} mr-2`} />
+        <span className={`text-sm font-medium ${verdictInfo.color}`}>
+          {verdictInfo.label}
+        </span>
+      </div>
+      <div className="col-span-4">
+        <Link
+          to={`/problem/${submission.problem?._id || '#'}`}
+          className="font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition"
+        >
+          {submission.problem?.title || 'Unknown Problem'}
+        </Link>
+        <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          {new Date(submission.submittedAt || submission.createdAt || Date.now()).toLocaleString()}
+        </div>
+      </div>
+      <div className="col-span-2">
+        <div className="flex items-center">
+          <FiCode className="mr-2 text-gray-400" />
+          <span className="text-gray-700 dark:text-gray-300">
+            {submission.language || 'Unknown'}
+          </span>
+        </div>
+      </div>
+      <div className="col-span-2">
+        <div className="flex items-center">
+          <FiCpu className="mr-2 text-gray-400" />
+          <span className="text-gray-700 dark:text-gray-300">
+            {submission.executionTime || submission.runtime || 0} ms
+          </span>
+        </div>
+      </div>
+      <div className="col-span-2">
+        <div className="flex items-center">
+          <div className="mr-2">
+            <div className="h-2 w-2 rounded-full bg-gray-400"></div>
+          </div>
+          <span className="text-gray-700 dark:text-gray-300">
+            {formatBytes(submission.memoryUsed || submission.memory || 0)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+})}
           </div>
         ) : (
           <div className="text-center py-12">
@@ -390,7 +398,7 @@ const Submissions = () => {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {submissions.filter(s => s.status === 'accepted').length}
+                {submissions.filter(s => (s.verdict ||s.status) === 'accepted').length}
               </div>
               <div className="text-sm text-gray-600 dark:text-gray-400">
                 Accepted
@@ -403,7 +411,7 @@ const Submissions = () => {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {submissions.filter(s => s.status === 'wrong_answer').length}
+                {submissions.filter(s => (s.verdict ||s.status) === 'wrong_answer').length}
               </div>
               <div className="text-sm text-gray-600 dark:text-gray-400">
                 Wrong Answer
@@ -416,7 +424,7 @@ const Submissions = () => {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {submissions.filter(s => s.status === 'time_limit_exceeded').length}
+                {submissions.filter(s => (s.verdict ||s.status) === 'time_limit_exceeded').length}
               </div>
               <div className="text-sm text-gray-600 dark:text-gray-400">
                 Time Limit

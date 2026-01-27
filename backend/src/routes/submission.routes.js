@@ -5,59 +5,37 @@ import {
   getSubmission,
   getProblemSubmissions,
   getRecentSubmissions,
-  runCode
+  runCode,
+  getUserSolvedSubmissions
 } from '../controllers/submission.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 import { submissionLimiter } from '../middlewares/rateLimiter.middleware.js';
 import { SubmissionValidation } from '../middlewares/validate.middleware.js';
-import {getUserSolvedSubmissions} from "../controllers/submission.controller.js";
 
 const router = express.Router();
 
 // Apply authentication to all routes
 router.use(authenticate);
 
+// ⭐ MOVE THIS BEFORE OTHER ROUTES
+router.get('/user/solved', getUserSolvedSubmissions);  // IMPORTANT: Must be before '/'
+
+// Run code in sandbox
+router.post('/run', SubmissionValidation.submit, runCode);
+
 // Submit code with rate limiting
-router.post(
-  '/',
-  submissionLimiter,
-  SubmissionValidation.submit,
-  submitCode
-);
+router.post('/', submissionLimiter, SubmissionValidation.submit, submitCode);
 
-// Run code in sandbox (no rate limiting for testing)
-router.post(
-  '/run',
-  SubmissionValidation.submit,
-  runCode
-);
-router.get(
-  '/user/solved',
-  getUserSolvedSubmissions  // Add this line
-);
 // Get user submissions with filters
-router.get(
-  '/',
-  SubmissionValidation.list,
-  getUserSubmissions
-);
+router.get('/', SubmissionValidation.list, getUserSubmissions);
 
-// Get recent submissions for dashboard
-router.get(
-  '/recent',
-  getRecentSubmissions
-);
+// Get recent submissions
+router.get('/recent', getRecentSubmissions);
 
 // Get single submission
-router.get(
-  '/:id',
-  getSubmission
-);
+router.get('/:id', getSubmission);
 
 // Get problem-specific submissions
-router.get(
-  '/problem/:problemId',
-  getProblemSubmissions
-);
+router.get('/problem/:problemId', getProblemSubmissions);
 
 export default router;

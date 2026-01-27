@@ -19,37 +19,42 @@ import { UserValidation } from '../middlewares/validate.middleware.js';
 
 const router = express.Router();
 
-// Public routes
+// ============ PUBLIC ROUTES (No Auth Required) ============
 router.get('/leaderboard', getLeaderboard);
 router.get('/search', searchUsers);
-router.get('/:identifier', getUserProfile);
-router.get('/:userId/stats', getUserStats);
-router.get('/:userId/activity', getUserActivity);
-router.get('/:userId/solved', getSolvedProblems);
 
-// Protected routes (authenticated users)
+// ============ AUTHENTICATED ROUTES ============
 router.use(authenticate);
 
-// Profile management
-router.put('/profile', UserValidation.updateProfile, updateUserProfile);
-router.put('/preferences', UserValidation.updatePreferences, updateUserPreferences);
+// Current user endpoints (use /me)
+router.get('/me/profile', getUserProfile);
+router.put('/me/profile', UserValidation.updateProfile, updateUserProfile);
+router.put('/me/preferences', UserValidation.updatePreferences, updateUserPreferences);
 
-// Bookmarks
-router.get('/:userId/bookmarks', getBookmarks);
-router.post('/bookmarks/:problemId', toggleBookmark);
+// ⭐ CRITICAL: These are what your Problems.jsx is calling
+router.get('/me/bookmarks', getBookmarks);           // GET /api/v1/users/me/bookmarks
+router.post('/bookmarks/:problemId', toggleBookmark); // POST /api/v1/users/bookmarks/:problemId
+router.get('/me/solved', getSolvedProblems);          // GET /api/v1/users/me/solved
 
 // Streak
 router.post('/streak/update', updateStreak);
 
-// Attempted problems (only self)
-router.get('/:userId/attempted', getAttemptedProblems);
+// Attempted problems
+router.get('/me/attempted', getAttemptedProblems);
 
 // Account management
 router.delete('/account', deleteAccount);
 
-// Admin only routes
-router.get('/admin/all', authenticate, authorize('admin'), async (req, res) => {
-  // Admin route to get all users
+// ============ PUBLIC USER PROFILES (Must come AFTER /me routes) ============
+router.get('/:identifier', getUserProfile);         // GET /api/v1/users/username
+router.get('/:userId/stats', getUserStats);         // GET /api/v1/users/:userId/stats
+router.get('/:userId/activity', getUserActivity);   // GET /api/v1/users/:userId/activity
+
+// ============ ADMIN ROUTES ============
+router.get('/admin/all', authorize('admin'), async (req, res) => {
+  const User = (await import('../models/mongo/User.model.js')).default;
+  const ApiResponse = (await import('../utils/ApiResponse.js')).default;
+  
   const users = await User.find({}).select('-password');
   res.json(ApiResponse.success({ users }, 'All users fetched'));
 });

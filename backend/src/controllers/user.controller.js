@@ -420,86 +420,34 @@ export const getUserActivity = asyncHandler(async (req, res) => {
   );
 });
 
-// @desc    Get user's solved problems
-// @route   GET /api/v1/users/:userId/solved
-// @access  Public
+// @desc    Get solved problems
+// @route   GET /api/v1/users/me/solved
+// @access  Private
 export const getSolvedProblems = asyncHandler(async (req, res) => {
-  const { userId } = req.params;
-  const { difficulty, tags, page = 1, limit = 20 } = req.query;
-  
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-  const limitNum = Math.min(parseInt(limit), 50);
-  
-  // Get accepted submissions
-  const matchStage = { 
-    user: mongoose.Types.ObjectId(userId),
-    verdict: 'accepted'
-  };
-  
-  const aggregation = [
-    { $match: matchStage },
-    { $group: {
-      _id: '$problem',
-      firstSolved: { $min: '$createdAt' },
-      bestRuntime: { $min: '$runtime' },
-      submissionCount: { $sum: 1 }
-    }},
-    { $lookup: {
-      from: 'problems',
-      localField: '_id',
-      foreignField: '_id',
-      as: 'problem'
-    }},
-    { $unwind: '$problem' }
-  ];
-  
-  // Apply filters
-  if (difficulty) {
-    aggregation.push({ $match: { 'problem.difficulty': difficulty } });
+  const userId = req.user._id;
+
+  const user = await User.findById(userId)
+    .select('solvedProblems attemptedProblems');
+
+  if (!user) {
+    throw ApiError.notFound('User not found');
   }
-  
-  if (tags) {
-    const tagArray = tags.split(',');
-    aggregation.push({ $match: { 'problem.tags': { $all: tagArray } } });
-  }
-  
-  // Continue aggregation
-  aggregation.push(
-    { $sort: { firstSolved: -1 } },
-    { $skip: skip },
-    { $limit: limitNum },
-    { $project: {
-      problem: {
-        _id: '$problem._id',
-        title: '$problem.title',
-        slug: '$problem.slug',
-        difficulty: '$problem.difficulty',
-        tags: '$problem.tags'
-      },
-      firstSolved: 1,
-      bestRuntime: 1,
-      submissionCount: 1
-    }}
-  );
-  
-  const solvedProblems = await Submission.aggregate(aggregation);
-  
-  // Get total count
-  const countAggregation = [...aggregation];
-  countAggregation.splice(countAggregation.length - 4, 4); // Remove sort, skip, limit, project
-  countAggregation.push({ $count: 'total' });
-  
-  const countResult = await Submission.aggregate(countAggregation);
-  const total = countResult[0]?.total || 0;
-  
+
+  const solvedIds = user.solvedProblems?.map(sp => 
+    sp.problem ? sp.problem.toString() : null
+  ).filter(Boolean) || [];
+
+  const attemptedIds = user.attemptedProblems?.map(ap => 
+    ap.problem ? ap.problem.toString() : null
+  ).filter(Boolean) || [];
+
   res.status(200).json(
-    ApiResponse.paginated(
-      { solvedProblems },
+    ApiResponse.success(
       {
-        page: parseInt(page),
-        limit: limitNum,
-        total,
-        pages: Math.ceil(total / limitNum)
+        solvedProblems: solvedIds,
+        attemptedProblems: attemptedIds,
+        totalSolved: solvedIds.length,
+        totalAttempted: attemptedIds.length
       },
       'Solved problems fetched successfully'
     )
@@ -542,78 +490,68 @@ export const getAttemptedProblems = asyncHandler(async (req, res) => {
   );
 });
 
-// @desc    Get user's bookmarks
-// @route   GET /api/v1/users/:userId/bookmarks
-// @access  Private (only self)
+// @desc    Get user bookmarks
+// @route   GET /api/v1/users/me/bookmarks
+// @access  Private
 export const getBookmarks = asyncHandler(async (req, res) => {
-  const { userId } = req.params;
-  const { page = 1, limit = 20 } = req.query;
-  
-  // Check if user is viewing their own data
-  if (req.user._id.toString() !== userId) {
-    throw ApiError.forbidden('You can only view your own bookmarks');
-  }
-  
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-  const limitNum = Math.min(parseInt(limit), 50);
-  
-  const user = await User.findById(userId).select('bookmarks');
-  
+  const userId = req.user._id;
+
+  const user = await User.findById(userId)
+    .select('bookmarks')
+    .populate({
+      path: 'bookmarks',
+      select: 'title slug difficulty tags metadata.acceptanceRate'
+    });
+
   if (!user) {
     throw ApiError.notFound('User not found');
   }
-  
-  const [bookmarks, total] = await Promise.all([
-    Problem.find({ _id: { $in: user.bookmarks } })
-      .select('title slug difficulty tags metadata.acceptanceRate')
-      .skip(skip)
-      .limit(limitNum),
-    Problem.countDocuments({ _id: { $in: user.bookmarks } })
-  ]);
-  
+
   res.status(200).json(
-    ApiResponse.paginated(
-      { bookmarks },
-      {
-        page: parseInt(page),
-        limit: limitNum,
-        total,
-        pages: Math.ceil(total / limitNum)
+    ApiResponse.success(
+      { 
+        bookmarks: user.bookmarks || [],
+        count: user.bookmarks?.length || 0
       },
       'Bookmarks fetched successfully'
     )
   );
 });
 
-// @desc    Toggle bookmark for a problem
+// @desc    Toggle bookmark
 // @route   POST /api/v1/users/bookmarks/:problemId
 // @access  Private
 export const toggleBookmark = asyncHandler(async (req, res) => {
   const { problemId } = req.params;
-  
-  // Check if problem exists
-  const problem = await Problem.findById(problemId);
-  if (!problem) {
-    throw ApiError.notFound('Problem not found');
+  const userId = req.user._id;
+
+  const user = await User.findById(userId);
+  if (!user) {
+    throw ApiError.notFound('User not found');
   }
-  
-  const user = await User.findById(req.user._id);
-  
-  // Toggle bookmark
-  await user.toggleBookmark(problemId);
-  
-  // Update problem bookmark count
-  const isBookmarked = user.bookmarks.includes(problemId);
-  if (isBookmarked) {
-    await problem.addBookmarkCount();
+
+  const bookmarkIndex = user.bookmarks.findIndex(
+    id => id.toString() === problemId
+  );
+
+  let message;
+  if (bookmarkIndex > -1) {
+    user.bookmarks.splice(bookmarkIndex, 1);
+    message = 'Bookmark removed';
   } else {
-    await problem.removeBookmarkCount();
+    user.bookmarks.push(problemId);
+    message = 'Bookmark added';
   }
-  
+
+  await user.save();
+
   res.status(200).json(
     ApiResponse.success(
-      { bookmarked: isBookmarked },
-      isBookmarked ? 'Problem bookmarked' : 'Bookmark removed'
+      { 
+        bookmarks: user.bookmarks,
+        isBookmarked: bookmarkIndex === -1
+      },
+      message
     )
   );
 });
