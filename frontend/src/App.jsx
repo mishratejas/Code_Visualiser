@@ -19,17 +19,27 @@ const Problems = lazy(() => import('./pages/Problems'));
 const Problem = lazy(() => import('./pages/Problem'));
 const Submit = lazy(() => import('./pages/Submit'));
 const Submissions = lazy(() => import('./pages/Submissions'));
-const Leaderboard = lazy(() => import('./pages/Leaderboard'));
 const Contests = lazy(() => import('./pages/Contests'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Settings = lazy(() => import('./pages/Settings'));
 
+// NEW PAGES - Import the missing pages
+const ProblemCategories = lazy(() => import('./pages/ProblemCategories'));
+const FavoriteProblems = lazy(() => import('./pages/FavoriteProblems'));
+const PracticePage = lazy(() => import('./pages/PracticePage'));
+const Leaderboard = lazy(() => import('./pages/Leaderboard'));
+const Achievements = lazy(() => import('./pages/Achievements'));
+const Help = lazy(() => import('./pages/Help'));
+const Notifications = lazy(() => import('./pages/Notifications'));
+
 // Create a wrapper component that shows sidebar for protected routes
 const Layout = ({ children, showSidebar = false }) => {
+  const [mobileOpen, setMobileOpen] = React.useState(false);
+
   return (
     <div className="flex flex-1">
-      {showSidebar && <Sidebar />}
-      <main className="flex-1 container mx-auto px-4 py-8">
+      {showSidebar && <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />}
+      <main className="flex-1">
         {children}
       </main>
     </div>
@@ -61,6 +71,7 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
+                  {/* PROBLEMS ROUTES */}
                   <Route path="/problems" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -76,6 +87,31 @@ const App = () => {
                       </Layout>
                     </PrivateRoute>
                   } />
+
+                  {/* NEW PROBLEM ROUTES */}
+                  <Route path="/problems/categories" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <ProblemCategories />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="/problems/favorite" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <FavoriteProblems />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="/problems/practice" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <PracticePage />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
                   
                   <Route path="/submit/:problemId" element={
                     <PrivateRoute>
@@ -85,6 +121,7 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
+                  {/* SUBMISSIONS */}
                   <Route path="/submissions" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -93,6 +130,7 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
+                  {/* LEADERBOARD - NEW */}
                   <Route path="/leaderboard" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -100,7 +138,35 @@ const App = () => {
                       </Layout>
                     </PrivateRoute>
                   } />
+
+                  {/* ACHIEVEMENTS - NEW */}
+                  <Route path="/achievements" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <Achievements />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
+
+                  {/* HELP - NEW */}
+                  <Route path="/help" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <Help />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
+
+                  {/* NOTIFICATIONS - NEW */}
+                  <Route path="/notifications" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <Notifications />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
                   
+                  {/* CONTESTS */}
                   <Route path="/contests" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -109,6 +175,7 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
+                  {/* PROFILE */}
                   <Route path="/profile/:username" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -117,6 +184,7 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
+                  {/* SETTINGS */}
                   <Route path="/settings" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -134,12 +202,17 @@ const App = () => {
                   {/* 404 Route */}
                   <Route path="*" element={
                     <Layout>
-                      <div className="text-center py-12">
-                        <h1 className="text-4xl font-bold text-white mb-4">404</h1>
-                        <p className="text-gray-400 mb-6">Page not found</p>
-                        <a href="/" className="px-6 py-2 bg-gradient-to-r from-rose-600 to-red-600 text-white rounded-lg hover:opacity-90">
-                          Go Home
-                        </a>
+                      <div className="min-h-screen flex items-center justify-center">
+                        <div className="text-center py-12">
+                          <h1 className="text-6xl font-bold text-white mb-4">404</h1>
+                          <p className="text-gray-400 mb-6 text-xl">Page not found</p>
+                          <a 
+                            href="/" 
+                            className="inline-block px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:shadow-lg transition-all font-medium"
+                          >
+                            Go Home
+                          </a>
+                        </div>
                       </div>
                     </Layout>
                   } />

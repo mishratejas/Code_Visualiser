@@ -1,511 +1,413 @@
-import { Op } from 'sequelize';
+import { emitLeaderboardUpdate, emitContestStatus } from '../socket/contestSocket.js';
+import redis from '../config/redis.config.js';
 import Contest from '../models/postgres/Contest.models.js';
+import ContestParticipant from '../models/postgres/ContestParticipant.models.js';
+import ContestSubmission from '../models/postgres/ContestSubmission.models.js';
 import User from '../models/postgres/User.models.js';
-import ApiResponse from '../utils/ApiResponse.js';
-import asyncHandler from '../utils/asyncHandler.js';
+import { Op } from 'sequelize';
 
 // @desc    Get all contests
 // @route   GET /api/v1/contests
-// @access  Public
-export const getContests = asyncHandler(async (req, res) => {
-  const { 
-    status, 
-    type,
-    difficulty,
-    page = 1, 
-    limit = 10,
-    sortBy = 'start_time',
-    sortOrder = 'asc'
-  } = req.query;
-  
-  const offset = (parseInt(page) - 1) * parseInt(limit);
-  const limitNum = Math.min(parseInt(limit), 50);
-  
-  // Build where clause
-  const where = {};
-  
-  if (status && status !== 'all') {
-    where.status = status;
-  }
-  
-  if (type) {
-    where.contest_type = type;
-  }
-  
-  if (difficulty) {
-    where.difficulty = difficulty;
-  }
-  
-  // Calculate upcoming and ongoing contests
-  const now = new Date();
-  
-  // For frontend filters - use Sequelize operators
-  if (status === 'upcoming') {
-    where.start_time = { [Op.gt]: now };
-    // Also ensure status is 'scheduled' for upcoming contests
-    where.status = 'scheduled';
-  } else if (status === 'live' || status === 'ongoing') {
-    where.start_time = { [Op.lte]: now };
-    where.end_time = { [Op.gt]: now };
-    where.status = 'live';
-  } else if (status === 'ended') {
-    where.end_time = { [Op.lte]: now };
-    where.status = 'ended';
-  }
-  
-  // Set sort order
-  const order = [[sortBy, sortOrder.toUpperCase()]];
-  
+export const getContests = async (req, res) => {
   try {
-    const { count, rows: contests } = await Contest.findAndCountAll({
+    const { status, type, page = 1, limit = 10 } = req.query;
+    
+    const where = {};
+    
+    // Filter by status
+    if (status) {
+      where.status = status;
+    }
+    
+    // Filter by type
+    if (type) {
+      where.contest_type = type;
+    }
+    
+    const offset = (page - 1) * limit;
+    
+    const contests = await Contest.findAndCountAll({
       where,
-      limit: limitNum,
-      offset,
-      order,
-      include: [
-        {
-          model: User,
-          as: 'creator',
-          attributes: ['id', 'username', 'profile']
-        }
-      ],
-      attributes: { 
-        exclude: ['registration_password'] 
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['start_time', 'DESC']],
+      attributes: { exclude: ['registration_password'] }
+    });
+    
+    res.json({
+      success: true,
+      data: contests.rows,
+      pagination: {
+        total: contests.count,
+        page: parseInt(page),
+        pages: Math.ceil(contests.count / limit)
       }
     });
-    
-    // Format dates for frontend
-    const formattedContests = contests.map(contest => {
-      const contestData = contest.toJSON();
-      return {
-        ...contestData,
-        _id: contestData.id.toString(), // Add _id for frontend compatibility
-        id: contestData.id.toString(),
-        title: contestData.title,
-        description: contestData.description,
-        startTime: contestData.start_time,
-        endTime: contestData.end_time,
-        duration: contestData.duration_minutes,
-        maxParticipants: contestData.max_participants,
-        isPrivate: contestData.is_private,
-        contestType: contestData.contest_type,
-        tags: contestData.tags || [],
-        participantsCount: 0, // You'll need to add this from ContestParticipant model
-        status: contestData.status, // Use the status from database
-        creator: contestData.creator ? {
-          id: contestData.creator.id,
-          username: contestData.creator.username,
-          ...contestData.creator.profile
-        } : null,
-        createdAt: contestData.createdAt,
-        updatedAt: contestData.updatedAt
-      };
-    });
-    
-    res.status(200).json(
-      ApiResponse.success(
-        {
-          contests: formattedContests,
-          pagination: {
-            page: parseInt(page),
-            limit: limitNum,
-            total: count,
-            pages: Math.ceil(count / limitNum)
-          }
-        },
-        'Contests fetched successfully'
-      )
-    );
   } catch (error) {
-    console.error('Error fetching contests:', error);
-    
-    // Fallback to mock data for now
-    const mockContests = [
-      {
-        _id: '1',
-        id: '1',
-        title: 'Weekly Coding Challenge',
-        description: 'Weekly challenge for all skill levels',
-        startTime: new Date(Date.now() + 86400000),
-        endTime: new Date(Date.now() + 86400000 + 7200000),
-        duration: 120,
-        contestType: 'weekly',
-        type: 'weekly',
-        difficulty: 'medium',
-        maxParticipants: 5000,
-        participants: 1500,
-        participantsCount: 1500,
-        status: 'upcoming',
-        rules: 'Standard rules apply',
-        prizes: ['Certificate', 'Premium Subscription'],
-        tags: ['weekly', 'medium'],
-        isPrivate: false,
-        registrationOpen: true,
-        creator: {
-          id: 1,
-          username: 'Tejas_Mishra',
-          name: 'Tejas Mishra',
-          avatarUrl: 'https://ui-avatars.com/api/?name=Tejas+Mishra&background=random'
-        }
-      }
-    ];
-    
-    res.status(200).json(
-      ApiResponse.success(
-        {
-          contests: mockContests,
-          pagination: {
-            page: 1,
-            limit: limitNum,
-            total: 1,
-            pages: 1
-          }
-        },
-        'Contests fetched successfully (fallback)'
-      )
-    );
+    console.error('Get contests error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch contests' });
   }
-});
+};
 
 // @desc    Get single contest
 // @route   GET /api/v1/contests/:id
-// @access  Public
-export const getContest = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  
+export const getContest = async (req, res) => {
   try {
+    const { id } = req.params;
+    
     const contest = await Contest.findByPk(id, {
+      attributes: { exclude: ['registration_password'] },
       include: [
         {
           model: User,
           as: 'creator',
-          attributes: ['id', 'username', 'profile']
+          attributes: ['id', 'username', 'email']
         }
-      ],
-      attributes: { 
-        exclude: ['registration_password'] 
-      }
+      ]
     });
     
     if (!contest) {
-      return res.status(404).json(
-        ApiResponse.error('Contest not found', 404)
-      );
+      return res.status(404).json({ success: false, message: 'Contest not found' });
     }
     
-    const contestData = contest.toJSON();
+    // Get participant count
+    const participantCount = await ContestParticipant.count({
+      where: { contest_id: id }
+    });
     
-    // Format contest data
-    const formattedContest = {
-      ...contestData,
-      _id: contestData.id.toString(),
-      id: contestData.id.toString(),
-      title: contestData.title,
-      description: contestData.description,
-      startTime: contestData.start_time,
-      endTime: contestData.end_time,
-      duration: contestData.duration_minutes,
-      maxParticipants: contestData.max_participants,
-      isPrivate: contestData.is_private,
-      contestType: contestData.contest_type,
-      tags: contestData.tags || [],
-      participantsCount: 0, // You'll need to add this from ContestParticipant model
-      problems: [], // You'll need to add Contest-Problem relationship
-      status: contestData.status,
-      creator: contestData.creator ? {
-        id: contestData.creator.id,
-        username: contestData.creator.username,
-        ...contestData.creator.profile
-      } : null,
-      createdAt: contestData.createdAt,
-      updatedAt: contestData.updatedAt
-    };
-    
-    res.status(200).json(
-      ApiResponse.success(
-        { contest: formattedContest },
-        'Contest fetched successfully'
-      )
-    );
-  } catch (error) {
-    console.error('Error fetching contest:', error);
-    
-    // Fallback to mock data
-    const mockContest = {
-      _id: id,
-      id: id,
-      title: 'Weekly Coding Challenge',
-      description: 'Weekly challenge for all skill levels',
-      startTime: new Date(Date.now() + 86400000),
-      endTime: new Date(Date.now() + 86400000 + 7200000),
-      duration: 120,
-      contestType: 'weekly',
-      type: 'weekly',
-      difficulty: 'medium',
-      maxParticipants: 5000,
-      participants: 1500,
-      participantsCount: 1500,
-      status: 'upcoming',
-      rules: 'Standard rules apply',
-      prizes: ['Certificate', 'Premium Subscription'],
-      tags: ['weekly', 'medium'],
-      isPrivate: false,
-      registrationOpen: true,
-      problems: [
-        { id: '1', title: 'Two Sum', difficulty: 'Easy' },
-        { id: '2', title: 'Add Two Numbers', difficulty: 'Medium' },
-        { id: '3', title: 'Longest Substring Without Repeating Characters', difficulty: 'Medium' }
-      ],
-      creator: {
-        id: 1,
-        username: 'Tejas_Mishra',
-        name: 'Tejas Mishra',
-        avatarUrl: 'https://ui-avatars.com/api/?name=Tejas+Mishra&background=random'
+    res.json({
+      success: true,
+      data: {
+        ...contest.toJSON(),
+        participantCount
       }
-    };
-    
-    res.status(200).json(
-      ApiResponse.success(
-        { contest: mockContest },
-        'Contest fetched successfully (fallback)'
-      )
-    );
+    });
+  } catch (error) {
+    console.error('Get contest error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch contest' });
   }
-});
+};
 
 // @desc    Create new contest
 // @route   POST /api/v1/contests
-// @access  Private (Admin/Moderator)
-export const createContest = asyncHandler(async (req, res) => {
-  const {
-    title,
-    description,
-    contestType = 'practice',
-    startTime,
-    endTime,
-    durationMinutes,
-    maxParticipants,
-    isPrivate = false,
-    registrationPassword,
-    tags = []
-  } = req.body;
-  
-  // Validate required fields
-  if (!title || !startTime || !endTime) {
-    return res.status(400).json(
-      ApiResponse.error('Title, start time, and end time are required')
-    );
-  }
-  
-  // Create slug from title
-  const slug = title
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/--+/g, '-')
-    .trim();
-  
+export const createContest = async (req, res) => {
   try {
-    // Check if slug exists
+    const {
+      title,
+      slug,
+      description,
+      contest_type,
+      start_time,
+      end_time,
+      duration_minutes,
+      max_participants,
+      registration_open,
+      is_private,
+      registration_password,
+      banner_url,
+      tags
+    } = req.body;
+    
+    // Check if slug already exists
     const existingContest = await Contest.findOne({ where: { slug } });
     if (existingContest) {
-      return res.status(400).json(
-        ApiResponse.error('A contest with this title already exists')
-      );
+      return res.status(400).json({ success: false, message: 'Contest slug already exists' });
     }
     
+    // Create contest
     const contest = await Contest.create({
       title,
       slug,
       description,
-      contest_type: contestType,
-      status: 'scheduled',
-      start_time: new Date(startTime),
-      end_time: new Date(endTime),
-      duration_minutes: durationMinutes || 
-        Math.round((new Date(endTime) - new Date(startTime)) / (1000 * 60)),
-      max_participants: maxParticipants,
-      is_private: isPrivate,
-      registration_password: registrationPassword,
-      tags,
-      created_by: req.user?.id || 1 // Fallback to user id 1 if not available
+      contest_type: contest_type || 'practice',
+      status: 'draft',
+      start_time,
+      end_time,
+      duration_minutes,
+      max_participants,
+      registration_open: registration_open !== false,
+      is_private: is_private || false,
+      registration_password,
+      banner_url,
+      tags: tags || [],
+      created_by: req.user.id
     });
     
-    res.status(201).json(
-      ApiResponse.success(
-        { contest: contest.toJSON() },
-        'Contest created successfully'
-      )
-    );
+    res.status(201).json({
+      success: true,
+      data: contest,
+      message: 'Contest created successfully'
+    });
   } catch (error) {
-    console.error('Error creating contest:', error);
-    res.status(500).json(
-      ApiResponse.error('Failed to create contest')
-    );
+    console.error('Create contest error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create contest' });
   }
-});
+};
 
 // @desc    Update contest
 // @route   PUT /api/v1/contests/:id
-// @access  Private (Admin/Moderator)
-export const updateContest = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  
+export const updateContest = async (req, res) => {
   try {
+    const { id } = req.params;
+    
     const contest = await Contest.findByPk(id);
     
     if (!contest) {
-      return res.status(404).json(
-        ApiResponse.error('Contest not found', 404)
-      );
+      return res.status(404).json({ success: false, message: 'Contest not found' });
     }
     
-    // Update allowed fields
-    const allowedUpdates = [
-      'title', 'description', 'contest_type', 'status',
-      'start_time', 'end_time', 'duration_minutes',
-      'max_participants', 'registration_open', 'is_private',
-      'tags', 'banner_url'
-    ];
+    // Check if user is creator (or admin)
+    if (contest.created_by !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Not authorized to update this contest' });
+    }
     
-    allowedUpdates.forEach(field => {
-      if (req.body[field] !== undefined) {
-        contest[field] = req.body[field];
-      }
+    // Update contest
+    await contest.update(req.body);
+    
+    res.json({
+      success: true,
+      data: contest,
+      message: 'Contest updated successfully'
     });
-    
-    // Update slug if title changed
-    if (req.body.title && req.body.title !== contest.title) {
-      const slug = req.body.title
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/--+/g, '-')
-        .trim();
-      
-      // Check if slug exists
-      const existingContest = await Contest.findOne({ 
-        where: { slug },
-        attributes: ['id']
-      });
-      
-      if (existingContest && existingContest.id !== contest.id) {
-        return res.status(400).json(
-          ApiResponse.error('A contest with this title already exists')
-        );
-      }
-      
-      contest.slug = slug;
-    }
-    
-    await contest.save();
-    
-    res.status(200).json(
-      ApiResponse.success(
-        { contest: contest.toJSON() },
-        'Contest updated successfully'
-      )
-    );
   } catch (error) {
-    console.error('Error updating contest:', error);
-    res.status(500).json(
-      ApiResponse.error('Failed to update contest')
-    );
+    console.error('Update contest error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update contest' });
   }
-});
+};
 
 // @desc    Delete contest
 // @route   DELETE /api/v1/contests/:id
-// @access  Private (Admin/Moderator)
-export const deleteContest = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  
+export const deleteContest = async (req, res) => {
   try {
+    const { id } = req.params;
+    
     const contest = await Contest.findByPk(id);
     
     if (!contest) {
-      return res.status(404).json(
-        ApiResponse.error('Contest not found', 404)
-      );
+      return res.status(404).json({ success: false, message: 'Contest not found' });
+    }
+    
+    // Check if user is creator (or admin)
+    if (contest.created_by !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Not authorized to delete this contest' });
     }
     
     await contest.destroy();
     
-    res.status(200).json(
-      ApiResponse.success(
-        null,
-        'Contest deleted successfully'
-      )
-    );
+    res.json({
+      success: true,
+      message: 'Contest deleted successfully'
+    });
   } catch (error) {
-    console.error('Error deleting contest:', error);
-    res.status(500).json(
-      ApiResponse.error('Failed to delete contest')
-    );
+    console.error('Delete contest error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete contest' });
   }
-});
+};
 
 // @desc    Register for contest
 // @route   POST /api/v1/contests/:id/register
-// @access  Private
-export const registerForContest = asyncHandler(async (req, res) => {
-  const { id } = req.params;
+export const registerForContest = async (req, res) => {
+  const { id: contestId } = req.params;
+  const userId = req.user.id;
   const { password } = req.body;
-  
+
   try {
-    const contest = await Contest.findByPk(id);
+    const contest = await Contest.findByPk(contestId);
     
     if (!contest) {
-      return res.status(404).json(
-        ApiResponse.error('Contest not found', 404)
-      );
+      return res.status(404).json({ success: false, message: 'Contest not found' });
     }
-    
-    // Check if registration is open
-    if (!contest.registration_open) {
-      return res.status(400).json(
-        ApiResponse.error('Registration is closed for this contest')
-      );
-    }
-    
+
     // Check if contest has started
-    if (contest.start_time <= new Date()) {
-      return res.status(400).json(
-        ApiResponse.error('Contest has already started')
-      );
+    if (new Date() > contest.start_time) {
+      return res.status(400).json({ success: false, message: 'Contest has already started' });
     }
-    
+
+    // Check registration status
+    if (!contest.registration_open) {
+      return res.status(400).json({ success: false, message: 'Registration is closed' });
+    }
+
     // Check private contest password
-    if (contest.is_private) {
-      if (!password) {
-        return res.status(400).json(
-          ApiResponse.error('Password required for private contest')
-        );
-      }
-      
-      if (password !== contest.registration_password) {
-        return res.status(401).json(
-          ApiResponse.error('Invalid password')
-        );
-      }
+    if (contest.is_private && password !== contest.registration_password) {
+      return res.status(401).json({ success: false, message: 'Invalid password' });
     }
-    
-    // Check if user is already registered
-    // You'll need to implement ContestParticipant check here
-    
+
+    // Check if already registered
+    const existing = await ContestParticipant.findOne({
+      where: { contest_id: contestId, user_id: userId }
+    });
+
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'Already registered' });
+    }
+
     // Register user
-    // You'll need to create a ContestParticipant entry here
-    
-    res.status(200).json(
-      ApiResponse.success(
-        null,
-        'Successfully registered for contest'
-      )
-    );
+    await ContestParticipant.create({
+      contest_id: contestId,
+      user_id: userId,
+      joined_at: new Date()
+    });
+
+    res.json({ success: true, message: 'Successfully registered for contest' });
   } catch (error) {
-    console.error('Error registering for contest:', error);
-    res.status(500).json(
-      ApiResponse.error('Failed to register for contest')
-    );
+    console.error('Registration error:', error);
+    res.status(500).json({ success: false, message: 'Registration failed' });
   }
-});
+};
+
+// @desc    Submit solution during contest
+// @route   POST /api/v1/contests/:id/submit
+export const submitContestSolution = async (req, res) => {
+  const { id: contestId } = req.params;
+  const userId = req.user.id;
+  const { problemId, code, language } = req.body;
+
+  try {
+    const contest = await Contest.findByPk(contestId);
+    const now = new Date();
+
+    // Verify contest is live
+    if (now < contest.start_time || now > contest.end_time) {
+      return res.status(400).json({ success: false, message: 'Contest is not active' });
+    }
+
+    // Check if user is registered
+    const participant = await ContestParticipant.findOne({
+      where: { contest_id: contestId, user_id: userId }
+    });
+
+    if (!participant) {
+      return res.status(403).json({ success: false, message: 'Not registered for contest' });
+    }
+
+    // TODO: Execute code (integrate with your code execution service)
+    // const submissionResult = await executeCode(code, language, problemId);
+    
+    // For now, mock result
+    const submissionResult = {
+      submissionId: `sub_${Date.now()}`,
+      verdict: 'Accepted',
+      runtime: 100,
+      memory: 2048
+    };
+
+    // Calculate time from contest start
+    const timeFromStart = Math.floor((now - contest.start_time) / 60000); // minutes
+
+    // Calculate points
+    let pointsEarned = 0;
+    if (submissionResult.verdict === 'Accepted') {
+      pointsEarned = calculatePoints(problemId, timeFromStart, contest.contest_type);
+    }
+
+    // Save contest submission
+    const contestSub = await ContestSubmission.create({
+      contest_id: contestId,
+      user_id: userId,
+      problem_id: problemId,
+      submission_id: submissionResult.submissionId,
+      language,
+      status: submissionResult.verdict,
+      score: pointsEarned,
+      time_taken: submissionResult.runtime,
+      memory_used: submissionResult.memory,
+      submitted_at: now
+    });
+
+    // Update participant score
+    await updateParticipantScore(contestId, userId);
+
+    res.json({
+      success: true,
+      data: {
+        submission: contestSub,
+        verdict: submissionResult.verdict,
+        pointsEarned
+      }
+    });
+  } catch (error) {
+    console.error('Contest submission error:', error);
+    res.status(500).json({ success: false, message: 'Submission failed' });
+  }
+};
+
+// @desc    Get live leaderboard
+// @route   GET /api/v1/contests/:id/leaderboard
+export const getContestLeaderboard = async (req, res) => {
+  const { id: contestId } = req.params;
+
+  try {
+    // Check Redis cache first
+    const cacheKey = `contest:${contestId}:leaderboard`;
+    const cached = await redis.get(cacheKey);
+    
+    if (cached) {
+      return res.json({ success: true, data: JSON.parse(cached) });
+    }
+
+    // Fetch from database
+    const participants = await ContestParticipant.findAll({
+      where: { contest_id: contestId },
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'username', 'email']
+      }],
+      order: [
+        ['score', 'DESC'],
+        ['total_time', 'ASC'],
+        ['joined_at', 'ASC']
+      ]
+    });
+
+    // Add rank
+    const leaderboard = participants.map((p, index) => ({
+      rank: index + 1,
+      userId: p.user_id,
+      username: p.user?.username || 'Unknown',
+      score: p.score,
+      problemsSolved: p.problems_solved,
+      totalTime: p.total_time
+    }));
+
+    // Cache for 10 seconds
+    await redis.setex(cacheKey, 10, JSON.stringify(leaderboard));
+
+    res.json({ success: true, data: leaderboard });
+  } catch (error) {
+    console.error('Leaderboard fetch error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch leaderboard' });
+  }
+};
+
+// Helper functions
+async function updateParticipantScore(contestId, userId) {
+  const submissions = await ContestSubmission.findAll({
+    where: {
+      contest_id: contestId,
+      user_id: userId,
+      status: 'Accepted'
+    }
+  });
+
+  const totalScore = submissions.reduce((sum, sub) => sum + sub.score, 0);
+  const problemsSolved = new Set(submissions.map(s => s.problem_id)).size;
+
+  await ContestParticipant.update({
+    score: totalScore,
+    problems_solved: problemsSolved
+  }, {
+    where: { contest_id: contestId, user_id: userId }
+  });
+}
+
+function calculatePoints(problemId, timeFromStart, scoringType) {
+  const basePoints = 100;
+  
+  if (scoringType === 'time') {
+    return Math.max(basePoints - timeFromStart, 10);
+  }
+  
+  return basePoints;
+}

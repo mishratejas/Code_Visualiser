@@ -3,7 +3,7 @@ import ApiResponse from '../utils/ApiResponse.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import ApiError from '../utils/ApiError.js';
 import mongoose from 'mongoose';
-
+import {getCachedProblem,cacheProblem,invalidateProblem} from '../services/redisService.js'
 // @desc    Get all published problems with pagination
 // @route   GET /api/v1/problems
 // @access  Public
@@ -63,62 +63,53 @@ export const getAllProblems = asyncHandler(async (req, res) => {
 export const getProblem = asyncHandler(async (req, res) => {
   const { id } = req.params;
   
-  console.log('🔍 Fetching problem with ID:', id);
-  
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    console.log('❌ Invalid ID format:', id);
     throw ApiError.badRequest('Invalid problem ID format');
   }
   
-  try {
-    // Use lean() for better performance and convert to plain object
-    const problem = await Problem.findOne({
-      _id: id,
-      'metadata.isPublished': true
-    }).lean();
-    
-    console.log('📦 Problem found:', problem ? 'Yes' : 'No');
-    
-    if (!problem) {
-      console.log('❌ Problem not found or not published');
-      throw ApiError.notFound('Problem not found or not published');
-    }
-    
-    // Increment views (don't affect the response object)
-    await Problem.updateOne(
-      { _id: id },
-      { $inc: { 'metadata.views': 1 } }
+  // CHECK CACHE FIRST
+  const cached = await getCachedProblem(id);
+  if (cached) {
+    return res.status(200).json(
+      ApiResponse.success({ problem: cached }, 'Problem fetched from cache')
     );
-    
-    // Filter out hidden test cases
-    if (problem.testCases && Array.isArray(problem.testCases)) {
-      console.log(`🔧 Filtering ${problem.testCases.length} test cases`);
-      problem.testCases = problem.testCases
-        .filter(tc => !tc.isHidden)
-        .map(({ isHidden, ...rest }) => rest);
-    }
-    
-    // Remove unwanted fields
-    delete problem.__v;
-    delete problem.createdBy;
-    delete problem.updatedBy;
-    
-    console.log('✅ Sending problem data');
-    
-    res.status(200).json(
-      ApiResponse.success({ problem }, 'Problem fetched successfully')
-    );
-  } catch (error) {
-    console.error('❌ Error in getProblem:', error.message);
-    console.error('Stack:', error.stack);
-    
-    if (error instanceof ApiError) {
-      throw error;
-    }
-    throw ApiError.internal('Failed to fetch problem: ' + error.message);
   }
+  
+  // If not in cache, fetch from DB
+  const problem = await Problem.findOne({
+    _id: id,
+    'metadata.isPublished': true
+  }).lean();
+  
+  if (!problem) {
+    throw ApiError.notFound('Problem not found');
+  }
+  
+  // Increment views
+  await Problem.updateOne(
+    { _id: id },
+    { $inc: { 'metadata.views': 1 } }
+  );
+  
+  // Filter hidden test cases
+  if (problem.testCases) {
+    problem.testCases = problem.testCases
+      .filter(tc => !tc.isHidden)
+      .map(({ isHidden, ...rest }) => rest);
+  }
+  
+  // Remove unwanted fields
+  delete problem.__v;
+  delete problem.createdBy;
+  delete problem.updatedBy;
+  
+  // CACHE THE RESULT
+  await cacheProblem(id, problem);
+  
+  res.status(200).json(
+    ApiResponse.success({ problem }, 'Problem fetched successfully')
+  );
 });
-
 // @desc    Get problem by slug
 // @route   GET /api/v1/problems/slug/:slug
 // @access  Public
@@ -260,7 +251,7 @@ export const updateProblem = asyncHandler(async (req, res) => {
     updateData,
     { new: true, runValidators: true }
   );
-  
+  await invalidateProblem(id);
   res.status(200).json(
     ApiResponse.success({ problem: updatedProblem }, 'Problem updated successfully')
   );

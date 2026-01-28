@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { createServer } from 'http';
+import { initializeSocket } from './src/socket/contestSocket.js';
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
@@ -7,19 +9,32 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-import App from './src/app.js';  // This imports a CLASS
+import App from './src/app.js';
 import dbManager from './src/db/index.js';
 
 // Connect to all databases
 dbManager.connectAll().then(() => {
   console.log('✅ All database connections established');
   
-  // ✅ CREATE AN INSTANCE OF THE APP CLASS
+  // CREATE AN INSTANCE OF THE APP CLASS
   const appInstance = new App();
   
-  // ✅ Use the start() method from your App class
-  const server = appInstance.start(process.env.PORT || 5000);
-  console.log(`Server running on port ${process.env.PORT || 5000}`);
+  // Get the port
+  const PORT = process.env.PORT || 5000;
+  
+  // DON'T call appInstance.start() - it would listen on the port
+  // Instead, just get the Express app and wrap it with HTTP server for Socket.IO
+  
+  // Create HTTP server with Express app
+  const httpServer = createServer(appInstance.app);
+  
+  // Initialize Socket.IO on the HTTP server
+  initializeSocket(httpServer);
+  
+  // NOW listen (only once!)
+  httpServer.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
 
   // Handle unhandled promise rejections
   process.on('unhandledRejection', (err) => {
@@ -27,7 +42,8 @@ dbManager.connectAll().then(() => {
     console.error(err.stack);
     
     // Close server & exit process
-    server.close(() => {
+    httpServer.close(async () => {
+      await dbManager.disconnectAll();
       console.log('Server closed due to unhandled rejection');
       process.exit(1);
     });
@@ -36,7 +52,8 @@ dbManager.connectAll().then(() => {
   // Graceful shutdown
   const gracefulShutdown = () => {
     console.log('Received shutdown signal, closing server...');
-    server.close(async () => {
+    
+    httpServer.close(async () => {
       await dbManager.disconnectAll();
       console.log('Server closed gracefully');
       process.exit(0);

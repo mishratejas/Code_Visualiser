@@ -7,6 +7,7 @@ export const defineAssociations = async () => {
     const Contest = (await import('./Contest.models.js')).default;
     const User = (await import('./User.models.js')).default;
     const ContestParticipant = (await import('./ContestParticipant.models.js')).default;
+    const ContestSubmission = (await import('./ContestSubmission.models.js')).default;
     
     // 1. Contest belongs to a User as creator
     Contest.belongsTo(User, {
@@ -57,6 +58,27 @@ export const defineAssociations = async () => {
       foreignKey: 'user_id',
       otherKey: 'contest_id',
       as: 'contests'
+    });
+    
+    // 8. ContestSubmission associations
+    ContestSubmission.belongsTo(Contest, {
+      foreignKey: 'contest_id',
+      as: 'contest'
+    });
+    
+    ContestSubmission.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user'
+    });
+    
+    Contest.hasMany(ContestSubmission, {
+      foreignKey: 'contest_id',
+      as: 'submissions'
+    });
+    
+    User.hasMany(ContestSubmission, {
+      foreignKey: 'user_id',
+      as: 'contestSubmissions'
     });
     
     console.log('✅ PostgreSQL associations defined successfully');
