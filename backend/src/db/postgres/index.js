@@ -12,7 +12,8 @@ const sequelize = new Sequelize(
     dialectModule: pg,
     define: {
       underscored: true,
-      timestamps: true
+      timestamps: true,
+      freezeTableName: true  // ✅ Prevent table name pluralization
     },
     pool: {
       max: 10,
@@ -26,36 +27,22 @@ const sequelize = new Sequelize(
 // Connect function
 const connectPostgreSQL = async () => {
   try {
+    // Test connection
     await sequelize.authenticate();
     console.log('✅ PostgreSQL connected successfully');
     
-    // Import models AFTER connection
+    // Import models AFTER connection (to ensure sequelize is ready)
     const Contest = (await import('../../models/postgres/Contest.models.js')).default;
     const User = (await import('../../models/postgres/User.models.js')).default;
     const ContestParticipant = (await import('../../models/postgres/ContestParticipant.models.js')).default;
+    const ContestSubmission = (await import('../../models/postgres/ContestSubmission.models.js')).default;
     
     // Define associations
-    defineAssociations();
+    await defineAssociations();
     
-    if (process.env.NODE_ENV === 'development') {
-      try {
-        // Fix the column typo and null values
-        await sequelize.query(`
-          UPDATE contests 
-          SET created_at = COALESCE(created_at, NOW())
-          WHERE created_at IS NULL;
-        `);
-        console.log('✅ Fixed NULL values in contests table');
-      } catch (fixError) {
-        console.log('⚠️ Could not fix NULL values:', fixError.message);
-      }
-      
-      // Sync models
-      await sequelize.sync({ alter: true });
-      console.log('✅ PostgreSQL models synchronized');
-    } else {
-      await sequelize.sync({ alter: false });
-    }
+    // ✅ REMOVED: await sequelize.sync({ alter: true });
+    // We manage schema manually with SQL migrations
+    console.log('ℹ️  Using manual SQL migrations (sync disabled)');
     
     return sequelize;
   } catch (error) {
@@ -69,6 +56,16 @@ const connectPostgreSQL = async () => {
   }
 };
 
+// Close connection
+const disconnectPostgreSQL = async () => {
+  try {
+    await sequelize.close();
+    console.log('✅ PostgreSQL connection closed');
+  } catch (error) {
+    console.error('❌ Error closing PostgreSQL:', error.message);
+  }
+};
+
 // Export
-export { sequelize, connectPostgreSQL };
+export { sequelize, connectPostgreSQL, disconnectPostgreSQL };
 export default sequelize;

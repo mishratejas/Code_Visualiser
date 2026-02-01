@@ -1,22 +1,30 @@
-import { emitLeaderboardUpdate, emitContestStatus } from '../socket/contestSocket.js';
-import redis from '../config/redis.config.js';
 import Contest from '../models/postgres/Contest.models.js';
 import ContestParticipant from '../models/postgres/ContestParticipant.models.js';
 import ContestSubmission from '../models/postgres/ContestSubmission.models.js';
 import User from '../models/postgres/User.models.js';
 import { Op } from 'sequelize';
+import redis from '../config/redis.config.js';
 
 // @desc    Get all contests
 // @route   GET /api/v1/contests
 export const getContests = async (req, res) => {
   try {
-    const { status, type, page = 1, limit = 10 } = req.query;
+    const { status, type, page = 1, limit = 100 } = req.query;
     
     const where = {};
     
     // Filter by status
     if (status) {
-      where.status = status;
+      const now = new Date();
+      
+      if (status === 'upcoming') {
+        where.start_time = { [Op.gt]: now };
+      } else if (status === 'ongoing') {
+        where.start_time = { [Op.lte]: now };
+        where.end_time = { [Op.gte]: now };
+      } else if (status === 'past') {
+        where.end_time = { [Op.lt]: now };
+      }
     }
     
     // Filter by type
@@ -31,12 +39,37 @@ export const getContests = async (req, res) => {
       limit: parseInt(limit),
       offset: parseInt(offset),
       order: [['start_time', 'DESC']],
-      attributes: { exclude: ['registration_password'] }
+      attributes: { exclude: ['registration_password'] },
+      include: [
+        {
+          model: User,
+          as: 'creator',
+          attributes: ['id', 'username', 'email']
+        }
+      ]
     });
+    
+    // Get participant counts for each contest
+    const contestsWithCounts = await Promise.all(
+      contests.rows.map(async (contest) => {
+        const participantCount = await ContestParticipant.count({
+          where: { contest_id: contest.id }
+        });
+        
+        return {
+          ...contest.toJSON(),
+          participantsCount: participantCount,
+          // Add frontend-friendly field names
+          startTime: contest.start_time,
+          endTime: contest.end_time,
+          duration: contest.duration_minutes
+        };
+      })
+    );
     
     res.json({
       success: true,
-      data: contests.rows,
+      data: contestsWithCounts,
       pagination: {
         total: contests.count,
         page: parseInt(page),
@@ -45,7 +78,11 @@ export const getContests = async (req, res) => {
     });
   } catch (error) {
     console.error('Get contests error:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch contests' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch contests',
+      error: error.message 
+    });
   }
 };
 
@@ -67,7 +104,10 @@ export const getContest = async (req, res) => {
     });
     
     if (!contest) {
-      return res.status(404).json({ success: false, message: 'Contest not found' });
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Contest not found' 
+      });
     }
     
     // Get participant count
@@ -75,16 +115,50 @@ export const getContest = async (req, res) => {
       where: { contest_id: id }
     });
     
+    // Get leaderboard
+    const leaderboard = await ContestParticipant.findAll({
+      where: { contest_id: id },
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'username', 'email']
+      }],
+      order: [
+        ['score', 'DESC'],
+        ['total_time', 'ASC']
+      ],
+      limit: 10
+    });
+    
+    const leaderboardData = leaderboard.map((p, index) => ({
+      rank: index + 1,
+      userId: p.user_id,
+      username: p.user?.username || 'Unknown',
+      score: p.score,
+      solved: p.problems_solved,
+      totalTime: p.total_time
+    }));
+    
     res.json({
       success: true,
       data: {
         ...contest.toJSON(),
-        participantCount
-      }
+        participantCount,
+        participantsCount: participantCount,
+        // Add frontend-friendly field names
+        startTime: contest.start_time,
+        endTime: contest.end_time,
+        duration: contest.duration_minutes
+      },
+      leaderboard: leaderboardData
     });
   } catch (error) {
     console.error('Get contest error:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch contest' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch contest',
+      error: error.message 
+    });
   }
 };
 
@@ -97,6 +171,7 @@ export const createContest = async (req, res) => {
       slug,
       description,
       contest_type,
+      difficulty,
       start_time,
       end_time,
       duration_minutes,
@@ -105,42 +180,71 @@ export const createContest = async (req, res) => {
       is_private,
       registration_password,
       banner_url,
-      tags
+      tags,
+      rules,
+      prizes
     } = req.body;
     
+    // Validate required fields
+    if (!title || !start_time || !end_time) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Title, start time, and end time are required' 
+      });
+    }
+    
+    // Generate slug if not provided
+    const contestSlug = slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    
     // Check if slug already exists
-    const existingContest = await Contest.findOne({ where: { slug } });
+    const existingContest = await Contest.findOne({ where: { slug: contestSlug } });
     if (existingContest) {
-      return res.status(400).json({ success: false, message: 'Contest slug already exists' });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Contest with this slug already exists' 
+      });
     }
     
     // Create contest
     const contest = await Contest.create({
       title,
-      slug,
+      slug: contestSlug,
       description,
       contest_type: contest_type || 'practice',
+      difficulty: difficulty || 'medium',
       status: 'draft',
       start_time,
       end_time,
-      duration_minutes,
+      duration_minutes: duration_minutes || Math.round((new Date(end_time) - new Date(start_time)) / (1000 * 60)),
       max_participants,
       registration_open: registration_open !== false,
       is_private: is_private || false,
-      registration_password,
+      registration_password: is_private ? registration_password : null,
       banner_url,
       tags: tags || [],
+      rules,
+      prizes: Array.isArray(prizes) ? prizes : [],
       created_by: req.user.id
     });
     
     res.status(201).json({
       success: true,
-      data: contest,
+      data: {
+        ...contest.toJSON(),
+        // Add frontend-friendly field names
+        startTime: contest.start_time,
+        endTime: contest.end_time,
+        duration: contest.duration_minutes
+      },
       message: 'Contest created successfully'
     });
   } catch (error) {
     console.error('Create contest error:', error);
-    res.status(500).json({ success: false, message: 'Failed to create contest' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to create contest',
+      error: error.message 
+    });
   }
 };
 
@@ -153,12 +257,18 @@ export const updateContest = async (req, res) => {
     const contest = await Contest.findByPk(id);
     
     if (!contest) {
-      return res.status(404).json({ success: false, message: 'Contest not found' });
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Contest not found' 
+      });
     }
     
     // Check if user is creator (or admin)
     if (contest.created_by !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Not authorized to update this contest' });
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized to update this contest' 
+      });
     }
     
     // Update contest
@@ -166,12 +276,22 @@ export const updateContest = async (req, res) => {
     
     res.json({
       success: true,
-      data: contest,
+      data: {
+        ...contest.toJSON(),
+        // Add frontend-friendly field names
+        startTime: contest.start_time,
+        endTime: contest.end_time,
+        duration: contest.duration_minutes
+      },
       message: 'Contest updated successfully'
     });
   } catch (error) {
     console.error('Update contest error:', error);
-    res.status(500).json({ success: false, message: 'Failed to update contest' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to update contest',
+      error: error.message 
+    });
   }
 };
 
@@ -184,12 +304,18 @@ export const deleteContest = async (req, res) => {
     const contest = await Contest.findByPk(id);
     
     if (!contest) {
-      return res.status(404).json({ success: false, message: 'Contest not found' });
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Contest not found' 
+      });
     }
     
     // Check if user is creator (or admin)
     if (contest.created_by !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Not authorized to delete this contest' });
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized to delete this contest' 
+      });
     }
     
     await contest.destroy();
@@ -200,7 +326,11 @@ export const deleteContest = async (req, res) => {
     });
   } catch (error) {
     console.error('Delete contest error:', error);
-    res.status(500).json({ success: false, message: 'Failed to delete contest' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to delete contest',
+      error: error.message 
+    });
   }
 };
 
@@ -215,22 +345,36 @@ export const registerForContest = async (req, res) => {
     const contest = await Contest.findByPk(contestId);
     
     if (!contest) {
-      return res.status(404).json({ success: false, message: 'Contest not found' });
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Contest not found' 
+      });
     }
 
     // Check if contest has started
     if (new Date() > contest.start_time) {
-      return res.status(400).json({ success: false, message: 'Contest has already started' });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Contest has already started' 
+      });
     }
 
     // Check registration status
     if (!contest.registration_open) {
-      return res.status(400).json({ success: false, message: 'Registration is closed' });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Registration is closed' 
+      });
     }
 
     // Check private contest password
-    if (contest.is_private && password !== contest.registration_password) {
-      return res.status(401).json({ success: false, message: 'Invalid password' });
+    if (contest.is_private) {
+      if (!password || password !== contest.registration_password) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Invalid password' 
+        });
+      }
     }
 
     // Check if already registered
@@ -239,7 +383,24 @@ export const registerForContest = async (req, res) => {
     });
 
     if (existing) {
-      return res.status(400).json({ success: false, message: 'Already registered' });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Already registered for this contest' 
+      });
+    }
+
+    // Check max participants limit
+    if (contest.max_participants) {
+      const participantCount = await ContestParticipant.count({
+        where: { contest_id: contestId }
+      });
+      
+      if (participantCount >= contest.max_participants) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Contest is full' 
+        });
+      }
     }
 
     // Register user
@@ -249,10 +410,17 @@ export const registerForContest = async (req, res) => {
       joined_at: new Date()
     });
 
-    res.json({ success: true, message: 'Successfully registered for contest' });
+    res.json({ 
+      success: true, 
+      message: 'Successfully registered for contest' 
+    });
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ success: false, message: 'Registration failed' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Registration failed',
+      error: error.message 
+    });
   }
 };
 
@@ -267,9 +435,26 @@ export const submitContestSolution = async (req, res) => {
     const contest = await Contest.findByPk(contestId);
     const now = new Date();
 
+    if (!contest) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Contest not found' 
+      });
+    }
+
     // Verify contest is live
-    if (now < contest.start_time || now > contest.end_time) {
-      return res.status(400).json({ success: false, message: 'Contest is not active' });
+    if (now < contest.start_time) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Contest has not started yet' 
+      });
+    }
+    
+    if (now > contest.end_time) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Contest has ended' 
+      });
     }
 
     // Check if user is registered
@@ -278,7 +463,10 @@ export const submitContestSolution = async (req, res) => {
     });
 
     if (!participant) {
-      return res.status(403).json({ success: false, message: 'Not registered for contest' });
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not registered for this contest' 
+      });
     }
 
     // TODO: Execute code (integrate with your code execution service)
@@ -328,7 +516,11 @@ export const submitContestSolution = async (req, res) => {
     });
   } catch (error) {
     console.error('Contest submission error:', error);
-    res.status(500).json({ success: false, message: 'Submission failed' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Submission failed',
+      error: error.message 
+    });
   }
 };
 
@@ -340,10 +532,17 @@ export const getContestLeaderboard = async (req, res) => {
   try {
     // Check Redis cache first
     const cacheKey = `contest:${contestId}:leaderboard`;
-    const cached = await redis.get(cacheKey);
     
-    if (cached) {
-      return res.json({ success: true, data: JSON.parse(cached) });
+    if (redis && redis.get) {
+      const cached = await redis.get(cacheKey);
+      
+      if (cached) {
+        return res.json({ 
+          success: true, 
+          data: JSON.parse(cached),
+          cached: true 
+        });
+      }
     }
 
     // Fetch from database
@@ -367,17 +566,28 @@ export const getContestLeaderboard = async (req, res) => {
       userId: p.user_id,
       username: p.user?.username || 'Unknown',
       score: p.score,
+      solved: p.problems_solved,
       problemsSolved: p.problems_solved,
       totalTime: p.total_time
     }));
 
     // Cache for 10 seconds
-    await redis.setex(cacheKey, 10, JSON.stringify(leaderboard));
+    if (redis && redis.setex) {
+      await redis.setex(cacheKey, 10, JSON.stringify(leaderboard));
+    }
 
-    res.json({ success: true, data: leaderboard });
+    res.json({ 
+      success: true, 
+      data: leaderboard,
+      cached: false 
+    });
   } catch (error) {
     console.error('Leaderboard fetch error:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch leaderboard' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch leaderboard',
+      error: error.message 
+    });
   }
 };
 
@@ -396,7 +606,8 @@ async function updateParticipantScore(contestId, userId) {
 
   await ContestParticipant.update({
     score: totalScore,
-    problems_solved: problemsSolved
+    problems_solved: problemsSolved,
+    last_submission_at: new Date()
   }, {
     where: { contest_id: contestId, user_id: userId }
   });
@@ -406,8 +617,21 @@ function calculatePoints(problemId, timeFromStart, scoringType) {
   const basePoints = 100;
   
   if (scoringType === 'time') {
+    // Time-based scoring: lose 1 point per minute
     return Math.max(basePoints - timeFromStart, 10);
   }
   
+  // Standard scoring
   return basePoints;
 }
+
+export default {
+  getContests,
+  getContest,
+  createContest,
+  updateContest,
+  deleteContest,
+  registerForContest,
+  submitContestSolution,
+  getContestLeaderboard
+};

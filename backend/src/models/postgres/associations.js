@@ -1,6 +1,9 @@
 import { sequelize } from '../../db/postgres/index.js';
 
-// Define associations - Use lazy imports
+/**
+ * Define all Sequelize model associations
+ * This file should be imported and called after all models are loaded
+ */
 export const defineAssociations = async () => {
   try {
     // Lazy import models to avoid circular dependencies
@@ -9,82 +12,125 @@ export const defineAssociations = async () => {
     const ContestParticipant = (await import('./ContestParticipant.models.js')).default;
     const ContestSubmission = (await import('./ContestSubmission.models.js')).default;
     
-    // 1. Contest belongs to a User as creator
+    console.log('📦 Setting up model associations...');
+    
+    // ==========================================
+    // CONTEST <-> USER ASSOCIATIONS (Creator)
+    // ==========================================
+    
+    // Contest belongs to User (creator)
     Contest.belongsTo(User, {
       foreignKey: 'created_by',
-      as: 'creator'
+      as: 'creator',
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE'
     });
 
-    // 2. User has many created contests
+    // User has many created Contests
     User.hasMany(Contest, {
       foreignKey: 'created_by',
-      as: 'createdContests'
+      as: 'createdContests',
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE'
     });
 
-    // 3. Contest has many Participants through ContestParticipant
+    // ==========================================
+    // CONTEST <-> PARTICIPANT ASSOCIATIONS
+    // ==========================================
+    
+    // Contest has many Participants
     Contest.hasMany(ContestParticipant, {
       foreignKey: 'contest_id',
-      as: 'participants'
+      as: 'participants',
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE'
     });
     
-    // 4. User has many ContestParticipant entries
+    // User has many Participant entries
     User.hasMany(ContestParticipant, {
       foreignKey: 'user_id',
-      as: 'contestRegistrations'
+      as: 'contestRegistrations',
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE'
     });
     
-    // 5. ContestParticipant belongs to Contest and User
+    // ContestParticipant belongs to Contest
     ContestParticipant.belongsTo(Contest, {
       foreignKey: 'contest_id',
-      as: 'contest'
+      as: 'contest',
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE'
     });
     
+    // ContestParticipant belongs to User
     ContestParticipant.belongsTo(User, {
       foreignKey: 'user_id',
-      as: 'user'
+      as: 'user',
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE'
     });
     
-    // 6. Contest belongs to many Users through ContestParticipant
+    // Many-to-Many: Contest <-> User through ContestParticipant
     Contest.belongsToMany(User, {
       through: ContestParticipant,
       foreignKey: 'contest_id',
       otherKey: 'user_id',
-      as: 'users'
+      as: 'registeredUsers'
     });
     
-    // 7. User belongs to many Contests through ContestParticipant
     User.belongsToMany(Contest, {
       through: ContestParticipant,
       foreignKey: 'user_id',
       otherKey: 'contest_id',
-      as: 'contests'
+      as: 'registeredContests'
     });
     
-    // 8. ContestSubmission associations
-    ContestSubmission.belongsTo(Contest, {
-      foreignKey: 'contest_id',
-      as: 'contest'
-    });
+    // ==========================================
+    // CONTEST SUBMISSION ASSOCIATIONS
+    // ==========================================
     
-    ContestSubmission.belongsTo(User, {
-      foreignKey: 'user_id',
-      as: 'user'
-    });
-    
+    // Contest has many Submissions
     Contest.hasMany(ContestSubmission, {
       foreignKey: 'contest_id',
-      as: 'submissions'
+      as: 'submissions',
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE'
     });
     
+    // User has many Contest Submissions
     User.hasMany(ContestSubmission, {
       foreignKey: 'user_id',
-      as: 'contestSubmissions'
+      as: 'contestSubmissions',
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE'
     });
     
-    console.log('✅ PostgreSQL associations defined successfully');
+    // ContestSubmission belongs to Contest
+    ContestSubmission.belongsTo(Contest, {
+      foreignKey: 'contest_id',
+      as: 'contest',
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE'
+    });
+    
+    // ContestSubmission belongs to User
+    ContestSubmission.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE'
+    });
+    
+    console.log('✅ All PostgreSQL model associations defined successfully');
+    console.log('   - Contest <-> User (creator)');
+    console.log('   - Contest <-> Participants');
+    console.log('   - Contest <-> Submissions');
+    console.log('   - User <-> Contest registrations');
+    
     return true;
   } catch (error) {
     console.error('❌ Error defining associations:', error);
+    console.error('Stack:', error.stack);
     return false;
   }
 };

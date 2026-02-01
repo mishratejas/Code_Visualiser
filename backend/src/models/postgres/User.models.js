@@ -10,17 +10,17 @@ const User = sequelize.define('User', {
   
   username: {
     type: DataTypes.STRING(50),
-    unique: true,
-    allowNull: false
+    allowNull: false,
+    // Don't define unique here - it's already in database
   },
   
   email: {
     type: DataTypes.STRING(100),
-    unique: true,
     allowNull: false,
     validate: {
       isEmail: true
     }
+    // Don't define unique here - it's already in database
   },
   
   password_hash: {
@@ -148,13 +148,28 @@ const User = sequelize.define('User', {
     type: DataTypes.ARRAY(DataTypes.TEXT),
     defaultValue: [],
     field: 'attempted_problems'
+  },
+  
+  created_at: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW,
+    field: 'created_at'
+  },
+  
+  updated_at: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW,
+    field: 'updated_at'
   }
 }, {
   tableName: 'users',
   timestamps: true,
   underscored: true,
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+  freezeTableName: true  // ✅ Don't pluralize table name
 });
 
 export default User;

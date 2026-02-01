@@ -5,7 +5,8 @@ const ContestSubmission = sequelize.define('ContestSubmission', {
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
-    autoIncrement: true
+    autoIncrement: true,
+    allowNull: false
   },
   
   contest_id: {
@@ -15,7 +16,8 @@ const ContestSubmission = sequelize.define('ContestSubmission', {
       model: 'contests',
       key: 'id'
     },
-    field: 'contest_id'
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
   },
   
   user_id: {
@@ -25,19 +27,19 @@ const ContestSubmission = sequelize.define('ContestSubmission', {
       model: 'users',
       key: 'id'
     },
-    field: 'user_id'
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
   },
   
   problem_id: {
     type: DataTypes.INTEGER,
-    allowNull: false,
-    field: 'problem_id'
+    allowNull: false
   },
   
   submission_id: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(255),
     allowNull: false,
-    field: 'submission_id',
+    unique: true,
     comment: 'Reference to MongoDB submission'
   },
   
@@ -50,52 +52,89 @@ const ContestSubmission = sequelize.define('ContestSubmission', {
     type: DataTypes.STRING(50),
     allowNull: false,
     defaultValue: 'pending',
-    comment: 'accepted, wrong_answer, time_limit_exceeded, etc.'
+    comment: 'accepted, wrong_answer, time_limit_exceeded, etc.',
+    validate: {
+      isIn: [[
+        'pending',
+        'accepted',
+        'wrong_answer',
+        'time_limit_exceeded',
+        'memory_limit_exceeded',
+        'runtime_error',
+        'compilation_error'
+      ]]
+    }
   },
   
   score: {
     type: DataTypes.INTEGER,
     defaultValue: 0,
-    comment: 'Points earned for this submission'
+    allowNull: false,
+    comment: 'Points earned for this submission',
+    validate: {
+      min: 0
+    }
   },
   
   time_taken: {
     type: DataTypes.INTEGER,
     allowNull: true,
     comment: 'Execution time in milliseconds',
-    field: 'time_taken'
+    validate: {
+      min: 0
+    }
   },
   
   memory_used: {
     type: DataTypes.INTEGER,
     allowNull: true,
     comment: 'Memory used in KB',
-    field: 'memory_used'
+    validate: {
+      min: 0
+    }
   },
   
   test_cases_passed: {
     type: DataTypes.INTEGER,
     defaultValue: 0,
-    field: 'test_cases_passed'
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   },
   
   total_test_cases: {
     type: DataTypes.INTEGER,
     defaultValue: 0,
-    field: 'total_test_cases'
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   },
   
   submitted_at: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,
-    field: 'submitted_at'
+    allowNull: false
   },
   
   is_best_submission: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
-    comment: 'Whether this is the best submission for this problem by this user',
-    field: 'is_best_submission'
+    allowNull: false,
+    comment: 'Whether this is the best submission for this problem by this user'
+  },
+  
+  created_at: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
+  },
+  
+  updated_at: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
   }
 }, {
   tableName: 'contest_submissions',
@@ -103,29 +142,48 @@ const ContestSubmission = sequelize.define('ContestSubmission', {
   underscored: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
+  
   indexes: [
     {
-      name: 'idx_contest_user',
+      name: 'idx_contest_submissions_contest',
+      fields: ['contest_id']
+    },
+    {
+      name: 'idx_contest_submissions_user',
+      fields: ['user_id']
+    },
+    {
+      name: 'idx_contest_submissions_problem',
+      fields: ['problem_id']
+    },
+    {
+      name: 'idx_contest_submissions_contest_user',
       fields: ['contest_id', 'user_id']
     },
     {
-      name: 'idx_contest_problem',
+      name: 'idx_contest_submissions_contest_problem',
       fields: ['contest_id', 'problem_id']
     },
     {
-      name: 'idx_contest_user_problem',
-      fields: ['contest_id', 'user_id', 'problem_id']
+      name: 'idx_contest_submissions_submission_id',
+      unique: true,
+      fields: ['submission_id']
     },
     {
-      name: 'idx_submission_id',
-      fields: ['submission_id'],
-      unique: true
-    },
-    {
-      name: 'idx_best_submission',
+      name: 'idx_contest_submissions_best',
       fields: ['contest_id', 'user_id', 'problem_id', 'is_best_submission']
     }
   ]
 });
+
+// Instance methods
+ContestSubmission.prototype.isAccepted = function() {
+  return this.status === 'accepted';
+};
+
+ContestSubmission.prototype.getAccuracy = function() {
+  if (this.total_test_cases === 0) return 0;
+  return (this.test_cases_passed / this.total_test_cases) * 100;
+};
 
 export default ContestSubmission;

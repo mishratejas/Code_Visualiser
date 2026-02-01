@@ -6,8 +6,14 @@ let io;
 export const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-      credentials: true
+      // ✅ FIX: Allow both ports
+      origin: [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://localhost:5174'
+      ],
+      credentials: true,
+      methods: ['GET', 'POST']
     }
   });
 
@@ -61,8 +67,12 @@ export const emitContestStatus = (contestId, status) => {
 
 async function getContestLeaderboard(contestId) {
   // Get from Redis cache first
-  const cached = await redis.get(`contest:${contestId}:leaderboard`);
-  if (cached) return JSON.parse(cached);
+  try {
+    const cached = await redis.get(`contest:${contestId}:leaderboard`);
+    if (cached) return JSON.parse(cached);
+  } catch (error) {
+    console.warn('Redis cache miss:', error.message);
+  }
   
   // Otherwise fetch from DB
   // Implementation in next section

@@ -20,6 +20,8 @@ const Problem = lazy(() => import('./pages/Problem'));
 const Submit = lazy(() => import('./pages/Submit'));
 const Submissions = lazy(() => import('./pages/Submissions'));
 const Contests = lazy(() => import('./pages/Contests'));
+const CreateContest = lazy(() => import('./pages/CreateContest'));
+const LiveContest = lazy(() => import('./pages/LiveContest'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Settings = lazy(() => import('./pages/Settings'));
 
@@ -166,11 +168,38 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
-                  {/* CONTESTS */}
+                  {/* ✅ CONTESTS ROUTES - ADDED ALL MISSING ROUTES */}
                   <Route path="/contests" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
                         <Contests />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
+                  
+                  {/* ✅ CREATE CONTEST ROUTE - NEW */}
+                  <Route path="/contests/create" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <CreateContest />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
+                  
+                  {/* ✅ LIVE CONTEST ROUTE - NEW */}
+                  <Route path="/contests/:id/live" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <LiveContest />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
+                  
+                  {/* ✅ CONTEST DETAIL ROUTE - NEW */}
+                  <Route path="/contests/:id" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <LiveContest />
                       </Layout>
                     </PrivateRoute>
                   } />

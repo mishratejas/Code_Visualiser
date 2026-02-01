@@ -19,6 +19,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "ioredis": "^5.9.2",
+    "lucide-react": "^0.563.0",
     "monaco-editor": "^0.55.1",
     "node-cron": "^4.2.1",
     "prismjs": "^1.30.0",

@@ -1,68 +1,113 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FiCalendar, FiClock, FiUsers, FiAward, FiFilter, FiChevronDown, FiChevronUp ,FiTrendingUp} from 'react-icons/fi';
-import { MdOutlineEmojiEvents } from 'react-icons/md';
-import { format, isFuture, isPast } from 'date-fns';
+import { 
+  Calendar, Clock, Users, Award, Filter, ChevronDown, ChevronUp, 
+  TrendingUp, Plus, Search
+} from 'lucide-react';
+import { MdOutlineEmojiEvents, MdRocketLaunch } from 'react-icons/md';
+import { TbTrophy } from 'react-icons/tb';
+import { format } from 'date-fns';
 import api from '../services/api';
 import Loader from '../components/common/Loader';
 import { toast } from 'react-hot-toast';
+import ContestTimer from '../components/contests/ContestTimer';
 
 const Contests = () => {
   const [contests, setContests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all'); // all, upcoming, ongoing, past
+  const [filter, setFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDifficulty, setSelectedDifficulty] = useState('all');
+  const [stats, setStats] = useState({
+    total: 0,
+    upcoming: 0,
+    ongoing: 0,
+    past: 0
+  });
 
   useEffect(() => {
     fetchContests();
   }, [filter]);
 
- const fetchContests = async () => {
-  try {
-    setLoading(true);
-    const params = {};
-    if (filter !== 'all') {
-      params.status = filter;
+  const safeDate = (value) => {
+    if (!value) return null;
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
+  const safeFormat = (dateValue, formatString) => {
+    const date = safeDate(dateValue);
+    if (!date) return 'Invalid Date';
+    try {
+      return format(date, formatString);
+    } catch (error) {
+      console.error('Date formatting error:', error);
+      return 'Invalid Date';
     }
-    
-    const response = await api.get('/contests', { params });
-    
-    // FIXED: Handle different response structures
-    let contestsData = [];
-    
-    if (response && response.data) {
-      // Case 1: { data: { contests: [...] } }
-      if (response.data.contests && Array.isArray(response.data.contests)) {
-        contestsData = response.data.contests;
+  };
+
+  const fetchContests = async () => {
+    try {
+      setLoading(true);
+      const params = {};
+      if (filter !== 'all') {
+        params.status = filter;
       }
-      // Case 2: { data: [...] } - direct array
-      else if (Array.isArray(response.data)) {
-        contestsData = response.data;
+      
+      const response = await api.get('/contests', { params });
+      
+      let contestsData = [];
+      
+      if (response && response.data) {
+        if (response.data.contests && Array.isArray(response.data.contests)) {
+          contestsData = response.data.contests;
+        } else if (response.data.data && Array.isArray(response.data.data)) {
+          contestsData = response.data.data;
+        } else if (Array.isArray(response.data)) {
+          contestsData = response.data;
+        } else if (Array.isArray(response)) {
+          contestsData = response;
+        }
       }
-      // Case 3: Direct array response
-      else if (Array.isArray(response)) {
-        contestsData = response;
-      }
-      else {
-        console.warn('Unexpected contests response format:', response);
-        contestsData = [];
-      }
+      
+      setContests(contestsData);
+      
+      // Calculate stats
+      const now = new Date();
+      const statsData = {
+        total: contestsData.length,
+        upcoming: contestsData.filter(c => {
+          const start = safeDate(c.startTime || c.start_time);
+          return start && start > now;
+        }).length,
+        ongoing: contestsData.filter(c => {
+          const start = safeDate(c.startTime || c.start_time);
+          const end = safeDate(c.endTime || c.end_time);
+          return start && end && start <= now && end >= now;
+        }).length,
+        past: contestsData.filter(c => {
+          const end = safeDate(c.endTime || c.end_time);
+          return end && end < now;
+        }).length
+      };
+      setStats(statsData);
+      
+    } catch (error) {
+      console.error('Failed to fetch contests:', error);
+      toast.error('Failed to fetch contests');
+      setContests([]);
+    } finally {
+      setLoading(false);
     }
-    
-    setContests(contestsData);
-  } catch (error) {
-    console.error('Failed to fetch contests:', error);
-    toast.error('Failed to fetch contests');
-    setContests([]); // Set empty array on error
-  } finally {
-    setLoading(false);
-  }
-};
+  };
+
   const getContestStatus = (contest) => {
     const now = new Date();
-    const start = new Date(contest.startTime);
-    const end = new Date(contest.endTime);
+    const start = safeDate(contest.startTime || contest.start_time);
+    const end = safeDate(contest.endTime || contest.end_time);
 
+    if (!start || !end) return 'unknown';
     if (now < start) return 'upcoming';
     if (now >= start && now <= end) return 'ongoing';
     return 'past';
@@ -70,8 +115,10 @@ const Contests = () => {
 
   const getTimeRemaining = (contest) => {
     const now = new Date();
-    const start = new Date(contest.startTime);
-    const end = new Date(contest.endTime);
+    const start = safeDate(contest.startTime || contest.start_time);
+    const end = safeDate(contest.endTime || contest.end_time);
+
+    if (!start || !end) return 'Date unavailable';
 
     if (now < start) {
       const diff = start - now;
@@ -88,290 +135,408 @@ const Contests = () => {
     }
   };
 
+  // Filter contests based on search and difficulty
+  const filteredContests = contests.filter(contest => {
+    const matchesSearch = !searchQuery || 
+      contest.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (contest.description && contest.description.toLowerCase().includes(searchQuery.toLowerCase()));
+    
+    const matchesDifficulty = selectedDifficulty === 'all' || 
+      contest.difficulty === selectedDifficulty;
+    
+    const matchesFilter = filter === 'all' || 
+      getContestStatus(contest) === filter;
+    
+    return matchesSearch && matchesDifficulty && matchesFilter;
+  });
+
   if (loading) {
-    return <Loader />;
+    return (
+      <div className="flex items-center justify-center min-h-[500px]">
+        <Loader />
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Contests
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Compete with coders from around the world
-          </p>
-        </div>
-        <div className="flex items-center space-x-4">
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
-          >
-            <FiFilter className="mr-2" />
-            Filter
-            {showFilters ? <FiChevronUp className="ml-2" /> : <FiChevronDown className="ml-2" />}
-          </button>
-          <Link
-            to="/contests/create"
-            className="px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:opacity-90"
-          >
-            Create Contest
-          </Link>
+    <div className="space-y-8">
+      {/* Hero Header */}
+      <div className="relative overflow-hidden rounded-3xl">
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 opacity-90"></div>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-32 translate-x-32"></div>
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/10 rounded-full translate-y-24 -translate-x-24"></div>
+        
+        <div className="relative z-10 p-8 text-white">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-white/20 backdrop-blur-sm rounded-2xl">
+                  <MdOutlineEmojiEvents className="h-8 w-8" />
+                </div>
+                <div>
+                  <h1 className="text-4xl font-bold">Contests</h1>
+                  <p className="text-blue-100 mt-2 text-lg">
+                    Compete with coders worldwide and climb the leaderboard
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap gap-4 mt-6">
+                <Link
+                  to="/contests/create"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-white text-blue-600 font-bold rounded-xl hover:shadow-lg transition-all"
+                >
+                  <Plus className="h-5 w-5" />
+                  Create Contest
+                </Link>
+                <Link
+                  to="/leaderboard"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-white/20 backdrop-blur-sm rounded-xl hover:bg-white/30 transition-all"
+                >
+                  <TbTrophy className="h-5 w-5" />
+                  View Leaderboard
+                </Link>
+              </div>
+            </div>
+            
+            {/* Stats Overview */}
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 min-w-[250px]">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold">{stats.total}</div>
+                  <div className="text-sm text-blue-200 mt-1">Total</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-300">{stats.ongoing}</div>
+                  <div className="text-sm text-blue-200 mt-1">Live Now</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-300">{stats.upcoming}</div>
+                  <div className="text-sm text-blue-200 mt-1">Upcoming</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-yellow-300">{stats.past}</div>
+                  <div className="text-sm text-blue-200 mt-1">Past</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Filters */}
-      {showFilters && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-          <div className="flex flex-wrap gap-4">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-4 py-2 rounded-lg font-medium ${filter === 'all'
-                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-            >
-              All Contests
-            </button>
-            <button
-              onClick={() => setFilter('upcoming')}
-              className={`px-4 py-2 rounded-lg font-medium ${filter === 'upcoming'
-                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-            >
-              Upcoming
-            </button>
-            <button
-              onClick={() => setFilter('ongoing')}
-              className={`px-4 py-2 rounded-lg font-medium ${filter === 'ongoing'
-                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-            >
-              Ongoing
-            </button>
-            <button
-              onClick={() => setFilter('past')}
-              className={`px-4 py-2 rounded-lg font-medium ${filter === 'past'
-                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-            >
-              Past
-            </button>
+      {/* Featured Contest */}
+      {filteredContests.length > 0 && getContestStatus(filteredContests[0]) === 'upcoming' && (
+        <div className="relative overflow-hidden rounded-3xl border border-gray-700/50 bg-gradient-to-br from-gray-800 to-gray-900 shadow-2xl">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-600/10 via-purple-600/10 to-pink-600/10"></div>
+          
+          <div className="relative z-10 p-8">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center gap-8">
+              <div className="flex-1">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full mb-4">
+                  <MdRocketLaunch className="h-4 w-4" />
+                  <span className="text-sm font-medium">FEATURED CONTEST</span>
+                </div>
+                
+                <h2 className="text-3xl font-bold text-white mb-3">
+                  {filteredContests[0].title}
+                </h2>
+                
+                <p className="text-gray-300 mb-6 text-lg">
+                  {filteredContests[0].description}
+                </p>
+                
+                <div className="flex flex-wrap gap-6 mb-6">
+                  <div className="flex items-center gap-2 text-gray-300">
+                    <Calendar className="h-5 w-5 text-blue-400" />
+                    <span>{safeFormat(filteredContests[0].startTime || filteredContests[0].start_time, 'MMM dd, yyyy • hh:mm a')}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-gray-300">
+                    <Clock className="h-5 w-5 text-green-400" />
+                    <span>{filteredContests[0].duration || filteredContests[0].duration_minutes} minutes</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-gray-300">
+                    <Users className="h-5 w-5 text-purple-400" />
+                    <span>{filteredContests[0].participants?.length || filteredContests[0].participantsCount || 0} registered</span>
+                  </div>
+                </div>
+                
+                <ContestTimer
+                  startTime={filteredContests[0].startTime || filteredContests[0].start_time}
+                  endTime={filteredContests[0].endTime || filteredContests[0].end_time}
+                  size="large"
+                  showLabels={true}
+                />
+              </div>
+              
+              <div className="flex-shrink-0">
+                <div className="bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-2xl p-6 border border-blue-500/30 min-w-[200px]">
+                  <div className="text-center mb-4">
+                    <div className="text-sm text-blue-300 mb-2">Registration Open</div>
+                    <div className="text-2xl font-bold text-white">
+                      {getTimeRemaining(filteredContests[0])}
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <Link
+                      to={`/contests/${filteredContests[0]._id || filteredContests[0].id}`}
+                      className="block w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium rounded-xl hover:shadow-lg transition-all text-center"
+                    >
+                      View Details
+                    </Link>
+                    <button className="block w-full px-6 py-3 bg-white/10 backdrop-blur-sm text-white font-medium rounded-xl hover:bg-white/20 transition-all">
+                      Register Now
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Featured Contest */}
-      {contests.length > 0 && getContestStatus(contests[0]) === 'upcoming' && (
-        <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-2xl p-8 text-white">
-          <div className="flex flex-col md:flex-row md:items-center justify-between">
+      {/* Search and Filters */}
+      <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl border border-gray-700/50 shadow-xl p-6">
+        <div className="flex flex-col lg:flex-row gap-6">
+          <div className="flex-1 relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
+            <input
+              type="text"
+              placeholder="Search contests by name or description..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-gray-500 transition-all"
+            />
+          </div>
+          
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-gray-700/50 border border-gray-600 rounded-xl hover:bg-gray-700 transition-all text-white"
+          >
+            <Filter className="h-5 w-5" />
+            Filters
+            {showFilters ? <ChevronUp className="ml-2" /> : <ChevronDown className="ml-2" />}
+          </button>
+        </div>
+        
+        {showFilters && (
+          <div className="mt-6 pt-6 border-t border-gray-700/50 space-y-6">
             <div>
-              <div className="flex items-center mb-2">
-                <MdOutlineEmojiEvents className="h-6 w-6 mr-2" />
-                <span className="font-medium">FEATURED CONTEST</span>
-              </div>
-              <h2 className="text-3xl font-bold mb-2">{contests[0].title}</h2>
-              <p className="text-blue-100 mb-4">{contests[0].description}</p>
-              <div className="flex flex-wrap gap-6">
-                <div className="flex items-center">
-                  <FiCalendar className="mr-2" />
-                  <span>{format(new Date(contests[0].startTime), 'MMM dd, yyyy')}</span>
-                </div>
-                <div className="flex items-center">
-                  <FiClock className="mr-2" />
-                  <span>{contests[0].duration} minutes</span>
-                </div>
-                <div className="flex items-center">
-                  <FiUsers className="mr-2" />
-                  <span>{contests[0].participants?.length || 0} registered</span>
-                </div>
-                <div className="flex items-center">
-                  <FiAward className="mr-2" />
-                  <span>{contests[0].prize}</span>
-                </div>
+              <h4 className="text-sm font-medium text-gray-400 mb-3">Status</h4>
+              <div className="flex flex-wrap gap-3">
+                {['all', 'upcoming', 'ongoing', 'past'].map((statusOption) => (
+                  <button
+                    key={statusOption}
+                    onClick={() => setFilter(statusOption)}
+                    className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                      filter === statusOption
+                        ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
+                        : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    {statusOption.charAt(0).toUpperCase() + statusOption.slice(1)}
+                  </button>
+                ))}
               </div>
             </div>
-            <div className="mt-6 md:mt-0">
-              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 mb-4">
-                <div className="text-sm text-blue-100">Starts In</div>
-                <div className="text-2xl font-bold">{getTimeRemaining(contests[0])}</div>
-              </div>
-              <div className="flex space-x-3">
-                <Link
-                  to={`/contests/${contests[0]._id}`}
-                  className="px-6 py-3 bg-white text-blue-600 font-medium rounded-lg hover:bg-blue-50 transition"
-                >
-                  View Details
-                </Link>
-                <button className="px-6 py-3 bg-white/20 backdrop-blur-sm font-medium rounded-lg hover:bg-white/30 transition">
-                  Register Now
-                </button>
+            
+            <div>
+              <h4 className="text-sm font-medium text-gray-400 mb-3">Difficulty</h4>
+              <div className="flex flex-wrap gap-3">
+                {['all', 'easy', 'medium', 'hard'].map((diffOption) => (
+                  <button
+                    key={diffOption}
+                    onClick={() => setSelectedDifficulty(diffOption)}
+                    className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                      selectedDifficulty === diffOption
+                        ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
+                        : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    {diffOption.charAt(0).toUpperCase() + diffOption.slice(1)}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Contest Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {(contests || []).map((contest) => {
-          const status = getContestStatus(contest);
-          const isFeatured = contest._id === contests[0]?._id && status === 'upcoming';
+      {filteredContests.length > 0 ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          {filteredContests.map((contest, index) => {
+            const status = getContestStatus(contest);
+            const isFeatured = index === 0 && status === 'upcoming';
+            
+            if (isFeatured) return null;
 
-          if (isFeatured) return null; // Skip featured contest in grid
+            const contestId = contest._id || contest.id;
 
-          return (
-            <div
-              key={contest._id}
-              className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 hover:shadow-xl transition"
-            >
-              {/* Status Badge */}
-              <div className="px-6 pt-6">
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${status === 'upcoming'
-                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                    : status === 'ongoing'
-                      ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                      : 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
+            return (
+              <div
+                key={contestId}
+                className="group relative overflow-hidden bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl border border-gray-700/50 shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-[1.02]"
+              >
+                <div className="absolute top-4 right-4 z-10">
+                  <span className={`px-3 py-1.5 rounded-full text-xs font-medium shadow-lg ${
+                    status === 'upcoming'
+                      ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white'
+                      : status === 'ongoing'
+                        ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
+                        : 'bg-gradient-to-r from-yellow-600 to-amber-600 text-white'
                   }`}>
-                  {status === 'upcoming' ? 'Upcoming' : status === 'ongoing' ? 'Ongoing' : 'Past'}
-                </span>
-              </div>
-
-              <div className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <Link
-                    to={`/contests/${contest._id}`}
-                    className="text-xl font-bold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400"
-                  >
-                    {contest.title}
-                  </Link>
-                  <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs">
-                    {contest.type}
+                    {status === 'upcoming' ? 'Upcoming' : status === 'ongoing' ? 'Live Now' : 'Ended'}
                   </span>
                 </div>
 
-                <p className="text-gray-600 dark:text-gray-400 mb-6 line-clamp-2">
-                  {contest.description}
-                </p>
-
-                {/* Contest Info */}
-                <div className="space-y-3 mb-6">
-                  <div className="flex items-center text-gray-500 dark:text-gray-400">
-                    <FiCalendar className="mr-3" />
-                    <span>{format(new Date(contest.startTime), 'MMM dd, yyyy • hh:mm a')}</span>
-                  </div>
-                  <div className="flex items-center text-gray-500 dark:text-gray-400">
-                    <FiClock className="mr-3" />
-                    <span>{contest.duration} minutes</span>
-                  </div>
-                  <div className="flex items-center text-gray-500 dark:text-gray-400">
-                    <FiUsers className="mr-3" />
-                    <span>{contest.participants?.length || 0} participants</span>
-                  </div>
-                  {contest.prize && (
-                    <div className="flex items-center text-gray-500 dark:text-gray-400">
-                      <FiAward className="mr-3" />
-                      <span>{contest.prize}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Time Remaining */}
-                <div className="mb-6">
-                  <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Time Remaining</div>
-                  <div className="font-medium text-gray-900 dark:text-white">
-                    {getTimeRemaining(contest)}
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex space-x-3">
-                  <Link
-                    to={`/contests/${contest._id}`}
-                    className="flex-1 text-center px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition"
-                  >
-                    View Details
-                  </Link>
-                  {status === 'upcoming' && (
-                    <button className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:opacity-90 transition">
-                      Register
-                    </button>
-                  )}
-                  {status === 'ongoing' && (
+                <div className="p-6">
+                  <div className="mb-4">
                     <Link
-                      to={`/contests/${contest._id}/participate`}
-                      className="flex-1 text-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                      to={`/contests/${contestId}`}
+                      className="text-xl font-bold text-white hover:text-blue-400 transition-colors line-clamp-1"
                     >
-                      Enter Contest
+                      {contest.title}
                     </Link>
-                  )}
+                    <p className="text-sm text-gray-400 mt-2 line-clamp-2">
+                      {contest.description}
+                    </p>
+                  </div>
+
+                  <div className="space-y-3 mb-6">
+                    <div className="flex items-center text-gray-300">
+                      <Calendar className="mr-3 h-5 w-5 text-blue-400" />
+                      <span className="text-sm">{safeFormat(contest.startTime || contest.start_time, 'MMM dd, yyyy • hh:mm a')}</span>
+                    </div>
+                    <div className="flex items-center text-gray-300">
+                      <Clock className="mr-3 h-5 w-5 text-green-400" />
+                      <span className="text-sm">{contest.duration || contest.duration_minutes} minutes</span>
+                    </div>
+                    <div className="flex items-center text-gray-300">
+                      <Users className="mr-3 h-5 w-5 text-purple-400" />
+                      <span className="text-sm">{contest.participants?.length || contest.participantsCount || 0} participants</span>
+                    </div>
+                  </div>
+
+                  <div className="mb-6 p-4 bg-gray-700/30 rounded-xl border border-gray-600/50">
+                    <div className="text-sm text-gray-400 mb-2">Time Remaining</div>
+                    <div className="font-medium text-white text-lg">
+                      {getTimeRemaining(contest)}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <Link
+                      to={`/contests/${contestId}`}
+                      className="flex-1 text-center px-4 py-2.5 bg-gray-700/50 text-gray-300 rounded-xl hover:bg-gray-700 transition-all font-medium"
+                    >
+                      View Details
+                    </Link>
+                    {status === 'upcoming' && (
+                      <button className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all font-medium">
+                        Register
+                      </button>
+                    )}
+                    {status === 'ongoing' && (
+                      <Link
+                        to={`/contests/${contestId}/live`}
+                        className="flex-1 text-center px-4 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:shadow-lg transition-all font-medium"
+                      >
+                        Enter Contest
+                      </Link>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Empty State */}
-      {contests.length === 0 && (
-        <div className="text-center py-12">
-          <div className="text-gray-400 dark:text-gray-500 text-6xl mb-4">🏆</div>
-          <h3 className="text-xl font-medium text-gray-900 dark:text-white mb-2">
+            );
+          })}
+        </div>
+      ) : (
+        <div className="text-center py-16 bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl border border-gray-700/50 shadow-xl">
+          <div className="w-24 h-24 mx-auto mb-6 bg-gradient-to-br from-gray-700 to-gray-800 rounded-2xl flex items-center justify-center border border-gray-700/50">
+            <MdOutlineEmojiEvents className="h-12 w-12 text-gray-500" />
+          </div>
+          <h3 className="text-2xl font-bold text-white mb-3">
             No contests found
           </h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
+          <p className="text-gray-400 mb-6 max-w-md mx-auto">
             {filter !== 'all'
-              ? `No ${filter} contests at the moment.`
-              : 'No contests available at the moment.'}
+              ? `No ${filter} contests match your filters. Try adjusting your search criteria.`
+              : 'No contests available at the moment. Check back later!'}
           </p>
           <button
-            onClick={() => setFilter('all')}
-            className="px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:opacity-90"
+            onClick={() => {
+              setFilter('all');
+              setSearchQuery('');
+              setSelectedDifficulty('all');
+            }}
+            className="inline-flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all font-medium"
           >
-            View All Contests
+            Reset Filters
           </button>
         </div>
       )}
 
-      {/* Contest Tips */}
+      {/* Benefits Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl p-6">
-          <div className="flex items-center mb-4">
-            <div className="p-2 bg-blue-100 dark:bg-blue-800 rounded-lg mr-4">
-              <FiAward className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+        <div className="bg-gradient-to-br from-blue-600/10 to-cyan-600/10 rounded-2xl border border-blue-500/30 p-6">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="p-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600">
+              <Award className="h-6 w-6 text-white" />
             </div>
-            <h4 className="font-bold text-gray-900 dark:text-white">Earn Rewards</h4>
+            <h4 className="font-bold text-white text-lg">Earn Rewards</h4>
           </div>
-          <p className="text-gray-600 dark:text-gray-400 text-sm">
-            Win prizes, certificates, and recognition by performing well in contests.
+          <p className="text-gray-300 text-sm">
+            Win cash prizes, certificates, and premium subscriptions by performing well in contests.
           </p>
         </div>
-        <div className="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-xl p-6">
-          <div className="flex items-center mb-4">
-            <div className="p-2 bg-green-100 dark:bg-green-800 rounded-lg mr-4">
-              <FiTrendingUp className="h-6 w-6 text-green-600 dark:text-green-400" />
+        <div className="bg-gradient-to-br from-green-600/10 to-emerald-600/10 rounded-2xl border border-green-500/30 p-6">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="p-3 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600">
+              <TrendingUp className="h-6 w-6 text-white" />
             </div>
-            <h4 className="font-bold text-gray-900 dark:text-white">Improve Skills</h4>
+            <h4 className="font-bold text-white text-lg">Improve Skills</h4>
           </div>
-          <p className="text-gray-600 dark:text-gray-400 text-sm">
-            Compete with top coders and improve your problem-solving skills under pressure.
+          <p className="text-gray-300 text-sm">
+            Compete with top coders worldwide and enhance your problem-solving skills under time pressure.
           </p>
         </div>
-        <div className="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-xl p-6">
-          <div className="flex items-center mb-4">
-            <div className="p-2 bg-purple-100 dark:bg-purple-800 rounded-lg mr-4">
-              <FiUsers className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+        <div className="bg-gradient-to-br from-purple-600/10 to-pink-600/10 rounded-2xl border border-purple-500/30 p-6">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="p-3 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600">
+              <Users className="h-6 w-6 text-white" />
             </div>
-            <h4 className="font-bold text-gray-900 dark:text-white">Global Ranking</h4>
+            <h4 className="font-bold text-white text-lg">Global Ranking</h4>
           </div>
-          <p className="text-gray-600 dark:text-gray-400 text-sm">
-            Get ranked globally and showcase your skills to recruiters and the community.
+          <p className="text-gray-300 text-sm">
+            Get ranked globally and showcase your achievements to recruiters and the developer community.
           </p>
+        </div>
+      </div>
+
+      {/* CTA Section */}
+      <div className="relative overflow-hidden rounded-3xl">
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 via-purple-600/20 to-pink-600/20"></div>
+        <div className="relative z-10 bg-gradient-to-br from-gray-800/80 to-gray-900/80 backdrop-blur-xl rounded-3xl border border-gray-700/50 p-8 text-center">
+          <h2 className="text-3xl font-bold text-white mb-4">Ready to Compete?</h2>
+          <p className="text-gray-300 mb-6 max-w-2xl mx-auto">
+            Join thousands of developers in our coding contests. Test your skills, learn from others, and climb the global leaderboard.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              to="/contests/create"
+              className="inline-flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all font-bold"
+            >
+              <Plus className="h-5 w-5" />
+              Create Your Contest
+            </Link>
+            <Link
+              to="/leaderboard"
+              className="inline-flex items-center gap-2 px-8 py-3 bg-gray-700/50 border border-gray-600 text-white rounded-xl hover:bg-gray-700 transition-all font-bold"
+            >
+              <TbTrophy className="h-5 w-5" />
+              View Leaderboard
+            </Link>
+          </div>
         </div>
       </div>
     </div>
