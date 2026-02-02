@@ -3,17 +3,12 @@ import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
 
 /**
- * Rate Limiter Utilities
- * Provides various rate limiting strategies for different endpoints
+ * Rate Limiter Utilities - FIXED VERSION
+ * More lenient limits for contest pages with multiple API calls
  */
 
-// Redis client for distributed rate limiting (optional)
 let redisClient = null;
 
-/**
- * Initialize Redis client for rate limiting
- * Only used if Redis is configured
- */
 const initializeRedis = async () => {
   if (process.env.REDIS_URI && !redisClient) {
     try {
@@ -43,25 +38,19 @@ const initializeRedis = async () => {
   }
 };
 
-// Initialize Redis on module load
 initializeRedis();
 
-/**
- * Create rate limiter configuration
- * @param {Object} options - Rate limiter options
- * @returns {Object} - Rate limiter middleware
- */
 const createRateLimiter = (options = {}) => {
   const defaultOptions = {
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Max requests per window
+    windowMs: 15 * 60 * 1000,
+    max: 100,
     message: {
       success: false,
       message: 'Too many requests, please try again later.',
       retryAfter: null
     },
-    standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
-    legacyHeaders: false, // Disable `X-RateLimit-*` headers
+    standardHeaders: true,
+    legacyHeaders: false,
     handler: (req, res) => {
       res.status(429).json({
         success: false,
@@ -70,8 +59,13 @@ const createRateLimiter = (options = {}) => {
       });
     },
     skip: (req) => {
-      // Skip rate limiting for admin users in development
-      if (process.env.NODE_ENV === 'development' && req.user?.role === 'admin') {
+      // ✅ FIX: Skip rate limiting in development
+      if (process.env.NODE_ENV === 'development') {
+        return true;
+      }
+      
+      // Skip for admin users
+      if (req.user?.role === 'admin') {
         return true;
       }
       return false;
@@ -79,11 +73,10 @@ const createRateLimiter = (options = {}) => {
     ...options
   };
 
-  // Use Redis store if available, otherwise use memory store
   if (redisClient && redisClient.isOpen) {
     defaultOptions.store = new RedisStore({
       client: redisClient,
-      prefix: 'rl:', // Rate limit prefix
+      prefix: 'rl:',
     });
   }
 
@@ -91,178 +84,138 @@ const createRateLimiter = (options = {}) => {
 };
 
 /**
- * Global rate limiter for all routes
- * Moderate limits for general API usage
+ * ✅ FIX: Much more lenient global limiter for contest pages
+ * Contest pages make multiple rapid API calls (leaderboard, problems, submissions)
  */
 export const globalLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 requests per 15 minutes
+  windowMs: 1 * 60 * 1000, // 1 minute window
+  max: 500, // 500 requests per minute (was 100 per 15 min)
   message: {
     message: 'Too many requests from this IP, please try again later.'
   }
 });
 
 /**
- * Strict rate limiter for authentication routes
- * Prevents brute force attacks
+ * ✅ IMPORTANT: For contest-related endpoints, use a very lenient limiter
  */
+export const contestLimiter = createRateLimiter({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 1000, // Allow many requests for real-time updates
+  message: {
+    message: 'Too many contest requests, please slow down.'
+  }
+});
+
+// Keep auth strict for security
 export const authLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Only 5 failed login attempts per 15 minutes
-  skipSuccessfulRequests: true, // Don't count successful requests
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
   message: {
     message: 'Too many authentication attempts, please try again later.'
   }
 });
 
-/**
- * Rate limiter for registration
- * Prevents spam account creation
- */
 export const registerLimiter = createRateLimiter({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3, // Only 3 registrations per hour per IP
+  windowMs: 60 * 60 * 1000,
+  max: 3,
   message: {
     message: 'Too many accounts created from this IP, please try again later.'
   }
 });
 
-/**
- * Rate limiter for code submission
- * Prevents submission spam
- */
+// More lenient submission limiter
 export const submissionLimiter = createRateLimiter({
-  windowMs: 60 * 1000, // 1 minute
-  max: 10, // 10 submissions per minute
+  windowMs: 60 * 1000,
+  max: 20, // Increased from 10
   message: {
     message: 'Too many submissions, please slow down and try again.'
   }
 });
 
-/**
- * Rate limiter for code execution/testing
- * More lenient than submission
- */
 export const executionLimiter = createRateLimiter({
-  windowMs: 60 * 1000, // 1 minute
-  max: 20, // 20 code runs per minute
+  windowMs: 60 * 1000,
+  max: 30, // Increased from 20
   message: {
     message: 'Too many code executions, please wait a moment.'
   }
 });
 
-/**
- * Rate limiter for password reset requests
- * Prevents abuse of password reset
- */
 export const passwordResetLimiter = createRateLimiter({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3, // 3 password reset requests per hour
+  windowMs: 60 * 60 * 1000,
+  max: 3,
   message: {
     message: 'Too many password reset requests, please try again later.'
   }
 });
 
-/**
- * Rate limiter for email sending
- * Prevents email spam
- */
 export const emailLimiter = createRateLimiter({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5, // 5 emails per hour per user
+  windowMs: 60 * 60 * 1000,
+  max: 5,
   message: {
     message: 'Too many emails sent, please try again later.'
   }
 });
 
-/**
- * Rate limiter for API key requests
- * Protects API key generation
- */
 export const apiKeyLimiter = createRateLimiter({
-  windowMs: 24 * 60 * 60 * 1000, // 24 hours
-  max: 5, // 5 API key requests per day
+  windowMs: 24 * 60 * 60 * 1000,
+  max: 5,
   message: {
     message: 'Too many API key requests, please try again tomorrow.'
   }
 });
 
-/**
- * Rate limiter for file uploads
- * Prevents upload spam
- */
 export const uploadLimiter = createRateLimiter({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 20, // 20 uploads per hour
+  windowMs: 60 * 60 * 1000,
+  max: 20,
   message: {
     message: 'Too many file uploads, please try again later.'
   }
 });
 
-/**
- * Rate limiter for search queries
- * Prevents search abuse
- */
 export const searchLimiter = createRateLimiter({
-  windowMs: 60 * 1000, // 1 minute
-  max: 30, // 30 searches per minute
+  windowMs: 60 * 1000,
+  max: 50, // Increased from 30
   message: {
     message: 'Too many search requests, please slow down.'
   }
 });
 
 /**
- * Lenient rate limiter for read-only operations
- * Higher limits for GET requests
+ * ✅ FIX: Very lenient for read operations (especially for contest pages)
  */
 export const readLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // 200 requests per 15 minutes
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 1000, // Very high for GET requests
   message: {
     message: 'Too many requests, please try again later.'
   }
 });
 
-/**
- * Strict rate limiter for write operations
- * Lower limits for POST/PUT/DELETE requests
- */
 export const writeLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50, // 50 requests per 15 minutes
+  windowMs: 15 * 60 * 1000,
+  max: 100, // Increased from 50
   message: {
     message: 'Too many write operations, please try again later.'
   }
 });
 
-/**
- * Contest submission rate limiter
- * Specific for contest submissions
- */
 export const contestSubmissionLimiter = createRateLimiter({
-  windowMs: 60 * 1000, // 1 minute
-  max: 5, // 5 contest submissions per minute
+  windowMs: 60 * 1000,
+  max: 10, // Increased from 5
   message: {
     message: 'Too many contest submissions, please wait before submitting again.'
   }
 });
 
-/**
- * Admin action rate limiter
- * Protects admin endpoints
- */
 export const adminLimiter = createRateLimiter({
-  windowMs: 60 * 1000, // 1 minute
-  max: 50, // 50 admin actions per minute
+  windowMs: 60 * 1000,
+  max: 100, // Increased from 50
   message: {
     message: 'Too many admin actions, please slow down.'
   }
 });
 
-/**
- * Close Redis connection
- * Should be called on server shutdown
- */
 export const closeRedisConnection = async () => {
   if (redisClient && redisClient.isOpen) {
     try {
@@ -274,20 +227,15 @@ export const closeRedisConnection = async () => {
   }
 };
 
-/**
- * Get Redis client status
- * @returns {boolean} - True if Redis is connected
- */
 export const isRedisConnected = () => {
   return redisClient && redisClient.isOpen;
 };
 
-// Export custom rate limiter creator
 export { createRateLimiter };
 
-// Default export with all limiters
 export default {
   globalLimiter,
+  contestLimiter, // ✅ NEW: Contest-specific limiter
   authLimiter,
   registerLimiter,
   submissionLimiter,

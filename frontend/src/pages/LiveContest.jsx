@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   FiClock, FiUsers, FiTarget, FiCode, FiChevronRight, FiChevronLeft,
@@ -14,6 +14,9 @@ import ContestTimer from '../components/contests/ContestTimer';
 import Loader from '../components/common/Loader';
 import { toast } from 'react-hot-toast';
 
+/**
+ * ✅ FIXED: LiveContest with proper socket lifecycle
+ */
 const LiveContest = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -28,103 +31,155 @@ const LiveContest = () => {
   const [liveUpdates, setLiveUpdates] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
 
+  // ✅ FIX: Use refs to prevent re-initialization
+  const socketInitialized = useRef(false);
+  const contestJoined = useRef(false);
+  const timerRef = useRef(null);
+
+  // ✅ FIX: Fetch contest data (separate from socket)
   useEffect(() => {
     fetchContest();
-    
-    // Try to connect to socket (with error handling)
-    try {
-      const socket = socketService.connect();
-      
-      // Check if methods exist before calling
-      if (typeof socketService.joinContest === 'function') {
-        socketService.joinContest(id, user?.id);
-      }
-      setIsConnected(true);
+  }, [id]);
 
-      // Listen for real-time updates (only if methods exist)
-      if (typeof socketService.onLeaderboardUpdate === 'function') {
-        socketService.onLeaderboardUpdate((newLeaderboard) => {
-          console.log('📊 Leaderboard updated!');
-          setLeaderboard(newLeaderboard);
-          
-          // Show toast for significant rank changes
-          if (leaderboard.length > 0) {
-            const oldRank = leaderboard.findIndex(l => l.userId === user?.id);
-            const newRank = newLeaderboard.findIndex(l => l.userId === user?.id);
-            if (oldRank !== -1 && newRank !== -1 && oldRank !== newRank) {
-              const direction = newRank < oldRank ? '↑' : '↓';
-              const change = Math.abs(newRank - oldRank);
-              if (change > 0) {
-                toast.success(`Rank ${direction}${change} places!`);
-              }
-            }
-          }
-        });
-      }
-
-      if (typeof socketService.onContestStatus === 'function') {
-        socketService.onContestStatus((data) => {
-          if (data.status === 'ended') {
-            toast.success('Contest has ended!');
-            navigate(`/contests/${id}/results`);
-          }
-        });
-      }
-
-      if (typeof socketService.onNewSubmission === 'function') {
-        socketService.onNewSubmission((submission) => {
-          setLiveUpdates(prev => [submission, ...prev.slice(0, 9)]);
-          
-          if (submission.userId !== user?.id) {
-            toast(`${submission.username} solved ${submission.problem}!`, {
-              icon: '🎯',
-            });
-          }
-        });
-      }
-    } catch (error) {
-      console.warn('Socket connection failed, using polling mode:', error);
-      setIsConnected(false);
+  // ✅ FIX: Socket connection and contest join (only once)
+  useEffect(() => {
+    if (socketInitialized.current || !user?.id) {
+      return;
     }
 
-    // Timer
-    const timer = setInterval(() => {
-      if (contest) {
-        const now = new Date().getTime();
-        const end = new Date(contest.endTime).getTime();
-        const remaining = Math.max(0, end - now);
-        setTimeRemaining(remaining);
+    console.log('🚀 Initializing socket connection...');
+    socketInitialized.current = true;
 
-        // Auto-submit notification
-        if (remaining === 30 * 60 * 1000) { // 30 minutes remaining
-          toast('⏰ 30 minutes remaining!', {
-            duration: 60000,
-            icon: '🚨',
-          });
-        } else if (remaining === 5 * 60 * 1000) { // 5 minutes remaining
-          toast('⚠️ 5 minutes remaining! Submit your solutions!', {
-            duration: 60000,
-            icon: '⚡',
+    try {
+      // Connect to socket
+      const socket = socketService.connect();
+      
+      if (!socket) {
+        console.error('❌ Failed to create socket');
+        setIsConnected(false);
+        return;
+      }
+
+      // Handle connection events
+      const handleConnect = () => {
+        console.log('✅ Socket connected successfully');
+        setIsConnected(true);
+        
+        // Join contest after connection
+        if (!contestJoined.current && id) {
+          console.log('🎯 Joining contest:', id);
+          socketService.joinContest(id, user.id);
+          contestJoined.current = true;
+        }
+      };
+
+      const handleDisconnect = (reason) => {
+        console.log('❌ Socket disconnected:', reason);
+        setIsConnected(false);
+        contestJoined.current = false;
+      };
+
+      const handleConnectError = (error) => {
+        console.error('❌ Connection error:', error.message);
+        setIsConnected(false);
+      };
+
+      // Set up connection listeners
+      socket.on('connect', handleConnect);
+      socket.on('disconnect', handleDisconnect);
+      socket.on('connect_error', handleConnectError);
+
+      // If already connected, join immediately
+      if (socket.connected) {
+        handleConnect();
+      }
+
+      // Set up contest event listeners
+      socketService.onLeaderboardUpdate((newLeaderboard) => {
+        console.log('📊 Leaderboard updated:', newLeaderboard);
+        setLeaderboard(newLeaderboard);
+      });
+
+      socketService.onContestStatus((data) => {
+        console.log('📢 Contest status:', data);
+        if (data.status === 'ended') {
+          toast.success('Contest has ended!');
+          navigate(`/contests/${id}/results`);
+        }
+      });
+
+      socketService.onNewSubmission((submission) => {
+        console.log('🎯 New submission:', submission);
+        setLiveUpdates(prev => [submission, ...prev.slice(0, 9)]);
+        
+        if (submission.userId !== user?.id) {
+          toast(`${submission.username} solved ${submission.problem}!`, {
+            icon: '🎯',
           });
         }
+      });
+
+      // Cleanup function
+      return () => {
+        console.log('🧹 Cleaning up socket...');
+        
+        // Remove connection listeners
+        socket.off('connect', handleConnect);
+        socket.off('disconnect', handleDisconnect);
+        socket.off('connect_error', handleConnectError);
+        
+        // Leave contest
+        if (contestJoined.current && socketService.isConnected()) {
+          console.log('👋 Leaving contest:', id);
+          socketService.leaveContest(id);
+        }
+        
+        // Clean up contest listeners
+        socketService.cleanupContestListeners();
+        
+        // Reset flags
+        socketInitialized.current = false;
+        contestJoined.current = false;
+      };
+    } catch (error) {
+      console.error('❌ Socket initialization failed:', error);
+      setIsConnected(false);
+    }
+  }, [id, user?.id]); // Only re-run if contest ID or user ID changes
+
+  // ✅ FIX: Timer (separate effect)
+  useEffect(() => {
+    if (!contest) return;
+
+    timerRef.current = setInterval(() => {
+      const now = new Date().getTime();
+      const end = new Date(contest.endTime).getTime();
+      const remaining = Math.max(0, end - now);
+      setTimeRemaining(remaining);
+
+      // Notifications
+      if (remaining === 30 * 60 * 1000) {
+        toast('⏰ 30 minutes remaining!', {
+          duration: 60000,
+          icon: '🚨',
+        });
+      } else if (remaining === 5 * 60 * 1000) {
+        toast('⚠️ 5 minutes remaining! Submit your solutions!', {
+          duration: 60000,
+          icon: '⚡',
+        });
+      } else if (remaining === 0) {
+        toast.success('Contest has ended!');
+        navigate(`/contests/${id}/results`);
       }
     }, 1000);
 
     return () => {
-      clearInterval(timer);
-      try {
-        if (typeof socketService.leaveContest === 'function') {
-          socketService.leaveContest(id);
-        }
-        if (typeof socketService.disconnect === 'function') {
-          socketService.disconnect();
-        }
-      } catch (error) {
-        console.warn('Socket cleanup failed:', error);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
       }
-      setIsConnected(false);
     };
-  }, [id, user, contest]);
+  }, [contest, id, navigate]);
 
   const fetchContest = async () => {
     try {
@@ -136,15 +191,10 @@ const LiveContest = () => {
         setProblems(response.data.problems || []);
         setLeaderboard(response.data.leaderboard || []);
         
-        // Mock live updates
-        setLiveUpdates([
-          { id: 1, username: 'coder123', problem: 'Two Sum', time: '2 minutes ago', status: 'accepted' },
-          { id: 2, username: 'alice456', problem: 'Binary Search', time: '3 minutes ago', status: 'accepted' },
-          { id: 3, username: 'bob789', problem: 'DFS Maze', time: '4 minutes ago', status: 'wrong' },
-        ]);
+        console.log('✅ Contest data loaded');
       }
     } catch (error) {
-      console.error('Failed to fetch contest:', error);
+      console.error('❌ Failed to fetch contest:', error);
       toast.error('Failed to load contest');
       navigate('/contests');
     } finally {
@@ -224,14 +274,18 @@ const LiveContest = () => {
             <div className="flex items-center gap-4">
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${isConnected 
                 ? 'bg-green-500/20 text-green-400' 
-                : 'bg-yellow-500/20 text-yellow-400'
+                : 'bg-red-500/20 text-red-400'
               }`}>
-                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`}></div>
-                <span className="text-sm">{isConnected ? 'Live' : 'Polling'}</span>
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
+                <span className="text-sm">{isConnected ? 'Connected' : 'Disconnected'}</span>
               </div>
               
-              <button className="p-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors">
-                <FiSettings className="h-5 w-5" />
+              <button 
+                onClick={fetchContest}
+                className="p-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
+                title="Refresh"
+              >
+                <FiRefreshCw className="h-5 w-5" />
               </button>
             </div>
           </div>
@@ -323,7 +377,7 @@ const LiveContest = () => {
               <div className="p-6">
                 {activeTab === 'problems' && (
                   <div className="space-y-4">
-                    {problems.map((problem, index) => (
+                    {problems.length > 0 ? problems.map((problem, index) => (
                       <div
                         key={problem._id}
                         className="group bg-gray-800/30 border border-gray-700/50 rounded-xl p-6 hover:border-blue-500/50 transition-all cursor-pointer"
@@ -347,7 +401,6 @@ const LiveContest = () => {
                                   {problem.difficulty}
                                 </span>
                                 <span className="text-sm text-gray-400">{problem.points} points</span>
-                                <span className="text-sm text-gray-400">{problem.acceptance}% acceptance</span>
                               </div>
                             </div>
                           </div>
@@ -363,7 +416,11 @@ const LiveContest = () => {
                         </div>
                         <p className="text-gray-400 line-clamp-2">{problem.description}</p>
                       </div>
-                    ))}
+                    )) : (
+                      <div className="text-center py-12">
+                        <p className="text-gray-400">No problems available yet.</p>
+                      </div>
+                    )}
                   </div>
                 )}
                 
@@ -441,7 +498,7 @@ const LiveContest = () => {
               </div>
               
               <div className="space-y-3">
-                {leaderboard.slice(0, 10).map((entry, index) => (
+                {leaderboard.length > 0 ? leaderboard.slice(0, 10).map((entry, index) => (
                   <div
                     key={entry.userId}
                     className={`p-3 rounded-xl transition-all ${entry.userId === user?.id
@@ -461,23 +518,27 @@ const LiveContest = () => {
                               'text-amber-600'
                             }`} />
                           ) : (
-                            <span className="font-bold">#{entry.rank}</span>
+                            <span className="font-bold text-sm">#{index + 1}</span>
                           )}
                         </div>
                         <div>
-                          <div className="font-medium text-white">
+                          <div className="font-medium text-white text-sm">
                             {entry.username}
                             {entry.userId === user?.id && (
                               <span className="ml-2 text-xs text-blue-400">(You)</span>
                             )}
                           </div>
-                          <div className="text-xs text-gray-400">{entry.solved} solved</div>
+                          <div className="text-xs text-gray-400">{entry.solved || 0} solved</div>
                         </div>
                       </div>
-                      <div className="font-bold text-white">{entry.score}</div>
+                      <div className="font-bold text-white">{entry.score || 0}</div>
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <div className="text-center py-8">
+                    <p className="text-gray-400 text-sm">No leaderboard data yet</p>
+                  </div>
+                )}
               </div>
               
               <button
@@ -490,64 +551,37 @@ const LiveContest = () => {
             </div>
 
             {/* Live Updates */}
-            <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl rounded-2xl border border-gray-700/50 p-6">
-              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <FiBell className="h-5 w-5 text-green-400" />
-                Live Updates
-              </h3>
-              
-              <div className="space-y-3">
-                {liveUpdates.map((update) => (
-                  <div key={update.id} className="p-3 bg-gray-800/30 rounded-xl border border-gray-700/50">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-white">{update.username}</span>
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        update.status === 'accepted'
-                          ? 'bg-green-500/20 text-green-400'
-                          : 'bg-red-500/20 text-red-400'
-                      }`}>
-                        {update.status}
-                      </span>
+            {liveUpdates.length > 0 && (
+              <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl rounded-2xl border border-gray-700/50 p-6">
+                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                  <FiBell className="h-5 w-5 text-green-400" />
+                  Live Updates
+                </h3>
+                
+                <div className="space-y-3">
+                  {liveUpdates.map((update) => (
+                    <div key={update.id} className="p-3 bg-gray-800/30 rounded-xl border border-gray-700/50">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium text-white text-sm">{update.username}</span>
+                        <span className={`px-2 py-0.5 rounded text-xs ${
+                          update.status === 'accepted'
+                            ? 'bg-green-500/20 text-green-400'
+                            : 'bg-red-500/20 text-red-400'
+                        }`}>
+                          {update.status}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-400">
+                        Solved <span className="text-white">{update.problem}</span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-2">{update.time}</div>
                     </div>
-                    <div className="text-sm text-gray-400">
-                      Solved <span className="text-white">{update.problem}</span>
-                    </div>
-                    <div className="text-xs text-gray-500 mt-2">{update.time}</div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl rounded-2xl border border-gray-700/50 p-6">
-              <h3 className="text-lg font-bold text-white mb-4">Quick Actions</h3>
-              <div className="space-y-3">
-                <button className="w-full flex items-center justify-between p-3 bg-gray-800/30 rounded-xl hover:bg-gray-800/50 transition-colors">
-                  <span className="text-gray-300">View All Problems</span>
-                  <FiCode className="h-4 w-4 text-blue-400" />
-                </button>
-                <button className="w-full flex items-center justify-between p-3 bg-gray-800/30 rounded-xl hover:bg-gray-800/50 transition-colors">
-                  <span className="text-gray-300">Download Scoreboard</span>
-                  <FiDownload className="h-4 w-4 text-green-400" />
-                </button>
-                <button className="w-full flex items-center justify-between p-3 bg-gray-800/30 rounded-xl hover:bg-gray-800/50 transition-colors">
-                  <span className="text-gray-300">Share Contest</span>
-                  <FiShare2 className="h-4 w-4 text-purple-400" />
-                </button>
-              </div>
-            </div>
+            )}
           </div>
         </div>
-      </div>
-
-      {/* Floating Action Button */}
-      <div className="fixed bottom-6 right-6">
-        <button
-          onClick={() => navigate(`/contests/${id}/leaderboard`)}
-          className="p-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-full shadow-2xl hover:scale-110 transition-transform"
-        >
-          <MdOutlineLeaderboard className="h-6 w-6" />
-        </button>
       </div>
     </div>
   );
