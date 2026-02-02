@@ -21,6 +21,7 @@ const Contest = sequelize.define('Contest', {
   slug: {
     type: DataTypes.STRING(200),
     allowNull: false,
+    unique: true,
     validate: {
       notEmpty: true,
       isLowercase: true,
@@ -136,13 +137,18 @@ const Contest = sequelize.define('Contest', {
     allowNull: true
   },
   
-  created_by: {
-    type: DataTypes.INTEGER,
+  // ✅ NEW: Store MongoDB Problem IDs
+  problem_ids: {
+    type: DataTypes.ARRAY(DataTypes.STRING(255)),
+    defaultValue: [],
     allowNull: true,
-    references: {
-      model: 'users',
-      key: 'id'
-    }
+    comment: 'Array of MongoDB Problem ObjectIds'
+  },
+  
+  created_by: {
+    type: DataTypes.STRING(255),
+    allowNull: true, // ✅ Changed to allow null for now
+    comment:'MongoDB User ObjectId'
   },
   
   created_at: {
@@ -164,13 +170,9 @@ const Contest = sequelize.define('Contest', {
   underscored: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
-  
-  // IMPORTANT: Don't let Sequelize sync/alter the table
-  // We manage the schema manually
   freezeTableName: true,
   
   hooks: {
-    // Before creating, calculate duration if not provided
     beforeCreate: (contest, options) => {
       if (!contest.duration_minutes && contest.start_time && contest.end_time) {
         const duration = Math.round(
@@ -180,7 +182,6 @@ const Contest = sequelize.define('Contest', {
       }
     },
     
-    // Before updating, recalculate duration if times changed
     beforeUpdate: (contest, options) => {
       if (contest.changed('start_time') || contest.changed('end_time')) {
         const duration = Math.round(
@@ -215,6 +216,11 @@ Contest.prototype.getStatus = function() {
 
 Contest.prototype.canRegister = function() {
   return this.registration_open && this.isUpcoming();
+};
+
+// ✅ NEW: Method to get problem count
+Contest.prototype.getProblemCount = function() {
+  return this.problem_ids ? this.problem_ids.length : 0;
 };
 
 export default Contest;
