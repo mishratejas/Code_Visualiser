@@ -151,14 +151,22 @@ const CreateContest = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // ✅ FIX: Check authentication first
     if (!user) {
       toast.error('Please login to create a contest');
       navigate('/login');
       return;
     }
 
+    // ✅ FIX: Validate all steps
     if (!validateStep(5)) {
       toast.error('Please fix all errors before submitting');
+      return;
+    }
+
+    // ✅ FIX: Prevent double submission
+    if (loading) {
+      console.log('⚠️ Already submitting, ignoring duplicate request');
       return;
     }
 
@@ -166,9 +174,9 @@ const CreateContest = () => {
 
     try {
       const contestData = {
-        title: formData.title,
-        slug: formData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        description: formData.description,
+        title: formData.title.trim(),
+        slug: formData.title.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-'),
+        description: formData.description.trim(),
         contest_type: formData.contestType,
         difficulty: formData.difficulty,
         start_time: formData.startTime,
@@ -191,20 +199,40 @@ const CreateContest = () => {
 
       console.log('Response:', response);
 
+      // ✅ FIX: Check for successful response
       if (response.data?.success || response.status === 201) {
-        toast.success('Contest created successfully! 🎉');
         const contestId = response.data?.data?.id || response.data?.data?._id || response.data?.contest?.id;
+        
+        // ✅ FIX: Show success toast FIRST
+        toast.success('Contest created successfully! Redirecting to add problems...', { 
+          duration: 2000,
+          icon: '🎉'
+        });
+        
+        // ✅ FIX: Navigate IMMEDIATELY (don't wait)
         if (contestId) {
-          navigate(`/contests/${contestId}`);
+          console.log('✅ Contest created with ID:', contestId);
+          navigate(`/contests/${contestId}/add-problems`);
         } else {
+          console.warn('⚠️ No contest ID returned, redirecting to contests page');
           navigate('/contests');
         }
       }
     } catch (error) {
       console.error('Failed to create contest:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to create contest';
-      toast.error(errorMessage);
-    } finally {
+      
+      // ✅ FIX: Better error handling
+      const errorMessage = error.response?.data?.message || error.message;
+      
+      if (errorMessage?.includes('slug')) {
+        toast.error('A contest with this title already exists. Please choose a different title.');
+      } else if (error.response?.status === 400) {
+        toast.error(errorMessage || 'Invalid contest data. Please check all fields.');
+      } else {
+        toast.error('Failed to create contest. Please try again.');
+      }
+      
+      // ✅ FIX: Re-enable button only on error
       setLoading(false);
     }
   };
@@ -558,36 +586,6 @@ const CreateContest = () => {
                 <span>Separate multiple prizes with commas</span>
               </div>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-3">
-                Banner Image URL (Optional)
-              </label>
-              <input
-                type="url"
-                name="banner"
-                value={formData.banner}
-                onChange={handleChange}
-                placeholder="https://example.com/banner.jpg"
-                className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-gray-500 transition-all"
-              />
-              {formData.banner && (
-                <div className="mt-3">
-                  <p className="text-sm text-gray-400 mb-2">Preview:</p>
-                  <div className="h-32 rounded-lg overflow-hidden border border-gray-600">
-                    <img 
-                      src={formData.banner} 
-                      alt="Banner preview" 
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = 'https://via.placeholder.com/800x200/1f2937/9ca3af?text=Invalid+Image+URL';
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         );
 
@@ -607,19 +605,19 @@ const CreateContest = () => {
 
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 bg-gray-700/30 rounded-lg">
+                  <div className="p-3 bg-gray-800/30 rounded-lg">
                     <div className="text-sm text-gray-400">Type</div>
                     <div className="text-white font-medium">
                       {contestTypes.find(t => t.value === formData.contestType)?.label}
                     </div>
                   </div>
-                  <div className="p-3 bg-gray-700/30 rounded-lg">
+                  <div className="p-3 bg-gray-800/30 rounded-lg">
                     <div className="text-sm text-gray-400">Difficulty</div>
                     <div className="text-white font-medium capitalize">{formData.difficulty}</div>
                   </div>
                 </div>
 
-                <div className="p-3 bg-gray-700/30 rounded-lg">
+                <div className="p-3 bg-gray-800/30 rounded-lg">
                   <div className="text-sm text-gray-400">Schedule</div>
                   <div className="text-white font-medium">
                     {formData.startTime 
@@ -629,7 +627,7 @@ const CreateContest = () => {
                   </div>
                 </div>
 
-                <div className="p-3 bg-gray-700/30 rounded-lg">
+                <div className="p-3 bg-gray-800/30 rounded-lg">
                   <div className="text-sm text-gray-400">Participation</div>
                   <div className="text-white font-medium">
                     {formData.maxParticipants 
@@ -641,7 +639,7 @@ const CreateContest = () => {
                 </div>
 
                 {formData.tags.length > 0 && (
-                  <div className="p-3 bg-gray-700/30 rounded-lg">
+                  <div className="p-3 bg-gray-800/30 rounded-lg">
                     <div className="text-sm text-gray-400 mb-2">Tags</div>
                     <div className="flex flex-wrap gap-2">
                       {formData.tags.map((tag) => (
@@ -658,10 +656,10 @@ const CreateContest = () => {
             <div className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-xl border border-blue-500/30 p-6">
               <h4 className="font-medium text-white mb-3 flex items-center gap-2">
                 <FiInfo className="h-5 w-5 text-blue-400" />
-                Almost Ready!
+                Next Step: Add Problems
               </h4>
               <p className="text-gray-300 text-sm">
-                Your contest will be created and you'll be able to add problems, manage participants, and track submissions.
+                After creating this contest, you'll be redirected to add problems. You can select from published problems to include in this contest.
               </p>
             </div>
           </div>
@@ -784,9 +782,9 @@ const CreateContest = () => {
               <button
                 type="submit"
                 disabled={loading}
-                className={`inline-flex items-center gap-2 px-8 py-3 rounded-xl font-medium ${
+                className={`inline-flex items-center gap-2 px-8 py-3 rounded-xl font-medium transition-all ${
                   loading
-                    ? 'bg-gray-400 cursor-not-allowed'
+                    ? 'bg-gray-400 cursor-not-allowed opacity-50'
                     : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:shadow-lg'
                 } text-white`}
               >
@@ -798,7 +796,7 @@ const CreateContest = () => {
                 ) : (
                   <>
                     <FiCheck className="h-5 w-5" />
-                    Create Contest
+                    Create & Add Problems
                   </>
                 )}
               </button>

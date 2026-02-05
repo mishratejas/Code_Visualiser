@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { 
   FiCalendar, FiAward, FiBarChart2, FiCode, FiUsers, FiGlobe, FiMail, FiMapPin, FiBriefcase,
-  FiStar, FiTrendingUp, FiZap, FiActivity, FiTarget, FiCheckCircle, FiClock, FiHeart
+  FiStar, FiTrendingUp, FiZap, FiActivity, FiTarget, FiCheckCircle, FiClock, FiHeart, FiUser
 } from 'react-icons/fi';
 import { BsTrophyFill, BsFire } from 'react-icons/bs';
 import { AiFillFire } from 'react-icons/ai';

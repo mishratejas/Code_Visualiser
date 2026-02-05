@@ -5,7 +5,7 @@ import {
   createContest,
   updateContest,
   deleteContest,
-  addProblemsToContest, // ✅ NEW
+  addProblemsToContest,
   registerForContest,
   submitContestSolution,
   getContestLeaderboard
@@ -24,14 +24,14 @@ router.get('/:id/leaderboard', getContestLeaderboard);
 // =====================================
 // PROTECTED ROUTES (REQUIRE AUTHENTICATION)
 // =====================================
-router.post('/', authenticate, createContest);
-router.put('/:id', authenticate, updateContest);
-router.delete('/:id', authenticate, deleteContest);
 
-// ✅ NEW: Add problems to contest
-router.post('/:id/problems', authenticate, addProblemsToContest);
+// ✅ ADMIN ONLY - Contest Management
+router.post('/', authenticate, authorize('admin'), createContest);
+router.put('/:id', authenticate, authorize('admin'), updateContest);
+router.delete('/:id', authenticate, authorize('admin'), deleteContest);
+router.post('/:id/problems', authenticate, authorize('admin'), addProblemsToContest);
 
-// Contest participation
+// ✅ USER - Contest Participation
 router.post('/:id/register', authenticate, registerForContest);
 router.post('/:id/submit', authenticate, submitContestSolution);
 

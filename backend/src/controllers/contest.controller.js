@@ -534,12 +534,28 @@ export const registerForContest = async (req, res) => {
 
     // Check private contest password
     if (contest.is_private) {
-      if (!password || password !== contest.registration_password) {
-        return res.status(401).json({ 
+      if (!contest.registration_password) {
+        return res.status(400).json({ 
           success: false, 
-          message: 'Invalid password' 
+          message: 'Contest password not configured' 
         });
       }
+      
+      if (!password) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Password required for private contest' 
+        });
+      }
+      
+      if (password !== contest.registration_password) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Incorrect password' 
+        });
+      }
+      
+      console.log('✅ Password validated for private contest:', contestId);
     }
 
     // Check if already registered

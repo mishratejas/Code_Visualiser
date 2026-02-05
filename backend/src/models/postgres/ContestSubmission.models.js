@@ -20,20 +20,18 @@ const ContestSubmission = sequelize.define('ContestSubmission', {
     onDelete: 'CASCADE'
   },
   
+  // ✅ FIX: Changed from INTEGER to STRING to store MongoDB ObjectId
   user_id: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING(255),
     allowNull: false,
-    references: {
-      model: 'users',
-      key: 'id'
-    },
-    onUpdate: 'CASCADE',
-    onDelete: 'CASCADE'
+    comment: 'MongoDB User ObjectId'
   },
   
+  // ✅ FIX: Changed from INTEGER to STRING to store MongoDB Problem ObjectId
   problem_id: {
-    type: DataTypes.INTEGER,
-    allowNull: false
+    type: DataTypes.STRING(255),
+    allowNull: false,
+    comment: 'MongoDB Problem ObjectId'
   },
   
   submission_id: {

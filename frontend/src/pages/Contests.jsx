@@ -11,8 +11,10 @@ import api from '../services/api';
 import Loader from '../components/common/Loader';
 import { toast } from 'react-hot-toast';
 import ContestTimer from '../components/contests/ContestTimer';
+import { useAuth } from '../context/AuthContext';
 
 const Contests = () => {
+  const { user } = useAuth();
   const [contests, setContests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -25,6 +27,12 @@ const Contests = () => {
     ongoing: 0,
     past: 0
   });
+
+  // ✅ Registration Modal State
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [selectedContest, setSelectedContest] = useState(null);
+  const [contestPassword, setContestPassword] = useState('');
+  const [registering, setRegistering] = useState(false);
 
   useEffect(() => {
     fetchContests();
@@ -135,6 +143,60 @@ const Contests = () => {
     }
   };
 
+  // ✅ Registration Handler
+  const handleRegisterClick = (contest) => {
+    if (!user) {
+      toast.error('Please login to register for contests');
+      return;
+    }
+
+    setSelectedContest(contest);
+    
+    // Check if contest is private
+    if (contest.is_private || contest.isPrivate) {
+      setShowPasswordModal(true);
+    } else {
+      registerForContest(contest.id || contest._id, null);
+    }
+  };
+
+  // ✅ Register for Contest
+  const registerForContest = async (contestId, password = null) => {
+    try {
+      setRegistering(true);
+      
+      const payload = password ? { password } : {};
+      
+      await api.post(`/contests/${contestId}/register`, payload);
+      
+      toast.success('Successfully registered for contest! 🎉');
+      setShowPasswordModal(false);
+      setContestPassword('');
+      setSelectedContest(null);
+      
+      // Refresh contests to update participant count
+      fetchContests();
+    } catch (error) {
+      console.error('Registration error:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Registration failed';
+      toast.error(errorMessage);
+    } finally {
+      setRegistering(false);
+    }
+  };
+
+  // ✅ Handle Password Submit
+  const handlePasswordSubmit = (e) => {
+    e.preventDefault();
+    
+    if (!contestPassword.trim()) {
+      toast.error('Please enter the contest password');
+      return;
+    }
+    
+    registerForContest(selectedContest.id || selectedContest._id, contestPassword);
+  };
+
   // Filter contests based on search and difficulty
   const filteredContests = contests.filter(contest => {
     const matchesSearch = !searchQuery || 
@@ -182,13 +244,15 @@ const Contests = () => {
               </div>
               
               <div className="flex flex-wrap gap-4 mt-6">
-                <Link
-                  to="/contests/create"
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-white text-blue-600 font-bold rounded-xl hover:shadow-lg transition-all"
-                >
-                  <Plus className="h-5 w-5" />
-                  Create Contest
-                </Link>
+                {user?.role === 'admin' && (
+                  <Link
+                    to="/contests/create"
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-white text-blue-600 font-bold rounded-xl hover:shadow-lg transition-all"
+                  >
+                    <Plus className="h-5 w-5" />
+                    Create Contest
+                  </Link>
+                )}
                 <Link
                   to="/leaderboard"
                   className="inline-flex items-center gap-2 px-6 py-3 bg-white/20 backdrop-blur-sm rounded-xl hover:bg-white/30 transition-all"
@@ -283,7 +347,10 @@ const Contests = () => {
                     >
                       View Details
                     </Link>
-                    <button className="block w-full px-6 py-3 bg-white/10 backdrop-blur-sm text-white font-medium rounded-xl hover:bg-white/20 transition-all">
+                    <button 
+                      onClick={() => handleRegisterClick(filteredContests[0])}
+                      className="block w-full px-6 py-3 bg-white/10 backdrop-blur-sm text-white font-medium rounded-xl hover:bg-white/20 transition-all"
+                    >
                       Register Now
                     </button>
                   </div>
@@ -432,7 +499,10 @@ const Contests = () => {
                       View Details
                     </Link>
                     {status === 'upcoming' && (
-                      <button className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all font-medium">
+                      <button 
+                        onClick={() => handleRegisterClick(contest)}
+                        className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all font-medium"
+                      >
                         Register
                       </button>
                     )}
@@ -473,6 +543,81 @@ const Contests = () => {
           >
             Reset Filters
           </button>
+        </div>
+      )}
+
+      {/* ✅ PASSWORD MODAL */}
+      {showPasswordModal && selectedContest && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl border border-gray-700 shadow-2xl max-w-md w-full p-8 animate-in fade-in zoom-in duration-200">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl flex items-center justify-center">
+                <Users className="h-8 w-8 text-white" />
+              </div>
+              <h3 className="text-2xl font-bold text-white mb-2">Private Contest</h3>
+              <p className="text-gray-400">
+                This contest requires a password to register
+              </p>
+            </div>
+
+            <form onSubmit={handlePasswordSubmit} className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Contest Password
+                </label>
+                <input
+                  type="password"
+                  value={contestPassword}
+                  onChange={(e) => setContestPassword(e.target.value)}
+                  placeholder="Enter password"
+                  className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-gray-500 transition-all"
+                  autoFocus
+                  disabled={registering}
+                />
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordModal(false);
+                    setContestPassword('');
+                    setSelectedContest(null);
+                  }}
+                  className="flex-1 px-6 py-3 bg-gray-700/50 text-gray-300 rounded-xl hover:bg-gray-700 transition-all font-medium"
+                  disabled={registering}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={registering || !contestPassword.trim()}
+                >
+                  {registering ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Registering...
+                    </span>
+                  ) : (
+                    'Register'
+                  )}
+                </button>
+              </div>
+            </form>
+
+            <div className="mt-6 p-4 bg-blue-500/10 rounded-xl border border-blue-500/30">
+              <p className="text-sm text-blue-300 text-center">
+                <strong>{selectedContest.title}</strong>
+              </p>
+              <p className="text-xs text-gray-400 text-center mt-1">
+                {safeFormat(selectedContest.startTime || selectedContest.start_time, 'MMM dd, yyyy • hh:mm a')}
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -522,13 +667,15 @@ const Contests = () => {
             Join thousands of developers in our coding contests. Test your skills, learn from others, and climb the global leaderboard.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link
-              to="/contests/create"
-              className="inline-flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all font-bold"
-            >
-              <Plus className="h-5 w-5" />
-              Create Your Contest
-            </Link>
+            {user?.role === 'admin' && (
+              <Link
+                to="/contests/create"
+                className="inline-flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all font-bold"
+              >
+                <Plus className="h-5 w-5" />
+                Create Your Contest
+              </Link>
+            )}
             <Link
               to="/leaderboard"
               className="inline-flex items-center gap-2 px-8 py-3 bg-gray-700/50 border border-gray-600 text-white rounded-xl hover:bg-gray-700 transition-all font-bold"

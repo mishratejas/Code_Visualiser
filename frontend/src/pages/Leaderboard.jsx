@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiTrendingUp, FiAward, FiFilter, FiClock, FiZap } from 'react-icons/fi';
-import { BsTrophy, BsMedal } from 'react-icons/bs';
+import { BsTrophy } from 'react-icons/bs';
+import { FaMedal } from 'react-icons/fa'; // ✅ FIXED: Changed from BsMedal to FaMedal
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
@@ -73,9 +74,9 @@ const Leaderboard = () => {
         </div>
       );
     } else if (rank === 2) {
-      return <BsMedal className="text-gray-400 text-3xl" />;
+      return <FaMedal className="text-gray-400 text-3xl" />;
     } else if (rank === 3) {
-      return <BsMedal className="text-amber-600 text-3xl" />;
+      return <FaMedal className="text-amber-600 text-3xl" />;
     }
     return (
       <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold">
@@ -187,7 +188,7 @@ const Leaderboard = () => {
                     className="w-full h-full object-cover"
                   />
                 </div>
-                <BsMedal className="text-gray-400 text-3xl mx-auto mb-2" />
+                <FaMedal className="text-gray-400 text-3xl mx-auto mb-2" />
                 <h3 className="font-bold text-lg text-gray-900 dark:text-white mb-1">
                   {leaderboardData[1].user?.username}
                 </h3>
@@ -240,7 +241,7 @@ const Leaderboard = () => {
                     className="w-full h-full object-cover"
                   />
                 </div>
-                <BsMedal className="text-amber-600 text-3xl mx-auto mb-2" />
+                <FaMedal className="text-amber-600 text-3xl mx-auto mb-2" />
                 <h3 className="font-bold text-lg text-gray-900 dark:text-white mb-1">
                   {leaderboardData[2].user?.username}
                 </h3>

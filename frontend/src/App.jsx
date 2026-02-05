@@ -22,10 +22,11 @@ const Submissions = lazy(() => import('./pages/Submissions'));
 const Contests = lazy(() => import('./pages/Contests'));
 const CreateContest = lazy(() => import('./pages/CreateContest'));
 const LiveContest = lazy(() => import('./pages/LiveContest'));
+const AddProblemsToContest = lazy(() => import('./pages/AddProblemsToContest')); // ✅ NEW
 const Profile = lazy(() => import('./pages/Profile'));
 const Settings = lazy(() => import('./pages/Settings'));
 
-// NEW PAGES - Import the missing pages
+// NEW PAGES
 const ProblemCategories = lazy(() => import('./pages/ProblemCategories'));
 const FavoriteProblems = lazy(() => import('./pages/FavoriteProblems'));
 const PracticePage = lazy(() => import('./pages/PracticePage'));
@@ -59,12 +60,12 @@ const App = () => {
               
               <Suspense fallback={<Loader fullScreen={true} />}>
                 <Routes>
-                  {/* Public Routes without sidebar */}
+                  {/* Public Routes */}
                   <Route path="/" element={<Layout><Home /></Layout>} />
                   <Route path="/login" element={<Layout><Login /></Layout>} />
                   <Route path="/register" element={<Layout><Register /></Layout>} />
                   
-                  {/* Protected Routes with sidebar */}
+                  {/* Dashboard */}
                   <Route path="/dashboard" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -90,7 +91,6 @@ const App = () => {
                     </PrivateRoute>
                   } />
 
-                  {/* NEW PROBLEM ROUTES */}
                   <Route path="/problems/categories" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -132,7 +132,7 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
-                  {/* LEADERBOARD - NEW */}
+                  {/* LEADERBOARD */}
                   <Route path="/leaderboard" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -141,7 +141,7 @@ const App = () => {
                     </PrivateRoute>
                   } />
 
-                  {/* ACHIEVEMENTS - NEW */}
+                  {/* ACHIEVEMENTS */}
                   <Route path="/achievements" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -150,7 +150,7 @@ const App = () => {
                     </PrivateRoute>
                   } />
 
-                  {/* HELP - NEW */}
+                  {/* HELP */}
                   <Route path="/help" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -159,7 +159,7 @@ const App = () => {
                     </PrivateRoute>
                   } />
 
-                  {/* NOTIFICATIONS - NEW */}
+                  {/* NOTIFICATIONS */}
                   <Route path="/notifications" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -168,7 +168,9 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
-                  {/* ✅ CONTESTS ROUTES - ADDED ALL MISSING ROUTES */}
+                  {/* ============================================
+                      CONTESTS ROUTES
+                      ============================================ */}
                   <Route path="/contests" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -177,7 +179,6 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
-                  {/* ✅ CREATE CONTEST ROUTE - NEW */}
                   <Route path="/contests/create" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -186,7 +187,15 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
-                  {/* ✅ LIVE CONTEST ROUTE - NEW */}
+                  {/* ✅ NEW: Add Problems to Contest */}
+                  <Route path="/contests/:id/add-problems" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <AddProblemsToContest />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
+                  
                   <Route path="/contests/:id/live" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -195,16 +204,23 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
-                  {/* ✅ CONTEST DETAIL ROUTE - NEW */}
                   <Route path="/contests/:id" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
-                        <LiveContest />
+                        <Contests />
                       </Layout>
                     </PrivateRoute>
                   } />
                   
-                  {/* PROFILE */}
+                  {/* PROFILE & SETTINGS */}
+                  <Route path="/profile" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <Profile />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
+                  
                   <Route path="/profile/:username" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -213,7 +229,6 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
-                  {/* SETTINGS */}
                   <Route path="/settings" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -222,35 +237,15 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
-                  {/* Redirects */}
-                  <Route path="/home" element={<Navigate to="/" replace />} />
-                  <Route path="/signin" element={<Navigate to="/login" replace />} />
-                  <Route path="/signup" element={<Navigate to="/register" replace />} />
-                  <Route path="/account" element={<Navigate to="/settings" replace />} />
-                  
-                  {/* 404 Route */}
-                  <Route path="*" element={
-                    <Layout>
-                      <div className="min-h-screen flex items-center justify-center">
-                        <div className="text-center py-12">
-                          <h1 className="text-6xl font-bold text-white mb-4">404</h1>
-                          <p className="text-gray-400 mb-6 text-xl">Page not found</p>
-                          <a 
-                            href="/" 
-                            className="inline-block px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:shadow-lg transition-all font-medium"
-                          >
-                            Go Home
-                          </a>
-                        </div>
-                      </div>
-                    </Layout>
-                  } />
+                  {/* 404 */}
+                  <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </Suspense>
               
               <Footer />
-              <Toaster 
-                position="top-right"
+              
+              <Toaster
+                position="bottom-right"
                 toastOptions={{
                   duration: 4000,
                   style: {
@@ -260,14 +255,14 @@ const App = () => {
                   },
                   success: {
                     iconTheme: {
-                      primary: '#10B981',
-                      secondary: '#FFFFFF',
+                      primary: '#10b981',
+                      secondary: '#fff',
                     },
                   },
                   error: {
                     iconTheme: {
-                      primary: '#EF4444',
-                      secondary: '#FFFFFF',
+                      primary: '#ef4444',
+                      secondary: '#fff',
                     },
                   },
                 }}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiAward, FiTarget, FiTrendingUp, FiZap, FiStar, FiLock } from 'react-icons/fi';
-import { BsTrophy, BsMedal, BsLightningFill, BsCheckCircleFill } from 'react-icons/bs';
+import { BsTrophy, BsLightningFill, BsCheckCircleFill } from 'react-icons/bs';
+import { FaMedal } from 'react-icons/fa'; // ✅ FIXED: Changed from BsMedal to FaMedal
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
@@ -114,7 +115,7 @@ const Achievements = () => {
         id: 'all_easy',
         title: 'Easy Master',
         description: 'Solve 50 easy problems',
-        icon: <BsMedal />,
+        icon: <FaMedal />,
         points: 100,
         category: 'difficulty',
         color: 'from-green-500 to-teal-500',
@@ -125,7 +126,7 @@ const Achievements = () => {
         id: 'all_medium',
         title: 'Medium Master',
         description: 'Solve 50 medium problems',
-        icon: <BsMedal />,
+        icon: <FaMedal />,
         points: 200,
         category: 'difficulty',
         color: 'from-yellow-500 to-amber-500',
@@ -136,7 +137,7 @@ const Achievements = () => {
         id: 'all_hard',
         title: 'Hard Master',
         description: 'Solve 50 hard problems',
-        icon: <BsMedal />,
+        icon: <FaMedal />,
         points: 500,
         category: 'difficulty',
         color: 'from-red-500 to-rose-500',
@@ -224,7 +225,7 @@ const Achievements = () => {
     { value: 'all', label: 'All Achievements', icon: <FiAward /> },
     { value: 'milestone', label: 'Milestones', icon: <FiTarget /> },
     { value: 'streak', label: 'Streaks', icon: <BsLightningFill /> },
-    { value: 'difficulty', label: 'Difficulty', icon: <BsMedal /> },
+    { value: 'difficulty', label: 'Difficulty', icon: <FaMedal /> },
     { value: 'contest', label: 'Contests', icon: <BsTrophy /> },
     { value: 'special', label: 'Special', icon: <FiStar /> }
   ];

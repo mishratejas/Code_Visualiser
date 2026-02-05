@@ -32,8 +32,7 @@ class SocketService {
 
     try {
       // ✅ FIX: Get base URL and remove /api/v1 path
-      let serverUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      
+      let serverUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:8000';      
       // Remove /api/v1 or any path suffix for Socket.IO
       serverUrl = serverUrl.replace(/\/api\/v\d+\/?$/, '');
       
