@@ -21,8 +21,9 @@ const Submit = lazy(() => import('./pages/Submit'));
 const Submissions = lazy(() => import('./pages/Submissions'));
 const Contests = lazy(() => import('./pages/Contests'));
 const CreateContest = lazy(() => import('./pages/CreateContest'));
+const ContestDetail = lazy(() => import('./pages/ContestDetail')); // ✅ NEW
 const LiveContest = lazy(() => import('./pages/LiveContest'));
-const AddProblemsToContest = lazy(() => import('./pages/AddProblemsToContest')); // ✅ NEW
+const AddProblemsToContest = lazy(() => import('./pages/AddProblemsToContest'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Settings = lazy(() => import('./pages/Settings'));
 
@@ -186,8 +187,7 @@ const App = () => {
                       </Layout>
                     </PrivateRoute>
                   } />
-                  
-                  {/* ✅ NEW: Add Problems to Contest */}
+                  {/* ✅ Add Problems to Contest */}
                   <Route path="/contests/:id/add-problems" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -195,7 +195,8 @@ const App = () => {
                       </Layout>
                     </PrivateRoute>
                   } />
-                  
+
+                  {/* ✅ Live Contest */}
                   <Route path="/contests/:id/live" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -204,10 +205,11 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
+                  {/* ✅ NEW: Contest Detail Page (MUST come before /contests/:id/live) */}
                   <Route path="/contests/:id" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
-                        <Contests />
+                        <ContestDetail />
                       </Layout>
                     </PrivateRoute>
                   } />

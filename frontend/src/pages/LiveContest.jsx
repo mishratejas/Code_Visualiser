@@ -190,48 +190,63 @@ const LiveContest = () => {
     };
   }, [contest, id, navigate]);
 
-  const fetchContest = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const response = await api.get(`/contests/${id}`);
-      
-      if (response.data?.contest) {
-        setContest(response.data.contest);
-        setProblems(response.data.problems || []);
-        setLeaderboard(response.data.leaderboard || []);
-        setRetryCount(0);
-        
-        console.log('✅ Contest data loaded');
-      } else {
-        throw new Error('Invalid contest data received');
+const fetchContest = async () => {
+  try {
+    setLoading(true);
+    setError(null);
+    
+    const response = await api.get(`/contests/${id}`);
+    
+    // ✅ FIXED: Backend returns response.data.data, not response.data.contest
+    // const contestData = response.data?.data || response.data?.contest;
+    const contestData = response.data || response.contest;
+    
+    if (contestData) {
+      // ✅ Check if user is registered (backend now returns this)
+      if (!contestData.isRegistered) {
+        toast.error('You must register for this contest first', {
+          duration: 5000
+        });
+        navigate(`/contests/${id}`);
+        return;
       }
-    } catch (error) {
-      console.error('❌ Failed to fetch contest:', error);
       
-      // Better error handling
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to load contest';
-      const statusCode = error.response?.status;
+      setContest(contestData);
+      setProblems(contestData.problems || []);
+      setLeaderboard(contestData.leaderboard || []);
+      setRetryCount(0);
       
-      setError({
-        message: errorMessage,
-        statusCode: statusCode,
-        canRetry: statusCode !== 404
-      });
-      
-      if (statusCode === 404) {
-        toast.error('Contest not found');
-        setTimeout(() => navigate('/contests'), 2000);
-      } else if (statusCode === 500) {
-        toast.error('Server error. Please try again.', { duration: 5000 });
-      } else {
-        toast.error(errorMessage);
-      }
-    } finally {
-      setLoading(false);
+      console.log('✅ Contest data loaded');
+    } else {
+      throw new Error('Invalid contest data received');
     }
-  };
+  } catch (error) {
+    console.error('❌ Failed to fetch contest:', error);
+    
+    const errorMessage = error.response?.data?.message || error.message || 'Failed to load contest';
+    const statusCode = error.response?.status;
+    
+    setError({
+      message: errorMessage,
+      statusCode: statusCode,
+      canRetry: statusCode !== 404
+    });
+    
+    if (statusCode === 404) {
+      toast.error('Contest not found');
+      setTimeout(() => navigate('/contests'), 2000);
+    } else if (statusCode === 403) {
+      toast.error('You do not have access to this contest');
+      setTimeout(() => navigate('/contests'), 2000);
+    } else if (statusCode === 500) {
+      toast.error('Server error. Please try again.', { duration: 5000 });
+    } else {
+      toast.error(errorMessage);
+    }
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleRetry = () => {
     setRetryCount(prev => prev + 1);

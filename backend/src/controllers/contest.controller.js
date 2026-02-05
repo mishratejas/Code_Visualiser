@@ -34,7 +34,6 @@ export const getContests = async (req, res) => {
     
     const offset = (page - 1) * limit;
     
-    // ✅ FIXED: Removed User include since users are in MongoDB
     const contests = await Contest.findAndCountAll({
       where,
       limit: parseInt(limit),
@@ -43,17 +42,32 @@ export const getContests = async (req, res) => {
       attributes: { exclude: ['registration_password'] }
     });
     
-    // Get participant counts and problem counts for each contest
+    // Get participant counts, problem counts, and registration status for each contest
+    const userId = req.user?.id || req.user?._id?.toString();
+    
     const contestsWithCounts = await Promise.all(
       contests.rows.map(async (contest) => {
         const participantCount = await ContestParticipant.count({
           where: { contest_id: contest.id }
         });
         
+        // ✅ Check if current user is registered
+        let isRegistered = false;
+        if (userId) {
+          const participant = await ContestParticipant.findOne({
+            where: { 
+              contest_id: contest.id,
+              user_id: userId
+            }
+          });
+          isRegistered = !!participant;
+        }
+        
         return {
           ...contest.toJSON(),
           participantsCount: participantCount,
           problemsCount: contest.problem_ids ? contest.problem_ids.length : 0,
+          isRegistered, // ✅ NEW: Registration status
           // Add frontend-friendly field names
           startTime: contest.start_time,
           endTime: contest.end_time,
@@ -87,7 +101,6 @@ export const getContest = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // ✅ FIXED: Removed User include since users are in MongoDB
     const contest = await Contest.findByPk(id, {
       attributes: { exclude: ['registration_password'] }
     });
@@ -104,6 +117,19 @@ export const getContest = async (req, res) => {
       where: { contest_id: id }
     });
     
+    // ✅ Check if current user is registered
+    let isRegistered = false;
+    const userId = req.user?.id || req.user?._id?.toString();
+    if (userId) {
+      const participant = await ContestParticipant.findOne({
+        where: { 
+          contest_id: id,
+          user_id: userId
+        }
+      });
+      isRegistered = !!participant;
+    }
+    
     // Fetch actual problems from MongoDB
     let problems = [];
     if (contest.problem_ids && contest.problem_ids.length > 0) {
@@ -116,11 +142,10 @@ export const getContest = async (req, res) => {
         .lean();
       } catch (error) {
         console.error('Error fetching problems:', error);
-        // Continue without problems
       }
     }
     
-    // ✅ FIXED: Get leaderboard without User include
+    // Get leaderboard
     const leaderboard = await ContestParticipant.findAll({
       where: { contest_id: id },
       order: [
@@ -133,7 +158,7 @@ export const getContest = async (req, res) => {
     const leaderboardData = leaderboard.map((p, index) => ({
       rank: index + 1,
       userId: p.user_id,
-      username: 'User', // We can't get username without MongoDB lookup
+      username: 'User',
       score: p.score,
       solved: p.problems_solved,
       totalTime: p.total_time
@@ -142,18 +167,17 @@ export const getContest = async (req, res) => {
     res.json({
       success: true,
       data: {
-        contest: {
-          ...contest.toJSON(),
-          participantCount,
-          participantsCount: participantCount,
-          problemsCount: problems.length,
-          // Add frontend-friendly field names
-          startTime: contest.start_time,
-          endTime: contest.end_time,
-          duration: contest.duration_minutes
-        },
+        ...contest.toJSON(),
+        participantCount,
+        participantsCount: participantCount,
+        problemsCount: problems.length,
         problems,
-        leaderboard: leaderboardData
+        leaderboard: leaderboardData,
+        isRegistered, // ✅ NEW: Registration status
+        // Add frontend-friendly field names
+        startTime: contest.start_time,
+        endTime: contest.end_time,
+        duration: contest.duration_minutes
       }
     });
   } catch (error) {
@@ -187,7 +211,7 @@ export const createContest = async (req, res) => {
       tags,
       rules,
       prizes,
-      problem_ids
+      problem_ids // ✅ NEW: Accept problem IDs during creation
     } = req.body;
     
     // Validation
@@ -198,7 +222,7 @@ export const createContest = async (req, res) => {
       });
     }
     
-    // Check authentication (with fallback)
+    // Check authentication
     const userId = req.user?.id || req.user?._id?.toString() || null;
     
     if (!userId) {
@@ -248,19 +272,22 @@ export const createContest = async (req, res) => {
       });
     }
     
-    // Validate problem IDs if provided
+    // ✅ NEW: Validate problem IDs if provided
     let validatedProblemIds = [];
+    let addedProblemsCount = 0;
+    
     if (problem_ids && Array.isArray(problem_ids) && problem_ids.length > 0) {
       try {
         const problems = await Problem.find({
           _id: { $in: problem_ids },
           'metadata.isPublished': true
-        }).select('_id');
+        }).select('_id title');
         
         validatedProblemIds = problems.map(p => p._id.toString());
+        addedProblemsCount = validatedProblemIds.length;
         
         if (validatedProblemIds.length !== problem_ids.length) {
-          console.warn('Some problem IDs were invalid or unpublished');
+          console.warn(`Some problem IDs were invalid or unpublished. Requested: ${problem_ids.length}, Valid: ${validatedProblemIds.length}`);
         }
       } catch (error) {
         console.error('Error validating problems:', error);
@@ -286,47 +313,45 @@ export const createContest = async (req, res) => {
       banner_url,
       tags: tags || [],
       rules,
-      prizes: Array.isArray(prizes) ? prizes : [],
-      problem_ids: validatedProblemIds,
+      prizes: prizes || [],
+      problem_ids: validatedProblemIds, // ✅ NEW: Include problem IDs
       created_by: userId
     });
+    
+    // Prepare success message based on whether problems were added
+    let message = 'Contest created successfully!';
+    if (addedProblemsCount > 0) {
+      message = `Contest created successfully with ${addedProblemsCount} problem${addedProblemsCount > 1 ? 's' : ''}!`;
+    } else {
+      message += ' You can now add problems to it.';
+    }
     
     res.status(201).json({
       success: true,
       data: {
         ...contest.toJSON(),
         problemsCount: validatedProblemIds.length,
-        // Add frontend-friendly field names
         startTime: contest.start_time,
         endTime: contest.end_time,
         duration: contest.duration_minutes
       },
-      message: 'Contest created successfully! You can now add problems to it.'
+      message
     });
   } catch (error) {
     console.error('Create contest error:', error);
-    console.error('Stack trace:', error.stack);
     
-    // Handle specific Sequelize errors
     if (error.name === 'SequelizeValidationError') {
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.errors.map(e => ({ field: e.path, message: e.message }))
+        errors: error.errors.map(e => e.message)
       });
     }
     
-    if (error.name === 'SequelizeUniqueConstraintError') {
-      return res.status(400).json({
-        success: false,
-        message: 'A contest with this information already exists'
-      });
-    }
-    
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to create contest. Please try again.',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create contest',
+      error: error.message
     });
   }
 };
@@ -363,7 +388,6 @@ export const updateContest = async (req, res) => {
       data: {
         ...contest.toJSON(),
         problemsCount: contest.problem_ids ? contest.problem_ids.length : 0,
-        // Add frontend-friendly field names
         startTime: contest.start_time,
         endTime: contest.end_time,
         duration: contest.duration_minutes
@@ -520,7 +544,7 @@ export const registerForContest = async (req, res) => {
     if (new Date() > contest.start_time) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Contest has already started' 
+        message: 'Contest has already started. Registration is closed.' 
       });
     }
 
@@ -730,7 +754,7 @@ export const getContestLeaderboard = async (req, res) => {
       }
     }
 
-    // ✅ FIXED: Fetch from database without User include
+    // Fetch from database
     const participants = await ContestParticipant.findAll({
       where: { contest_id: contestId },
       order: [
@@ -744,7 +768,7 @@ export const getContestLeaderboard = async (req, res) => {
     const leaderboard = participants.map((p, index) => ({
       rank: index + 1,
       userId: p.user_id,
-      username: 'User', // Can't get username without MongoDB lookup
+      username: 'User',
       score: p.score,
       solved: p.problems_solved,
       problemsSolved: p.problems_solved,

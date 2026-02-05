@@ -200,8 +200,8 @@ const CreateContest = () => {
       console.log('Response:', response);
 
       // ✅ FIX: Check for successful response
-      if (response.data?.success || response.status === 201) {
-        const contestId = response.data?.data?.id || response.data?.data?._id || response.data?.contest?.id;
+      if (response.data?.success || response.status === 201 || response?.success) {
+        const contestId = response.data?.data?.id || response.data?.data?._id || response?.data?.id || response.data?.contest?.id;
         
         // ✅ FIX: Show success toast FIRST
         toast.success('Contest created successfully! Redirecting to add problems...', { 

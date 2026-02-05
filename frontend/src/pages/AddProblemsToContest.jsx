@@ -28,67 +28,65 @@ const AddProblemsToContest = () => {
     fetchData();
   }, [id, user]);
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      console.log('🔍 Fetching contest and problems...');
-      
-      const [contestRes, problemsRes] = await Promise.all([
-        api.get(`/contests/${id}`),
-        api.get('/problems')
-      ]);
+const fetchData = async () => {
+  try {
+    setLoading(true);
+    console.log('🔍 Fetching contest and problems...');
+    
+    const [contestRes, problemsRes] = await Promise.all([
+      api.get(`/contests/${id}`),
+      api.get('/problems')
+    ]);
 
-      // ✅ FIX: Handle different response structures
-      const contestData = contestRes.data?.data?.contest || contestRes.data?.contest || contestRes.data;
-      console.log('✅ Contest data:', contestData);
-      setContest(contestData);
+    // ✅ FIX: Handle response.data.data (new backend structure)
+    const contestData = contestRes.data?.data || contestRes.data?.contest || contestRes.data;
+    console.log('✅ Contest data:', contestData);
+    setContest(contestData);
 
-      // ✅ FIX: Handle different response structures for problems
-      const problemsData = problemsRes.data?.problems || 
-                          problemsRes.data?.data?.problems ||
-                          problemsRes.data?.data ||
-                          problemsRes.data ||
-                          [];
-      
-      console.log('📦 Raw problems data:', problemsData);
-      
-      const problemsList = Array.isArray(problemsData) ? problemsData : [];
-      console.log('📋 Problems array:', problemsList.length, 'items');
-      
-      // ✅ FIX: Filter published problems with better checking
-      const publishedProblems = problemsList.filter(p => {
-        const isPublished = p?.metadata?.isPublished === true || 
-                           p?.isPublished === true ||
-                           p?.published === true;
-        return isPublished;
+    // ✅ FIX: Handle different response structures for problems
+    const problemsData = problemsRes.data?.problems || 
+                        problemsRes.data?.data?.problems ||
+                        problemsRes.data?.data ||
+                        problemsRes.data ||
+                        [];
+    
+    console.log('📦 Raw problems data:', problemsData);
+    
+    const problemsList = Array.isArray(problemsData) ? problemsData : [];
+    console.log('📋 Problems array:', problemsList.length, 'items');
+    
+    // ✅ FIX: Filter published problems
+    const publishedProblems = problemsList.filter(p => {
+      const isPublished = p?.metadata?.isPublished === true || 
+                         p?.isPublished === true ||
+                         p?.published === true;
+      return isPublished;
+    });
+    
+    console.log('✅ Found', publishedProblems.length, 'published problems out of', problemsList.length, 'total');
+    
+    if (publishedProblems.length === 0) {
+      console.warn('⚠️ No published problems found.');
+      toast.error('No published problems available. Please publish some problems first.', {
+        duration: 5000
       });
-      
-      console.log('✅ Found', publishedProblems.length, 'published problems out of', problemsList.length, 'total');
-      
-      if (publishedProblems.length === 0) {
-        console.warn('⚠️ No published problems found. You may need to publish problems first.');
-        toast.error('No published problems available. Please publish some problems first.', {
-          duration: 5000
-        });
-      }
-      
-      setProblems(publishedProblems);
-
-      // Pre-select already added problems
-      if (contestData.problem_ids && Array.isArray(contestData.problem_ids)) {
-        console.log('📌 Pre-selecting', contestData.problem_ids.length, 'existing problems');
-        setSelectedProblems(contestData.problem_ids);
-      }
-    } catch (error) {
-      console.error('❌ Failed to fetch data:', error);
-      console.error('Error details:', error.response?.data || error.message);
-      toast.error('Failed to load data: ' + (error.response?.data?.message || error.message));
-      navigate('/contests');
-    } finally {
-      setLoading(false);
     }
-  };
+    
+    setProblems(publishedProblems);
 
+    // Pre-select already added problems
+    if (contestData.problem_ids && Array.isArray(contestData.problem_ids)) {
+      console.log('📌 Pre-selecting', contestData.problem_ids.length, 'existing problems');
+      setSelectedProblems(contestData.problem_ids);
+    }
+  } catch (error) {
+    console.error('❌ Failed to fetch data:', error);
+    toast.error('Failed to load data: ' + (error.response?.data?.message || error.message));
+    navigate('/contests');
+  } finally {
+    setLoading(false);
+  }
+};
   const toggleProblem = (problemId) => {
     setSelectedProblems(prev =>
       prev.includes(problemId)
