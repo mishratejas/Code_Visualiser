@@ -10,7 +10,7 @@ import Footer from './components/common/Footer';
 import Sidebar from './components/common/Sidebar';
 import Loader from './components/common/Loader';
 
-// Lazy load pages for better performance
+// Lazy load pages
 const Home = lazy(() => import('./pages/Home'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
@@ -21,13 +21,13 @@ const Submit = lazy(() => import('./pages/Submit'));
 const Submissions = lazy(() => import('./pages/Submissions'));
 const Contests = lazy(() => import('./pages/Contests'));
 const CreateContest = lazy(() => import('./pages/CreateContest'));
-const ContestDetail = lazy(() => import('./pages/ContestDetail')); // ✅ NEW
+const ContestDetail = lazy(() => import('./pages/ContestDetail'));
 const LiveContest = lazy(() => import('./pages/LiveContest'));
 const AddProblemsToContest = lazy(() => import('./pages/AddProblemsToContest'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Settings = lazy(() => import('./pages/Settings'));
 
-// NEW PAGES
+// Other pages
 const ProblemCategories = lazy(() => import('./pages/ProblemCategories'));
 const FavoriteProblems = lazy(() => import('./pages/FavoriteProblems'));
 const PracticePage = lazy(() => import('./pages/PracticePage'));
@@ -36,7 +36,12 @@ const Achievements = lazy(() => import('./pages/Achievements'));
 const Help = lazy(() => import('./pages/Help'));
 const Notifications = lazy(() => import('./pages/Notifications'));
 
-// Create a wrapper component that shows sidebar for protected routes
+// ✅ AI-POWERED PAGES
+const AIDashboard = lazy(() => import('./pages/AIDashboard'));
+const InterviewPage = lazy(() => import('./pages/InterviewPage'));
+const LearningPath = lazy(() => import('./pages/LearningPath'));
+
+// Layout wrapper
 const Layout = ({ children, showSidebar = false }) => {
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
@@ -71,6 +76,33 @@ const App = () => {
                     <PrivateRoute>
                       <Layout showSidebar={true}>
                         <Dashboard />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
+                  
+                  {/* ============================================
+                      AI-POWERED ROUTES ✅
+                      ============================================ */}
+                  <Route path="/ai-dashboard" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <AIDashboard />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="/interview" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <InterviewPage />
+                      </Layout>
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="/learning-path" element={
+                    <PrivateRoute>
+                      <Layout showSidebar={true}>
+                        <LearningPath />
                       </Layout>
                     </PrivateRoute>
                   } />
@@ -169,9 +201,7 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
-                  {/* ============================================
-                      CONTESTS ROUTES
-                      ============================================ */}
+                  {/* CONTESTS ROUTES */}
                   <Route path="/contests" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -187,7 +217,7 @@ const App = () => {
                       </Layout>
                     </PrivateRoute>
                   } />
-                  {/* ✅ Add Problems to Contest */}
+                  
                   <Route path="/contests/:id/add-problems" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -196,7 +226,6 @@ const App = () => {
                     </PrivateRoute>
                   } />
 
-                  {/* ✅ Live Contest */}
                   <Route path="/contests/:id/live" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>
@@ -205,7 +234,6 @@ const App = () => {
                     </PrivateRoute>
                   } />
                   
-                  {/* ✅ NEW: Contest Detail Page (MUST come before /contests/:id/live) */}
                   <Route path="/contests/:id" element={
                     <PrivateRoute>
                       <Layout showSidebar={true}>

@@ -1,44 +1,69 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Badge, Progress, List, Tag, Tooltip, Alert } from 'antd';
+import { 
+    Card, Row, Col, Progress, Tag, List, Alert, 
+    Typography, Space, Divider, Button, Collapse, 
+    Tooltip, Statistic, Tabs, Timeline, Badge 
+} from 'antd';
 import { 
     CheckCircleOutlined, 
     WarningOutlined, 
     ClockCircleOutlined,
     CodeOutlined,
-    BulbOutlined 
+    BulbOutlined,
+    LineChartOutlined,
+    RocketOutlined,
+    EyeOutlined,
+    FileTextOutlined,
+    SafetyOutlined
 } from '@ant-design/icons';
+import aiService from '../../services/ai.js';
 
-const CodeAnalysisPanel = ({ submissionId, analysis }) => {
+const { Title, Text, Paragraph } = Typography;
+const { Panel } = Collapse;
+const { TabPane } = Tabs;
+
+const CodeAnalysisPanel = ({ submissionId, submission, showFull = false }) => {
     const [loading, setLoading] = useState(false);
-    const [aiAnalysis, setAiAnalysis] = useState(analysis || null);
-    
+    const [analysis, setAnalysis] = useState(submission?.aiAnalysis || null);
+    const [activeTab, setActiveTab] = useState('overview');
+
     useEffect(() => {
         if (!analysis && submissionId) {
             fetchAnalysis();
         }
     }, [submissionId]);
-    
+
     const fetchAnalysis = async () => {
         setLoading(true);
         try {
-            const response = await fetch(`/api/ai/submissions/${submissionId}/analysis`);
-            const data = await response.json();
-            setAiAnalysis(data);
+            const response = await aiService.analyzeSubmission(submissionId);
+            setAnalysis(response.data.analysis);
         } catch (error) {
             console.error('Failed to fetch AI analysis:', error);
         }
         setLoading(false);
     };
-    
-    if (!aiAnalysis) return null;
-    
+
+    if (!analysis) {
+        return (
+            <Card loading={loading} style={{ marginTop: 16 }}>
+                <Alert
+                    message="AI Analysis Unavailable"
+                    description="AI service is currently unavailable. Please try again later."
+                    type="warning"
+                    showIcon
+                />
+            </Card>
+        );
+    }
+
     const getQualityColor = (score) => {
         if (score >= 0.8) return '#52c41a';
         if (score >= 0.6) return '#1890ff';
         if (score >= 0.4) return '#faad14';
         return '#ff4d4f';
     };
-    
+
     const getComplexityColor = (complexity) => {
         const colors = {
             'O(1)': 'green',
@@ -51,145 +76,318 @@ const CodeAnalysisPanel = ({ submissionId, analysis }) => {
         };
         return colors[complexity] || 'default';
     };
-    
+
+    const getSeverityColor = (severity) => {
+        switch (severity?.toLowerCase()) {
+            case 'high': return 'red';
+            case 'medium': return 'orange';
+            case 'low': return 'blue';
+            default: return 'default';
+        }
+    };
+
+    const renderOverview = () => (
+        <Row gutter={[16, 16]}>
+            {/* Quality Score */}
+            <Col span={24}>
+                <Card size="small">
+                    <Space direction="vertical" style={{ width: '100%' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text strong>
+                                <CheckCircleOutlined style={{ marginRight: 8 }} />
+                                Code Quality Score
+                            </Text>
+                            <Badge 
+                                count={analysis.qualityLabel?.toUpperCase()}
+                                style={{ 
+                                    backgroundColor: getQualityColor(analysis.codeQuality),
+                                    color: 'white'
+                                }}
+                            />
+                        </div>
+                        <Progress 
+                            percent={Math.round(analysis.codeQuality * 100)}
+                            strokeColor={getQualityColor(analysis.codeQuality)}
+                            status="active"
+                        />
+                        <Text type="secondary">
+                            Confidence: {(analysis.confidence * 100).toFixed(1)}%
+                        </Text>
+                    </Space>
+                </Card>
+            </Col>
+
+            {/* Complexity Analysis */}
+            <Col span={24}>
+                <Card size="small" title="Complexity Analysis">
+                    <Row gutter={[16, 16]}>
+                        <Col span={12}>
+                            <Tooltip title="Time Complexity">
+                                <Card size="small">
+                                    <Space direction="vertical" align="center" style={{ width: '100%' }}>
+                                        <ClockCircleOutlined style={{ fontSize: '24px' }} />
+                                        <Tag color={getComplexityColor(analysis.complexity?.time)}>
+                                            {analysis.complexity?.time || 'O(n)'}
+                                        </Tag>
+                                        <Text type="secondary">Time</Text>
+                                    </Space>
+                                </Card>
+                            </Tooltip>
+                        </Col>
+                        <Col span={12}>
+                            <Tooltip title="Space Complexity">
+                                <Card size="small">
+                                    <Space direction="vertical" align="center" style={{ width: '100%' }}>
+                                        <LineChartOutlined style={{ fontSize: '24px' }} />
+                                        <Tag color="cyan">
+                                            {analysis.complexity?.space || 'O(1)'}
+                                        </Tag>
+                                        <Text type="secondary">Space</Text>
+                                    </Space>
+                                </Card>
+                            </Tooltip>
+                        </Col>
+                    </Row>
+                </Card>
+            </Col>
+
+            {/* Performance Metrics */}
+            <Col span={24}>
+                <Card size="small" title="Performance Metrics">
+                    <Row gutter={[16, 16]}>
+                        <Col span={8}>
+                            <Statistic
+                                title="Cyclomatic Complexity"
+                                value={analysis.cyclomaticComplexity || 'N/A'}
+                                suffix={analysis.cyclomaticComplexity > 10 ? '⚠️' : ''}
+                            />
+                        </Col>
+                        <Col span={8}>
+                            <Statistic
+                                title="Lines of Code"
+                                value={analysis.linesOfCode || 'N/A'}
+                            />
+                        </Col>
+                        <Col span={8}>
+                            <Statistic
+                                title="Function Count"
+                                value={analysis.functionCount || 'N/A'}
+                            />
+                        </Col>
+                    </Row>
+                </Card>
+            </Col>
+        </Row>
+    );
+
+    const renderIssues = () => {
+        if (!analysis.vulnerabilities || analysis.vulnerabilities.length === 0) {
+            return (
+                <Alert
+                    message="No Issues Detected"
+                    description="Great job! Your code follows best practices."
+                    type="success"
+                    showIcon
+                />
+            );
+        }
+
+        return (
+            <List
+                dataSource={analysis.vulnerabilities}
+                renderItem={(issue, index) => (
+                    <List.Item>
+                        <Alert
+                            message={issue.type}
+                            description={
+                                <Space direction="vertical" size="small">
+                                    <Text>{issue.description}</Text>
+                                    <div>
+                                        <Tag color={getSeverityColor(issue.severity)}>
+                                            {issue.severity?.toUpperCase()}
+                                        </Tag>
+                                        {issue.location && (
+                                            <Tag color="blue">Line: {issue.location}</Tag>
+                                        )}
+                                    </div>
+                                </Space>
+                            }
+                            type={issue.severity === 'high' ? 'error' : 'warning'}
+                            showIcon
+                            style={{ width: '100%' }}
+                        />
+                    </List.Item>
+                )}
+            />
+        );
+    };
+
+    const renderSuggestions = () => {
+        if (!analysis.suggestions || analysis.suggestions.length === 0) {
+            return (
+                <Alert
+                    message="No Suggestions"
+                    description="Your code is well-optimized!"
+                    type="info"
+                    showIcon
+                />
+            );
+        }
+
+        return (
+            <Timeline>
+                {analysis.suggestions.map((suggestion, index) => (
+                    <Timeline.Item
+                        key={index}
+                        dot={<BulbOutlined style={{ fontSize: '16px' }} />}
+                        color="blue"
+                    >
+                        <Card size="small">
+                            <Space direction="vertical" size="small">
+                                <Text strong>Suggestion {index + 1}</Text>
+                                <Text>{suggestion}</Text>
+                                {index === 0 && (
+                                    <Button type="link" size="small">
+                                        Show Example
+                                    </Button>
+                                )}
+                            </Space>
+                        </Card>
+                    </Timeline.Item>
+                ))}
+            </Timeline>
+        );
+    };
+
+    const renderComparison = () => (
+        <Row gutter={[16, 16]}>
+            <Col span={24}>
+                <Alert
+                    message="Benchmark Comparison"
+                    description="Compare your solution with optimal benchmarks"
+                    type="info"
+                    showIcon
+                />
+            </Col>
+            <Col span={12}>
+                <Card size="small" title="Your Solution">
+                    <Space direction="vertical">
+                        <Text>Time: {analysis.complexity?.time}</Text>
+                        <Text>Space: {analysis.complexity?.space}</Text>
+                        <Text>Quality: {Math.round(analysis.codeQuality * 100)}%</Text>
+                    </Space>
+                </Card>
+            </Col>
+            <Col span={12}>
+                <Card size="small" title="Optimal Solution">
+                    <Space direction="vertical">
+                        <Text>Time: O(n)</Text>
+                        <Text>Space: O(1)</Text>
+                        <Text>Quality: 90%+</Text>
+                    </Space>
+                </Card>
+            </Col>
+            <Col span={24}>
+                <Button 
+                    type="primary" 
+                    icon={<RocketOutlined />}
+                    onClick={() => window.location.href = `/learn/optimize/${submissionId}`}
+                >
+                    Learn Optimization Techniques
+                </Button>
+            </Col>
+        </Row>
+    );
+
     return (
         <Card 
             title={
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <BulbOutlined /> 
+                <Space>
+                    <BulbOutlined />
                     <span>AI Code Analysis</span>
-                    {aiAnalysis.quality_label && (
-                        <Badge 
-                            color={getQualityColor(aiAnalysis.quality_score)}
-                            text={aiAnalysis.quality_label.toUpperCase()}
-                            style={{ marginLeft: 'auto' }}
-                        />
+                    {analysis.confidence > 0.7 && (
+                        <Tag color="green">High Confidence</Tag>
                     )}
-                </div>
+                </Space>
             }
             loading={loading}
             style={{ marginTop: 16 }}
+            extra={
+                <Space>
+                    <Tooltip title="View Detailed Report">
+                        <Button 
+                            type="link" 
+                            icon={<FileTextOutlined />}
+                            onClick={() => window.open(`/analysis/${submissionId}`, '_blank')}
+                        >
+                            Full Report
+                        </Button>
+                    </Tooltip>
+                </Space>
+            }
         >
-            {/* Quality Score */}
-            <div style={{ marginBottom: 24 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span>
-                        <CheckCircleOutlined style={{ marginRight: 8 }} />
-                        Code Quality
-                    </span>
-                    <span style={{ fontWeight: 'bold', color: getQualityColor(aiAnalysis.quality_score) }}>
-                        {(aiAnalysis.quality_score * 100).toFixed(0)}%
-                    </span>
-                </div>
-                <Progress 
-                    percent={aiAnalysis.quality_score * 100}
-                    strokeColor={getQualityColor(aiAnalysis.quality_score)}
-                    showInfo={false}
-                />
-            </div>
-            
-            {/* Complexity Analysis */}
-            <div style={{ marginBottom: 24 }}>
-                <h4>
-                    <ClockCircleOutlined style={{ marginRight: 8 }} />
-                    Complexity Analysis
-                </h4>
-                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                    <Tooltip title="Time Complexity">
-                        <Tag color={getComplexityColor(aiAnalysis.time_complexity)}>
-                            Time: {aiAnalysis.time_complexity}
-                        </Tag>
-                    </Tooltip>
-                    <Tooltip title="Space Complexity">
-                        <Tag color="cyan">
-                            Space: {aiAnalysis.space_complexity || 'O(1)'}
-                        </Tag>
-                    </Tooltip>
-                    {aiAnalysis.cyclomatic_complexity && (
-                        <Tooltip title="Cyclomatic Complexity (lower is better)">
-                            <Tag color="purple">
-                                CC: {aiAnalysis.cyclomatic_complexity}
-                            </Tag>
-                        </Tooltip>
-                    )}
-                </div>
-            </div>
-            
-            {/* Anti-patterns and Suggestions */}
-            {aiAnalysis.anti_patterns && aiAnalysis.anti_patterns.length > 0 && (
-                <div style={{ marginBottom: 24 }}>
-                    <h4>
-                        <WarningOutlined style={{ marginRight: 8, color: '#ff4d4f' }} />
-                        Issues Detected
-                    </h4>
-                    <List
-                        size="small"
-                        dataSource={aiAnalysis.anti_patterns}
-                        renderItem={(item, index) => (
-                            <List.Item>
-                                <Alert
-                                    message={item.type}
-                                    description={item.description}
-                                    type="warning"
-                                    showIcon
-                                    style={{ width: '100%' }}
-                                />
-                            </List.Item>
-                        )}
-                    />
-                </div>
-            )}
-            
-            {/* Improvement Suggestions */}
-            {aiAnalysis.suggestions && aiAnalysis.suggestions.length > 0 && (
-                <div>
-                    <h4>
-                        <CodeOutlined style={{ marginRight: 8 }} />
-                        Improvement Suggestions
-                    </h4>
-                    <List
-                        size="small"
-                        dataSource={aiAnalysis.suggestions}
-                        renderItem={(item, index) => (
-                            <List.Item>
-                                <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-                                    <div style={{ 
-                                        backgroundColor: '#1890ff', 
-                                        color: 'white',
-                                        borderRadius: '50%',
-                                        width: 20,
-                                        height: 20,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        marginRight: 8,
-                                        flexShrink: 0
-                                    }}>
-                                        {index + 1}
-                                    </div>
-                                    <span>{item}</span>
-                                </div>
-                            </List.Item>
-                        )}
-                    />
-                </div>
-            )}
-            
-            {/* Performance Rating */}
-            {aiAnalysis.performance_rating && (
-                <div style={{ marginTop: 16, padding: 12, backgroundColor: '#f6ffed', borderRadius: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                        <span style={{ fontWeight: 'bold' }}>
-                            Performance: {aiAnalysis.performance_rating.toUpperCase()}
+            <Tabs activeKey={activeTab} onChange={setActiveTab}>
+                <TabPane tab="Overview" key="overview">
+                    {renderOverview()}
+                </TabPane>
+                <TabPane 
+                    tab={
+                        <span>
+                            <SafetyOutlined />
+                            Issues {analysis.vulnerabilities?.length > 0 && 
+                                `(${analysis.vulnerabilities.length})`}
                         </span>
-                    </div>
-                    {aiAnalysis.bottleneck_analysis && aiAnalysis.bottleneck_analysis.length > 0 && (
-                        <div style={{ marginTop: 8, fontSize: 'smaller' }}>
-                            {aiAnalysis.bottleneck_analysis.join(' ')}
-                        </div>
-                    )}
-                </div>
+                    } 
+                    key="issues"
+                >
+                    {renderIssues()}
+                </TabPane>
+                <TabPane 
+                    tab={
+                        <span>
+                            <BulbOutlined />
+                            Suggestions {analysis.suggestions?.length > 0 && 
+                                `(${analysis.suggestions.length})`}
+                        </span>
+                    } 
+                    key="suggestions"
+                >
+                    {renderSuggestions()}
+                </TabPane>
+                <TabPane tab="Comparison" key="comparison">
+                    {renderComparison()}
+                </TabPane>
+            </Tabs>
+
+            {analysis.performanceRating && (
+                <Divider>
+                    <Tag color={
+                        analysis.performanceRating === 'optimized' ? 'green' :
+                        analysis.performanceRating === 'acceptable' ? 'blue' : 'orange'
+                    }>
+                        {analysis.performanceRating.toUpperCase()}
+                    </Tag>
+                </Divider>
+            )}
+
+            {analysis.bottleneckAnalysis && analysis.bottleneckAnalysis.length > 0 && (
+                <Alert
+                    message="Performance Bottlenecks"
+                    description={
+                        <List
+                            size="small"
+                            dataSource={analysis.bottleneckAnalysis}
+                            renderItem={(item, index) => (
+                                <List.Item>
+                                    <WarningOutlined style={{ color: '#ff4d4f', marginRight: 8 }} />
+                                    {item}
+                                </List.Item>
+                            )}
+                        />
+                    }
+                    type="warning"
+                    showIcon
+                />
             )}
         </Card>
     );

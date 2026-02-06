@@ -4,14 +4,11 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
-import mongoSanitize from 'express-mongo-sanitize';
-import hpp from 'hpp';
 
 import config from './config/index.js';
 import logger, { morganStream, requestLogger } from './config/logger.js';
 import errorMiddleware from './middlewares/error.middleware.js';
 import { globalLimiter } from './middlewares/rateLimiter.middleware.js';
-import { sanitizeInput } from './middlewares/validate.middleware.js';
 
 // Import routes
 import authRoutes from './routes/auth.routes.js';
@@ -19,7 +16,8 @@ import problemRoutes from './routes/problem.routes.js';
 import submissionRoutes from './routes/submission.routes.js';
 import userRoutes from './routes/user.routes.js';
 import leaderboardRoutes from './routes/leaderboard.routes.js';
-import contestRoutes from './routes/contest.routes.js'; // ADD THIS LINE
+import contestRoutes from './routes/contest.routes.js';
+import aiRoutes from './routes/ai.routes.js'; // ✅ AI ROUTES
 
 class App {
     constructor() {
@@ -50,7 +48,7 @@ class App {
         
         // CORS configuration
         this.app.use(cors({
-            origin: config.security.corsOrigins || ['http://localhost:3000', 'http://localhost:5173'], // Added Vite default port
+            origin: config.security.corsOrigins || ['http://localhost:3000', 'http://localhost:5173'],
             credentials: true,
             methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
             allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -65,9 +63,8 @@ class App {
         // Compression
         this.app.use(compression());
         
-        // Sanitization - Fixed version
+        // Sanitization
         this.app.use((req, res, next) => {
-            // Helper function to sanitize data
             const sanitizeData = (data) => {
                 if (!data || typeof data !== 'object') return data;
                 
@@ -90,16 +87,12 @@ class App {
                 return sanitized;
             };
             
-            // Sanitize body - this is allowed
             if (req.body) {
                 req.body = sanitizeData(req.body);
             }
             
-            // For query params, we need to be careful
-            // Don't assign directly to req.query, just sanitize its properties
             if (req.query && typeof req.query === 'object') {
                 const sanitizedQuery = sanitizeData(req.query);
-                // Copy sanitized properties back to req.query
                 Object.keys(sanitizedQuery).forEach(key => {
                     if (sanitizedQuery[key] !== undefined) {
                         req.query[key] = sanitizedQuery[key];
@@ -107,7 +100,6 @@ class App {
                 });
             }
             
-            // Sanitize params
             if (req.params && typeof req.params === 'object') {
                 const sanitizedParams = sanitizeData(req.params);
                 Object.keys(sanitizedParams).forEach(key => {
@@ -119,10 +111,6 @@ class App {
             
             next();
         });
-        
-        // HPP (HTTP Parameter Pollution) - Comment this out temporarily
-        // this.app.use(hpp());
-        // this.app.use(sanitizeInput);
         
         // Logging
         if (config.server.isDevelopment) {
@@ -143,12 +131,11 @@ class App {
             next();
         });
     }
-        setupRoutes() {
-        // Get the base path
+    
+    setupRoutes() {
         const apiBase = config.server.apiPrefix || '/api';
         const apiVersion = config.server.apiVersion || 'v1';
         const apiPrefix = `${apiBase}/${apiVersion}`;
-        
         
         // Health check endpoint
         this.app.get(`${apiPrefix}/health`, (req, res) => {
@@ -172,7 +159,8 @@ class App {
                     `${apiPrefix}/problems`,
                     `${apiPrefix}/submissions`,
                     `${apiPrefix}/users`,
-                    `${apiPrefix}/leaderboard`
+                    `${apiPrefix}/leaderboard`,
+                    `${apiPrefix}/ai` // ✅ AI routes
                 ]
             });
         });
@@ -216,26 +204,34 @@ class App {
                     leaderboard: {
                         global: `GET ${apiPrefix}/leaderboard`,
                         contest: `GET ${apiPrefix}/contests/:id/leaderboard`
+                    },
+                    ai: {
+                        analyzeSubmission: `POST ${apiPrefix}/ai/submissions/:id/analyze`,
+                        analyzeCode: `POST ${apiPrefix}/ai/analyze/code`,
+                        recommendations: `GET ${apiPrefix}/ai/recommendations`,
+                        skillGap: `GET ${apiPrefix}/ai/skill-gap`,
+                        startInterview: `POST ${apiPrefix}/ai/interview/start`,
+                        checkPlagiarism: `POST ${apiPrefix}/ai/plagiarism/check`
                     }
                 }
             });
         });
         
-        // API routes with version prefix
+        // ============================================
+        // API ROUTES WITH VERSION PREFIX
+        // ============================================
+        
         this.app.use(`${apiPrefix}/auth`, authRoutes);
-        
         this.app.use(`${apiPrefix}/contests`, contestRoutes);
-        
         this.app.use(`${apiPrefix}/problems`, problemRoutes);
-        
         this.app.use(`${apiPrefix}/submissions`, submissionRoutes);
-        
         this.app.use(`${apiPrefix}/users`, userRoutes);
-        
         this.app.use(`${apiPrefix}/leaderboard`, leaderboardRoutes);
+        this.app.use(`${apiPrefix}/ai`, aiRoutes); // ✅ AI ROUTES
         
         // For backward compatibility, also register routes without version
         this.app.use(`${apiBase}/auth`, authRoutes);
+        this.app.use(`${apiBase}/ai`, aiRoutes); // ✅ AI ROUTES (no version)
         
         // Test endpoint to verify all routes
         this.app.get(`${apiPrefix}/routes`, (req, res) => {
@@ -247,7 +243,6 @@ class App {
                         methods: Object.keys(middleware.route.methods)
                     });
                 } else if (middleware.name === 'router') {
-                    // Handle mounted routers
                     middleware.handle.stack.forEach((handler) => {
                         if (handler.route) {
                             routes.push({
@@ -276,15 +271,12 @@ class App {
                     submissions: `${apiPrefix}/submissions`,
                     users: `${apiPrefix}/users`,
                     leaderboard: `${apiPrefix}/leaderboard`,
+                    ai: `${apiPrefix}/ai`, // ✅ AI endpoint
                     health: `${apiPrefix}/health`,
                     docs: `${apiPrefix}/docs`
                 }
             });
         });
-        
-        // REMOVED THE PROBLEMATIC 404 HANDLERS
-        
-        // Error handling will handle 404s in the error middleware
     }
     
     setupErrorHandling() {
@@ -296,7 +288,6 @@ class App {
             logger.error('UNHANDLED REJECTION! 💥 Shutting down...');
             logger.error(err.name, err.message);
             
-            // Graceful shutdown in production
             if (config.server.isProduction) {
                 if (this.server) {
                     this.server.close(() => {
@@ -319,21 +310,12 @@ class App {
     }
     
     setupHealthChecks() {
-        // Database health check
         if (config.features?.enableHealthChecks !== false) {
             setInterval(async () => {
                 try {
-                    // Check MongoDB
                     const mongoose = (await import('mongoose')).default;
                     const mongoState = mongoose.connection.readyState;
-                    const mongoStates = {
-                        0: 'disconnected',
-                        1: 'connected',
-                        2: 'connecting',
-                        3: 'disconnecting'
-                    };
                     
-                    // Check PostgreSQL if enabled
                     let postgresState = 'not configured';
                     if (process.env.POSTGRES_URI) {
                         try {
@@ -345,12 +327,10 @@ class App {
                             logger.warn('PostgreSQL health check failed:', pgError.message);
                         }
                     }
-                    
-                    
                 } catch (error) {
                     logger.error('Health check failed:', error.message);
                 }
-            }, 60000); // Check every minute
+            }, 60000);
         }
     }
     
@@ -358,6 +338,9 @@ class App {
         const serverPort = port || config.server.port || 5000;
         
         this.server = this.app.listen(serverPort, () => {
+            logger.info(`🚀 Server running on port ${serverPort}`);
+            logger.info(`📝 API Docs: http://localhost:${serverPort}/api/v1/docs`);
+            logger.info(`🤖 AI Service: http://localhost:${serverPort}/api/v1/ai`);
         });
         
         // Graceful shutdown
@@ -369,7 +352,6 @@ class App {
                 process.exit(0);
             });
             
-            // Force close after 10 seconds
             setTimeout(() => {
                 logger.error('⏰ Forcing shutdown after timeout');
                 process.exit(1);

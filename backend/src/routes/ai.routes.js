@@ -1,22 +1,31 @@
 import express from 'express';
 import {
-  analyzeSubmission,
-  getHints,
-  analyzeComplexity,
-  getRecommendations
+    analyzeSubmission,
+    getRecommendations,
+    getSkillGapAnalysis,
+    analyzeCode,
+    startInterview,
+    runPlagiarismCheck
 } from '../controllers/ai.controller.js';
-import { protect } from '../middlewares/auth.middleware.js';
-import { apiLimiter } from '../middlewares/rateLimiter.middleware.js';
+import { protect, admin } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
-// All routes require authentication
+// All routes are protected
 router.use(protect);
 
-// AI analysis routes
-router.post('/analyze', apiLimiter, analyzeSubmission);
-router.post('/hints', apiLimiter, getHints);
-router.post('/complexity', apiLimiter, analyzeComplexity);
+// Submission analysis
+router.post('/submissions/:id/analyze', analyzeSubmission);
+router.post('/analyze/code', analyzeCode);
+
+// Recommendations and learning
 router.get('/recommendations', getRecommendations);
+router.get('/skill-gap', getSkillGapAnalysis);
+
+// Interview system
+router.post('/interview/start', startInterview);
+
+// Admin only routes
+router.post('/plagiarism/check', protect, admin, runPlagiarismCheck);
 
 export default router;
