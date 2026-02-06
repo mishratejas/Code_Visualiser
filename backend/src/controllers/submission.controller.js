@@ -1069,3 +1069,82 @@ export const runCode = asyncHandler(async (req, res) => {
     );
   }
 });
+
+// Add this after line 264 (after executionResult is obtained)
+
+// NEW: AI Analysis Integration
+export const analyzeWithAI = async (submission, executionResult, problem) => {
+    try {
+        const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+        
+        const aiRequest = {
+            submission_id: submission._id.toString(),
+            user_id: submission.user.toString(),
+            problem_id: submission.problem.toString(),
+            code: submission.code,
+            language: submission.language,
+            execution_results: {
+                runtime: executionResult.runtime,
+                memory: executionResult.memory || 0,
+                test_cases_passed: executionResult.testCasesPassed,
+                total_test_cases: executionResult.totalTestCases || problem.testCases.length,
+                verdict: executionResult.verdict
+            },
+            problem_constraints: {
+                time_limit: problem.constraints?.timeLimit || 2000,
+                memory_limit: problem.constraints?.memoryLimit || 256,
+                difficulty: problem.difficulty || 'medium'
+            }
+        };
+
+        console.log('🤖 Sending to AI service for analysis...');
+        
+        const response = await fetch(`${aiServiceUrl}/api/v1/analyze/submission`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(aiRequest)
+        });
+
+        if (response.ok) {
+            const aiAnalysis = await response.json();
+            console.log('✅ AI analysis completed:', aiAnalysis.quality_label);
+            
+            // Store AI analysis in submission
+            submission.aiAnalysis = {
+                complexity: {
+                    time: aiAnalysis.time_complexity,
+                    space: aiAnalysis.space_complexity
+                },
+                codeQuality: aiAnalysis.quality_score,
+                suggestions: aiAnalysis.suggestions,
+                vulnerabilities: aiAnalysis.anti_patterns || []
+            };
+            
+            await submission.save();
+            
+            return aiAnalysis;
+        } else {
+            console.warn('⚠️ AI service unavailable or error:', response.status);
+        }
+    } catch (error) {
+        console.error('❌ AI analysis error:', error.message);
+        // Don't fail the submission if AI service is down
+    }
+    
+    return null;
+};
+
+// Then in your submitCode function, after line 290 (after executionResult):
+const aiAnalysis = await analyzeWithAI(submission, executionResult, problem);
+
+// Add AI analysis to response if available
+if (aiAnalysis) {
+    responseData.submission.ai_analysis = {
+        quality_score: aiAnalysis.quality_score,
+        quality_label: aiAnalysis.quality_label,
+        time_complexity: aiAnalysis.time_complexity,
+        suggestions: aiAnalysis.suggestions || []
+    };
+}

@@ -1,0 +1,87 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+venv/
+.env
+
+# FastAPI
+*.sqlite3
+*.db
+*.db-journal
+
+# Pydantic/Configs
+*.env.local
+*.env.*
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Byte-compiled / caches
+*.cache
+*.egg-info/
+dist
+build
+
+# PyCharm
+.idea/
+
+# Node / React
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Frontend builds
+/build
+/dist
+
+# Docker
+docker-compose.override.yml
+docker-compose.*.yml
+*.log
+*.tmp
+docker-compose.yml
+
+# Redis dump / persistence
+dump.rdb
+*.rdb
+
+# AI/ML Models & Artifacts
+/models/
+*.pkl
+*.joblib
+*.pt
+*.h5
+*.ckpt
+*.onnx
+
+# Plagiarism or Analysis caches
+analysis_cache/
+plagiarism_cache/
+
+# AI Service outputs or temp data
+temp/
+temp_data/
+*.tmp
+
+# System
+.DS_Store
+Thumbs.db
+
+# Optional: IntelliJ/WebStorm
+*.iml
+out/
