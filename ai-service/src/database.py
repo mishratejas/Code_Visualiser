@@ -1,75 +1,100 @@
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text, JSON, Boolean
-from datetime import datetime
-from src.config import settings
+"""
+Database connection and utilities
+"""
+import os
+from typing import Optional
+import logging
+from contextlib import asynccontextmanager
 
-Base = declarative_base()
-#This is the base class for all ORM models.  Object relational mapping
-# Database models
-class SubmissionAnalysis(Base):
-    __tablename__ = "submission_analysis"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    submission_id = Column(String, unique=True, index=True)
-    user_id = Column(String, index=True)
-    problem_id = Column(String, index=True)
-    language = Column(String)
-    
-    # Quality metrics
-    quality_score = Column(Float)
-    complexity_time = Column(String)
-    complexity_space = Column(String)
-    
-    # Features
-    features = Column(JSON)
-#     {
-#   "loop_depth": 3,
-#   "uses_hashmap": false,
-#   "cyclomatic_complexity": 14,
-#   "recursion": true
-# }   stores ML features here
+logger = logging.getLogger(__name__)
 
-    # Analysis results
-    anti_patterns = Column(JSON)   #["nested_loops", "redundant_computation"]
-    suggestions = Column(JSON)     #["Use hashing", "Avoid repeated sorting"]
-    vulnerabilities = Column(JSON) #["stack_overflow_risk"]
-    
-    # Performance metrics
-    runtime_ms = Column(Integer)
-    memory_kb = Column(Integer)
-    
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+# Try to import database libraries
+try:
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+    from sqlalchemy.orm import sessionmaker
+    SQLALCHEMY_AVAILABLE = True
+except ImportError:
+    SQLALCHEMY_AVAILABLE = False
+    logger.warning("SQLAlchemy not available. Database operations will be disabled.")
 
-class PlagiarismCheck(Base):
-    __tablename__ = "plagiarism_checks"
+
+class DatabaseManager:
+    """Manager for database connections"""
     
-    id = Column(Integer, primary_key=True, index=True)
-    contest_id = Column(String, index=True)
-    submission_pairs = Column(JSON)
-    similarity_scores = Column(JSON)
-    suspicious_pairs = Column(JSON)
-    checked_at = Column(DateTime, default=datetime.utcnow)
+    def __init__(self):
+        self.engine = None
+        self.async_session_maker = None
+        
+        if SQLALCHEMY_AVAILABLE:
+            self._init_database()
+    
+    def _init_database(self):
+        """Initialize database connection"""
+        database_url = os.getenv("DATABASE_URL", "postgresql://localhost/codeforge")
+        
+        # Convert to async URL
+        if database_url.startswith("postgresql://"):
+            database_url = database_url.replace("postgresql://", "postgresql+asyncpg://")
+        
+        try:
+            self.engine = create_async_engine(
+                database_url,
+                echo=os.getenv("DEBUG", "False").lower() == "true",
+                pool_pre_ping=True,
+                pool_size=5,
+                max_overflow=10
+            )
+            
+            self.async_session_maker = sessionmaker(
+                self.engine,
+                class_=AsyncSession,
+                expire_on_commit=False
+            )
+            
+            logger.info("Database engine initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize database: {e}")
+            self.engine = None
+    
+    @asynccontextmanager
+    async def get_session(self):
+        """
+        Get database session
+        
+        Usage:
+            async with db_manager.get_session() as session:
+                # Use session
+                pass
+        """
+        if not self.async_session_maker:
+            raise RuntimeError("Database not initialized")
+        
+        async with self.async_session_maker() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+    
+    async def close(self):
+        """Close database connections"""
+        if self.engine:
+            await self.engine.dispose()
+            logger.info("Database connections closed")
 
-# Database engine and session
-engine = create_async_engine(settings.DATABASE_URL)
-AsyncSessionLocal = async_sessionmaker(
-    engine, 
-    class_=AsyncSession, 
-    expire_on_commit=False
-)
 
-async def get_db() -> AsyncSession:
+# Global database manager
+_db_manager = DatabaseManager()
+
+
+@asynccontextmanager
+async def get_db_session():
     """Get database session"""
-    async with AsyncSessionLocal() as session:
+    async with _db_manager.get_session() as session:
         yield session
 
-async def init_db():
-    """Initialize database tables"""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
-async def close_db():
+async def close_database():
     """Close database connections"""
-    await engine.dispose()
+    await _db_manager.close()
