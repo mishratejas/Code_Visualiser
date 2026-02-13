@@ -18,7 +18,7 @@ const TestCase = ({
   const passed = result?.passed || false;
   const status = passed ? 'passed' : (result ? 'failed' : 'pending');
   
-  // FIX: Format text to handle \n properly
+  // Format text to handle \n properly
   const formatText = (text) => {
     if (!text) return '';
     // Replace escaped newlines with actual newlines
@@ -64,7 +64,7 @@ const TestCase = ({
     <div className={`test-case rounded-2xl border ${statusColor.border} p-5 mb-4 transition-all duration-300 hover:shadow-lg ${statusColor.bg}`}>
       {/* Header */}
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => setLocalExpanded(!localExpanded)}
         className="w-full flex items-center justify-between mb-4"
       >
         <div className="flex items-center space-x-4">
@@ -112,7 +112,8 @@ const TestCase = ({
             </div>
           )}
           
-          {isExpanded ? (
+          {/* FIXED: Changed from isExpanded to localExpanded */}
+          {localExpanded ? (
             <FiChevronDown className="text-gray-400 text-xl" />
           ) : (
             <FiChevronRight className="text-gray-400 text-xl" />
@@ -121,7 +122,8 @@ const TestCase = ({
       </button>
       
       {/* Expanded Content */}
-      {isExpanded && (
+      {/* FIXED: Changed from isExpanded to localExpanded */}
+      {localExpanded && (
         <div className="space-y-6 pt-4 border-t border-gray-200/50 dark:border-gray-700/30">
           {/* Input/Output Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

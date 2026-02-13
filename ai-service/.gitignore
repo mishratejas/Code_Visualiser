@@ -52,15 +52,13 @@ yarn.lock
 # Docker
 docker-compose.override.yml
 docker-compose.*.yml
-*.log
-*.tmp
-docker-compose.yml
+# docker-compose.yml  ← keep or remove intentionally
 
-# Redis dump / persistence
+# Redis
 dump.rdb
 *.rdb
 
-# AI/ML Models & Artifacts
+# AI/ML Models
 /models/
 *.pkl
 *.joblib
@@ -69,11 +67,15 @@ dump.rdb
 *.ckpt
 *.onnx
 
-# Plagiarism or Analysis caches
+# Scraped & processed data  ⭐ ADDED
+data/codeforces/
+data/processed/
+
+# Analysis caches
 analysis_cache/
 plagiarism_cache/
 
-# AI Service outputs or temp data
+# Temp
 temp/
 temp_data/
 *.tmp
@@ -82,6 +84,6 @@ temp_data/
 .DS_Store
 Thumbs.db
 
-# Optional: IntelliJ/WebStorm
+# IntelliJ / WebStorm
 *.iml
 out/

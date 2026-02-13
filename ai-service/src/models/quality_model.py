@@ -8,7 +8,7 @@ import json
 class QualityModel:
     """ML model for code quality classification"""
     
-    def __init__(self, model_path: str = None):
+    def __init__(self, model_path: str = None,auto_load: bool = True):
         self.model = None
         self.scaler = StandardScaler()
         self.labels = ['poor', 'fair', 'good', 'excellent']
@@ -17,18 +17,25 @@ class QualityModel:
         self.load_model()
     
     def load_model(self):
-        """Load trained model from disk"""
         try:
-            with open(self.model_path / 'model.pkl', 'rb') as f:
+            model_file = self.model_path / 'model.pkl'
+            scaler_file = self.model_path / 'scaler.pkl'
+
+            if not model_file.exists() or not scaler_file.exists():
+                raise FileNotFoundError("Model files missing")
+
+            with open(model_file, 'rb') as f:
                 self.model = pickle.load(f)
-            
-            with open(self.model_path / 'scaler.pkl', 'rb') as f:
+
+            with open(scaler_file, 'rb') as f:
                 self.scaler = pickle.load(f)
-            
+
             print("✅ Quality model loaded successfully")
-        except FileNotFoundError:
-            print("⚠️  No trained model found. Using fallback rules.")
+
+        except Exception as e:
+            print(f"⚠️ Quality model fallback enabled: {e}")
             self.model = None
+
     
     def predict(self, features: dict) -> dict:
         """Predict code quality"""

@@ -1108,6 +1108,7 @@ export const analyzeWithAI = async (submission, executionResult, problem) => {
         });
 
         if (response.ok) {
+           
             const aiAnalysis = await response.json();
             console.log('✅ AI analysis completed:', aiAnalysis.quality_label);
             
@@ -1136,15 +1137,16 @@ export const analyzeWithAI = async (submission, executionResult, problem) => {
     return null;
 };
 
-// Then in your submitCode function, after line 290 (after executionResult):
-const aiAnalysis = await analyzeWithAI(submission, executionResult, problem);
 
-// Add AI analysis to response if available
-if (aiAnalysis) {
-    responseData.submission.ai_analysis = {
-        quality_score: aiAnalysis.quality_score,
-        quality_label: aiAnalysis.quality_label,
-        time_complexity: aiAnalysis.time_complexity,
-        suggestions: aiAnalysis.suggestions || []
-    };
-}
+// Then in your submitCode function, after line 290 (after executionResult):
+// const aiAnalysis = await analyzeWithAI(submission, executionResult, problem);
+
+// // Add AI analysis to response if available
+// if (aiAnalysis) {
+//     responseData.submission.ai_analysis = {
+//         quality_score: aiAnalysis.quality_score,
+//         quality_label: aiAnalysis.quality_label,
+//         time_complexity: aiAnalysis.time_complexity,
+//         suggestions: aiAnalysis.suggestions || []
+//     };
+// }

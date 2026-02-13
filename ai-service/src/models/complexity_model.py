@@ -11,14 +11,21 @@ class ComplexityModel:
         self.load_model()
     
     def load_model(self):
-        """Load trained model"""
         try:
-            with open(self.model_path / 'model.pkl', 'rb') as f:
+            model_file = self.model_path / 'model.pkl'
+
+            if not model_file.exists():
+                raise FileNotFoundError("Complexity model file missing")
+
+            with open(model_file, 'rb') as f:
                 self.model = pickle.load(f)
-            print("✅ Complexity model loaded")
-        except FileNotFoundError:
-            print("⚠️  Complexity model not found, using fallback")
+
+            print("✅ Complexity model loaded successfully")
+
+        except Exception as e:
+            print(f"⚠️ Complexity model fallback enabled: {e}")
             self.model = None
+
     
     def predict(self, features: dict) -> dict:
         """Predict time and space complexity"""

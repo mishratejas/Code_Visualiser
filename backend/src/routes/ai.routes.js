@@ -7,25 +7,45 @@ import {
     startInterview,
     runPlagiarismCheck
 } from '../controllers/ai.controller.js';
-import { protect, admin } from '../middlewares/auth.middleware.js';
+import { authenticate, authorize } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
-// All routes are protected
-router.use(protect);
+// All routes require authentication
+router.use(authenticate);
 
-// Submission analysis
+// ============================================
+// SUBMISSION ANALYSIS ROUTES
+// ============================================
+
+// Analyze a specific submission
 router.post('/submissions/:id/analyze', analyzeSubmission);
+
+// Real-time code analysis (no submission required)
 router.post('/analyze/code', analyzeCode);
 
-// Recommendations and learning
+// ============================================
+// RECOMMENDATIONS & LEARNING ROUTES
+// ============================================
+
+// Get personalized problem recommendations
 router.get('/recommendations', getRecommendations);
+
+// Get user's skill gap analysis
 router.get('/skill-gap', getSkillGapAnalysis);
 
-// Interview system
+// ============================================
+// INTERVIEW SYSTEM ROUTES
+// ============================================
+
+// Start an AI-powered interview session
 router.post('/interview/start', startInterview);
 
-// Admin only routes
-router.post('/plagiarism/check', protect, admin, runPlagiarismCheck);
+// ============================================
+// PLAGIARISM DETECTION (ADMIN ONLY)
+// ============================================
+
+// Run plagiarism check for a contest (admin only)
+router.post('/plagiarism/check', authorize('admin'), runPlagiarismCheck);
 
 export default router;

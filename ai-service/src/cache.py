@@ -1,43 +1,50 @@
 """
-Caching utilities using Redis
+Cache module for Redis caching with in-memory fallback
 """
 import json
 import asyncio
 from typing import Any, Optional
-import logging
-import os
+from datetime import timedelta
 
-logger = logging.getLogger(__name__)
-
-# Try to import Redis, but make it optional
 try:
     import redis.asyncio as redis
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
-    logger.warning("Redis not available. Caching will be disabled.")
+
+from src.config import config
 
 
 class CacheManager:
-    """Manager for caching operations"""
-    
+    """
+    Cache manager with Redis backend and in-memory fallback
+    """
     def __init__(self):
-        self.redis_client = None
-        self.cache = {}  # In-memory fallback
+        self.redis_client: Optional[redis.Redis] = None
+        self.memory_cache: dict = {}
+        self.connected = False
         
-        if REDIS_AVAILABLE:
-            self._init_redis()
-    
-    def _init_redis(self):
-        """Initialize Redis connection"""
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        
+    async def connect(self):
+        """Connect to Redis"""
+        if not REDIS_AVAILABLE:
+            print("⚠️  Redis not available, using in-memory cache")
+            return
+            
         try:
-            self.redis_client = redis.from_url(redis_url, decode_responses=True)
-            logger.info("Redis client initialized")
+            redis_url = config.get('REDIS_URL', 'redis://localhost:6379')
+            self.redis_client = redis.from_url(
+                redis_url,
+                encoding="utf-8",
+                decode_responses=True
+            )
+            # Test connection
+            await self.redis_client.ping()
+            self.connected = True
+            print("✅ Redis cache connected")
         except Exception as e:
-            logger.warning(f"Failed to connect to Redis: {e}")
+            print(f"⚠️  Redis connection failed: {e}. Using in-memory cache.")
             self.redis_client = None
+            self.connected = False
     
     async def get(self, key: str) -> Optional[Any]:
         """
@@ -50,18 +57,23 @@ class CacheManager:
             Cached value or None
         """
         try:
-            if self.redis_client:
+            if self.connected and self.redis_client:
                 value = await self.redis_client.get(key)
                 if value:
                     return json.loads(value)
             else:
-                # Fallback to in-memory cache
-                return self.cache.get(key)
+                # Fallback to memory cache
+                return self.memory_cache.get(key)
         except Exception as e:
-            logger.error(f"Cache get error: {e}")
+            print(f"Cache get error for key '{key}': {e}")
             return None
     
-    async def set(self, key: str, value: Any, expire: int = 3600) -> bool:
+    async def set(
+        self, 
+        key: str, 
+        value: Any, 
+        expire: Optional[int] = None
+    ) -> bool:
         """
         Set value in cache
         
@@ -74,18 +86,24 @@ class CacheManager:
             True if successful
         """
         try:
-            if self.redis_client:
-                serialized = json.dumps(value)
-                await self.redis_client.setex(key, expire, serialized)
-                return True
+            serialized = json.dumps(value)
+            
+            if self.connected and self.redis_client:
+                if expire:
+                    await self.redis_client.setex(key, expire, serialized)
+                else:
+                    await self.redis_client.set(key, serialized)
             else:
-                # Fallback to in-memory cache
-                self.cache[key] = value
-                # Schedule expiration
-                asyncio.create_task(self._expire_key(key, expire))
-                return True
+                # Fallback to memory cache
+                self.memory_cache[key] = value
+                
+                # Simple expiration for memory cache
+                if expire:
+                    asyncio.create_task(self._expire_memory_key(key, expire))
+            
+            return True
         except Exception as e:
-            logger.error(f"Cache set error: {e}")
+            print(f"Cache set error for key '{key}': {e}")
             return False
     
     async def delete(self, key: str) -> bool:
@@ -99,52 +117,113 @@ class CacheManager:
             True if successful
         """
         try:
-            if self.redis_client:
+            if self.connected and self.redis_client:
                 await self.redis_client.delete(key)
             else:
-                self.cache.pop(key, None)
+                self.memory_cache.pop(key, None)
             return True
         except Exception as e:
-            logger.error(f"Cache delete error: {e}")
+            print(f"Cache delete error for key '{key}': {e}")
             return False
     
     async def clear(self) -> bool:
-        """Clear all cache"""
+        """
+        Clear all cache
+        
+        Returns:
+            True if successful
+        """
         try:
-            if self.redis_client:
+            if self.connected and self.redis_client:
                 await self.redis_client.flushdb()
             else:
-                self.cache.clear()
+                self.memory_cache.clear()
             return True
         except Exception as e:
-            logger.error(f"Cache clear error: {e}")
+            print(f"Cache clear error: {e}")
             return False
     
-    async def _expire_key(self, key: str, seconds: int):
-        """Expire key after delay (for in-memory cache)"""
+    async def exists(self, key: str) -> bool:
+        """
+        Check if key exists
+        
+        Args:
+            key: Cache key
+            
+        Returns:
+            True if key exists
+        """
+        try:
+            if self.connected and self.redis_client:
+                return await self.redis_client.exists(key) > 0
+            else:
+                return key in self.memory_cache
+        except Exception as e:
+            print(f"Cache exists error for key '{key}': {e}")
+            return False
+    
+    async def _expire_memory_key(self, key: str, seconds: int):
+        """Expire key from memory cache after seconds"""
         await asyncio.sleep(seconds)
-        self.cache.pop(key, None)
+        self.memory_cache.pop(key, None)
+    
+    async def close(self):
+        """Close Redis connection"""
+        if self.connected and self.redis_client:
+            await self.redis_client.close()
+            self.connected = False
 
 
-# Global cache manager
-_cache_manager = CacheManager()
+# Global cache manager instance
+_cache_manager: Optional[CacheManager] = None
 
 
+async def get_cache_manager() -> CacheManager:
+    """
+    Get or create cache manager instance
+    
+    Returns:
+        CacheManager instance
+    """
+    global _cache_manager
+    
+    if _cache_manager is None:
+        _cache_manager = CacheManager()
+        await _cache_manager.connect()
+    
+    return _cache_manager
+
+
+# Convenience functions
 async def get_cache(key: str) -> Optional[Any]:
     """Get value from cache"""
-    return await _cache_manager.get(key)
+    manager = await get_cache_manager()
+    return await manager.get(key)
 
 
-async def set_cache(key: str, value: Any, expire: int = 3600) -> bool:
+async def set_cache(
+    key: str, 
+    value: Any, 
+    expire: Optional[int] = None
+) -> bool:
     """Set value in cache"""
-    return await _cache_manager.set(key, value, expire)
+    manager = await get_cache_manager()
+    return await manager.set(key, value, expire)
 
 
 async def delete_cache(key: str) -> bool:
     """Delete key from cache"""
-    return await _cache_manager.delete(key)
+    manager = await get_cache_manager()
+    return await manager.delete(key)
 
 
 async def clear_cache() -> bool:
     """Clear all cache"""
-    return await _cache_manager.clear()
+    manager = await get_cache_manager()
+    return await manager.clear()
+
+
+async def cache_exists(key: str) -> bool:
+    """Check if key exists in cache"""
+    manager = await get_cache_manager()
+    return await manager.exists(key)

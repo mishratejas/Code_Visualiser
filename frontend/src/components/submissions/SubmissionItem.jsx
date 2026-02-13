@@ -7,7 +7,7 @@ import { formatBytes, formatDate } from '../../utils/helpers';
 
 const SubmissionItem = ({ submission }) => {
   const getStatusConfig = (verdict) => {
-    const normalizedStatus=verdict?.toLowerCase().replace(/-/g, '_');
+    const normalizedStatus = verdict?.toLowerCase().replace(/-/g, '_');
     
     const configs = {
       accepted: {
@@ -60,7 +60,8 @@ const SubmissionItem = ({ submission }) => {
       }
     };
     
-    return configs[status] || {
+    // FIXED: Changed from 'status' to 'normalizedStatus'
+    return configs[normalizedStatus] || {
       icon: null,
       bg: 'bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-gray-800 dark:to-gray-900',
       border: 'border-gray-200/50 dark:border-gray-700/30',
@@ -85,7 +86,7 @@ const SubmissionItem = ({ submission }) => {
           </div>
           <div>
             <div className={`font-bold text-lg ${statusConfig.text}`}>
-              {formatStatusText(submission.verdict ||submission.status)}
+              {formatStatusText(submission.verdict || submission.status)}
             </div>
             <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center mt-1">
               <BsClock className="mr-1.5" size={14} />

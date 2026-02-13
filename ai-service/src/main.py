@@ -7,9 +7,9 @@ from fastapi.responses import JSONResponse
 import uvicorn
 import logging
 
-from src.utils.config import Config
+from src.config import Config
 from src.utils.logger import setup_logger
-from src.utils.database import close_database
+from src.database import close_database
 
 # Import routers
 from src.api.routes import analysis, interview, plagiarism, recommendations

@@ -4,7 +4,7 @@ Code embedding generation using CodeBERT and other models
 import torch
 import numpy as np
 from transformers import AutoTokenizer, AutoModel
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional,Tuple
 import logging
 
 logger = logging.getLogger(__name__)

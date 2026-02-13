@@ -17,9 +17,10 @@ from src.utils.validators import (
     validate_submission_id,
     sanitize_code
 )
-from src.utils.cache import get_cache, set_cache, delete_cache, clear_cache
-from src.utils.config import Config, config
-from src.utils.database import get_db_session, close_database
+# ✅ FIXED: Import from src/ not src/utils/
+from src.cache import get_cache, set_cache, delete_cache, clear_cache
+from src.config import Config, config
+from src.database import get_db_session, close_database
 
 __all__ = [
     # Helpers

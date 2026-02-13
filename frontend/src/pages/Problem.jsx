@@ -90,10 +90,16 @@ const Problem = () => {
     editorRef.current = editor;
     editor.focus();
   };
-
+  const formatText = (text) => {
+    if (!text) return '';
+  // Replace escaped newlines with actual newlines for display
+    return text.replace(/\\n/g, '\n');
+  };
   const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    toast.success('Copied to clipboard');
+    const formatted=formatText(text);
+    navigator.clipboard.writeText(formatted);
+    toast.success('Copied to clipboard!');
+    
   };
 
   const toggleTestCase = (index) => {
@@ -400,7 +406,7 @@ const Problem = () => {
                                     </button>
                                   </div>
                                   <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-sm overflow-x-auto">
-                                    {testCase.input}
+                                    {formatText(testCase.input)}
                                   </pre>
                                 </div>
                                 <div>
@@ -415,7 +421,7 @@ const Problem = () => {
                                     </button>
                                   </div>
                                   <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-sm overflow-x-auto">
-                                    {testCase.expectedOutput}
+                                    {formatText(testCase.expectedOutput)}
                                   </pre>
                                 </div>
                                 {testCase.explanation && (
