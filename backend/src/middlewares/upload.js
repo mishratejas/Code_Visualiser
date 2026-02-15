@@ -1,51 +1,125 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
-import ApiError from '../utils/ApiError.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+/**
+ * Multer configuration for file uploads
+ * Supports both memory storage (for Cloudinary) and disk storage
+ */
 
-// Create uploads directory if it doesn't exist
-const uploadDir = path.join(__dirname, '../../uploads/avatars');
+// Ensure uploads directory exists
+const uploadDir = './uploads';
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// Configure storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+// Memory storage configuration (recommended for Cloudinary)
+const memoryStorage = multer.memoryStorage();
+
+// Disk storage configuration (for temporary files)
+const diskStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
     cb(null, uploadDir);
   },
-  filename: (req, file, cb) => {
+  filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
-    cb(null, `avatar-${req.user._id}-${uniqueSuffix}${ext}`);
+    const name = path.basename(file.originalname, ext);
+    cb(null, name + '-' + uniqueSuffix + ext);
   }
 });
 
-// File filter
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
-
-  if (mimetype && extname) {
-    return cb(null, true);
+// File filter for images only
+const imageFilter = (req, file, cb) => {
+  const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+  
+  if (allowedMimeTypes.includes(file.mimetype)) {
+    cb(null, true);
   } else {
-    cb(new ApiError.badRequest('Only image files are allowed!'));
+    cb(new Error('Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed.'), false);
   }
 };
 
-// Multer configuration
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: 2 * 1024 * 1024, // 2MB limit
-    files: 1
-  },
-  fileFilter
-});
+// File filter for all files
+const anyFilter = (req, file, cb) => {
+  cb(null, true);
+};
 
+// Upload configurations
+const uploadConfigs = {
+  // Memory storage (for Cloudinary uploads)
+  memory: {
+    storage: memoryStorage,
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB
+    },
+    fileFilter: imageFilter
+  },
+  
+  // Disk storage (for temporary files)
+  disk: {
+    storage: diskStorage,
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB
+    },
+    fileFilter: imageFilter
+  },
+  
+  // Avatar upload (memory storage, smaller size)
+  avatar: {
+    storage: memoryStorage,
+    limits: {
+      fileSize: 5 * 1024 * 1024, // 5MB
+    },
+    fileFilter: imageFilter
+  },
+  
+  // Document upload
+  document: {
+    storage: diskStorage,
+    limits: {
+      fileSize: 50 * 1024 * 1024, // 50MB
+    },
+    fileFilter: anyFilter
+  }
+};
+
+// Create multer instances
+export const upload = multer(uploadConfigs.memory);
+export const uploadDisk = multer(uploadConfigs.disk);
+export const uploadAvatar = multer(uploadConfigs.avatar);
+export const uploadDocument = multer(uploadConfigs.document);
+
+// Middleware to handle multer errors
+export const handleUploadError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        success: false,
+        message: 'File too large. Maximum size is 10MB.'
+      });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({
+        success: false,
+        message: 'Too many files uploaded.'
+      });
+    }
+    return res.status(400).json({
+      success: false,
+      message: `Upload error: ${err.message}`
+    });
+  }
+  
+  if (err) {
+    return res.status(400).json({
+      success: false,
+      message: err.message || 'File upload failed'
+    });
+  }
+  
+  next();
+};
+
+// Default export
 export default upload;

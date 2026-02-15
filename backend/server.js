@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { createServer } from 'http';
 import { initializeSocket } from './src/socket/contestSocket.js';
-
+import streakJobs from './src/jobs/streakJobs.js';
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err.message);
@@ -72,4 +72,11 @@ dbManager.connectAll().then(() => {
 }).catch(err => {
   console.error('Failed to start server:', err);
   process.exit(1);
+});
+
+streakJobs.start();
+
+// On shutdown
+process.on('SIGTERM', () => {
+  streakJobs.stop();
 });

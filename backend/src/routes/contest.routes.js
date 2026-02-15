@@ -10,15 +10,18 @@ import {
   submitContestSolution,
   getContestLeaderboard
 } from '../controllers/contest.controller.js';
-import { authenticate, authorize } from '../middlewares/auth.middleware.js';
-
+import { authenticate, authorize, optionalAuth } from '../middlewares/auth.middleware.js';
+import Contest from '../models/postgres/Contest.models.js';
+import ContestParticipant from '../models/postgres/ContestParticipant.models.js';
+import ContestSubmission from '../models/postgres/ContestSubmission.models.js';
+import Problem from '../models/problem.models.js';
 const router = express.Router();
 
 // =====================================
 // PUBLIC ROUTES
 // =====================================
-router.get('/', getContests);
-router.get('/:id', getContest);
+router.get('/', optionalAuth, getContests);
+router.get('/:id', optionalAuth, getContest);
 router.get('/:id/leaderboard', getContestLeaderboard);
 
 // =====================================

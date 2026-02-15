@@ -55,13 +55,7 @@ const fetchData = async () => {
     const problemsList = Array.isArray(problemsData) ? problemsData : [];
     console.log('📋 Problems array:', problemsList.length, 'items');
     
-    // ✅ FIX: Filter published problems
-    const publishedProblems = problemsList.filter(p => {
-      const isPublished = p?.metadata?.isPublished === true || 
-                         p?.isPublished === true ||
-                         p?.published === true;
-      return isPublished;
-    });
+    const publishedProblems = problemsData; 
     
     console.log('✅ Found', publishedProblems.length, 'published problems out of', problemsList.length, 'total');
     

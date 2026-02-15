@@ -268,11 +268,7 @@ problemSchema.index({ difficultyScore: 1 });
 problemSchema.index({ popularityScore: -1 });
 
 // Pre-save middleware
-problemSchema.pre('save', async function(next) {
-  if (typeof next !== 'function') {
-    console.error('Middleware error: next is not a function');
-    return;
-  }
+problemSchema.pre('save', async function() {
   if (!this.slug) {
     this.slug = this.title
       .toLowerCase()
@@ -296,8 +292,6 @@ problemSchema.pre('save', async function(next) {
     (this.metadata.views * 0.1) + 
     (this.metadata.submissions * 0.3) + 
     (this.metadata.likes * 0.5);
-  
-  next();
 });
 
 // Methods

@@ -16,6 +16,8 @@ import {
 } from '../controllers/user.controller.js';
 import { authenticate, authorize } from '../middlewares/auth.middleware.js';
 import { UserValidation } from '../middlewares/validate.middleware.js';
+import { uploadAvatar, deleteAvatar, updatePreferences, getStreak } from '../controllers/user.controller.js';
+import { upload } from '../middlewares/upload.js';
 
 const router = express.Router();
 
@@ -49,6 +51,11 @@ router.delete('/account', deleteAccount);
 router.get('/:identifier', getUserProfile);         // GET /api/v1/users/username
 router.get('/:userId/stats', getUserStats);         // GET /api/v1/users/:userId/stats
 router.get('/:userId/activity', getUserActivity);   // GET /api/v1/users/:userId/activity
+
+router.post('/avatar', protect, upload.single('avatar'), uploadAvatar);
+router.delete('/avatar', protect, deleteAvatar);
+router.patch('/preferences', protect, updatePreferences);
+router.get('/streak', protect, getStreak);
 
 // ============ ADMIN ROUTES ============
 router.get('/admin/all', authorize('admin'), async (req, res) => {

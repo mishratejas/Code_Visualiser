@@ -5,6 +5,90 @@ import ApiResponse from '../utils/ApiResponse.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import ApiError from '../utils/ApiError.js';
 import mongoose from 'mongoose';
+import multer from 'multer';
+import { v2 as cloudinary } from 'cloudinary';
+import streakService from '../services/streak.service.js';
+
+// Configure multer for memory storage
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Avatar upload endpoint
+export const uploadAvatar = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    throw ApiError.badRequest('Please upload an image');
+  }
+
+  // Upload to Cloudinary
+  const result = await new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: 'codeforge/avatars',
+        transformation: [
+          { width: 400, height: 400, crop: 'fill', gravity: 'face' },
+          { quality: 'auto' }
+        ]
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }
+    );
+    uploadStream.end(req.file.buffer);
+  });
+
+  // Delete old avatar from Cloudinary if exists
+  if (req.user.avatar && req.user.avatar.includes('cloudinary')) {
+    const publicId = req.user.avatar.split('/').slice(-2).join('/').split('.')[0];
+    await cloudinary.uploader.destroy(publicId);
+  }
+
+  // Update user
+  req.user.avatar = result.secure_url;
+  await req.user.save();
+
+  res.status(200).json(
+    new ApiResponse(200, { avatarUrl: result.secure_url }, 'Avatar uploaded successfully')
+  );
+});
+
+// Delete avatar
+export const deleteAvatar = asyncHandler(async (req, res) => {
+  if (req.user.avatar && req.user.avatar.includes('cloudinary')) {
+    const publicId = req.user.avatar.split('/').slice(-2).join('/').split('.')[0];
+    await cloudinary.uploader.destroy(publicId);
+  }
+
+  req.user.avatar = null;
+  await req.user.save();
+
+  res.status(200).json(
+    new ApiResponse(200, {}, 'Avatar deleted successfully')
+  );
+});
+
+// Update preferences
+export const updatePreferences = asyncHandler(async (req, res) => {
+  const { emailPreferences } = req.body;
+
+  req.user.emailPreferences = {
+    ...req.user.emailPreferences,
+    ...emailPreferences
+  };
+  await req.user.save();
+
+  res.status(200).json(
+    new ApiResponse(200, { emailPreferences: req.user.emailPreferences }, 'Preferences updated')
+  );
+});
+
+// Get streak
+export const getStreak = asyncHandler(async (req, res) => {
+  const streak = await streakService.getStreak(req.user._id);
+  
+  res.status(200).json(
+    new ApiResponse(200, { streak }, 'Streak fetched successfully')
+  );
+});
 
 // @desc    Get user profile by ID or username
 // @route   GET /api/v1/users/:identifier
