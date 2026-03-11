@@ -157,6 +157,10 @@ const problemSchema = new mongoose.Schema({
       type: Number,
       default: 0
     },
+    acceptedSubmissions: {
+      type: Number,
+      default: 0
+    },
     acceptanceRate: {
       type: Number,
       default: 0

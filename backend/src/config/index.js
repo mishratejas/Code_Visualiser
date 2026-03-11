@@ -15,6 +15,23 @@ const config = {
         apiPrefix: process.env.API_PREFIX || '/api',
     },
     
+    // Email configuration (ADD THIS SECTION)
+    email: {
+        host: process.env.EMAIL_HOST,
+        port: process.env.EMAIL_PORT || 587,
+        user: process.env.EMAIL_USER,
+        password: process.env.EMAIL_PASSWORD,
+        from: process.env.EMAIL_FROM || 'noreply@codingjudge.com'
+    },
+    
+    // Frontend configuration (ADD THIS SECTION)
+    frontend: {
+        url: process.env.FRONTEND_URL || 'http://localhost:3000',
+        passwordResetUrl: process.env.FRONTEND_URL 
+            ? `${process.env.FRONTEND_URL}/reset-password` 
+            : 'http://localhost:3000/reset-password'
+    },
+    
     // Rate limiting configuration
     rateLimit: {
         windowMs: parseInt(process.env.RATE_LIMIT_WINDOW) * 60 * 1000 || 15 * 60 * 1000, // 15 minutes in ms

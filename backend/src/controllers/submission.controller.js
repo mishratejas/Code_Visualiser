@@ -3,29 +3,209 @@ import Problem from "../models/problem.models.js";
 import User from "../models/user.models.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import asyncHandler from "../utils/asyncHandler.js";
+import notificationService from "../services/notification.service.js";
+import axios from "axios";
 import ApiError from "../utils/ApiError.js";
-import { exec, spawn } from "child_process";
+import { exec, execFile, spawn } from "child_process";
 import { promisify } from "util";
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { VERDICT } from "../constants.js";
 import { v4 as uuidv4 } from "uuid";
-import achievementService from '../services/achievement.service.js';
-import streakService from '../services/streak.service.js';
-import notificationService from '../services/notification.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
-const executeCode = async (
-  code,
-  language,
-  testCases,
-  timeLimit,
-  memoryLimit,
-) => {
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || "http://localhost:8001";
+
+// ─── Output size limit: 2MB ───────────────────────────────────────────────────
+const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
+
+// ─── Sandbox configuration ────────────────────────────────────────────────────
+// Three modes: 'docker' (most secure), 'ulimit' (Linux only), 'basic' (Windows/dev)
+// Set SANDBOX_MODE in .env — defaults to 'basic' for local dev
+const SANDBOX_MODE = process.env.SANDBOX_MODE || 'basic';
+const DOCKER_IMAGE  = process.env.JUDGE_DOCKER_IMAGE || 'codearena-judge:latest';
+
+/**
+ * Sandboxed code runner
+ *
+ * MODES:
+ *  docker  → each submission runs in a disposable Docker container
+ *            memory=256m, cpus=0.5, no network, read-only fs, pids=50
+ *            → MOST SECURE — use in production
+ *
+ *  ulimit  → Linux ulimit restricts memory + file size
+ *            → MEDIUM — use on Linux VPS without Docker
+ *
+ *  basic   → Only timeout SIGKILL + output size limit
+ *            → DEVELOPMENT ONLY — never use in production
+ */
+const runCodeSandboxed = async ({ execCmd, execArgs, inputData, timeoutMs, language }) => {
+  if (SANDBOX_MODE === 'docker') {
+    return runInDocker({ execCmd, execArgs, inputData, timeoutMs, language });
+  }
+  if (SANDBOX_MODE === 'ulimit' && os.platform() !== 'win32') {
+    return runWithUlimit({ execCmd, execArgs, inputData, timeoutMs });
+  }
+  return runBasic({ execCmd, execArgs, inputData, timeoutMs });
+};
+
+
+// ─── Docker sandbox ───────────────────────────────────────────────────────────
+const runInDocker = async ({ execCmd, execArgs, inputData, timeoutMs, language }) => {
+  const containerName = `judge_${uuidv4().replace(/-/g, '')}`;
+
+  // Write input to temp file on host (Docker will mount it)
+  const hostTmp = path.join(os.tmpdir(), `input_${containerName}.txt`);
+  fs.writeFileSync(hostTmp, inputData || '');
+
+  const dockerArgs = [
+    'run', '--rm',
+    '--name', containerName,
+    '--memory', '256m',           // max RAM
+    '--memory-swap', '256m',      // disable swap
+    '--cpus', '0.5',              // 50% of one CPU
+    '--network', 'none',          // NO internet access
+    '--read-only',                // read-only filesystem
+    '--tmpfs', '/tmp:size=16m',   // only /tmp writable, RAM-based, 16MB
+    '--pids-limit', '50',         // prevents fork bombs
+    '--user', 'nobody',           // non-root
+    '-i',
+    DOCKER_IMAGE,
+    execCmd, ...execArgs,
+  ];
+
+  return new Promise((resolve) => {
+    let outData = '';
+    let errData = '';
+    const killed = { byTimeout: false, byOutput: false };
+
+    const docker = spawn('docker', dockerArgs, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    // Feed input
+    if (inputData) {
+      docker.stdin.write(inputData);
+      docker.stdin.end();
+    }
+
+    docker.stdout.on('data', (chunk) => {
+      outData += chunk.toString();
+      if (Buffer.byteLength(outData) > MAX_OUTPUT_BYTES) {
+        killed.byOutput = true;
+        docker.kill('SIGKILL');
+        execAsync(`docker kill ${containerName}`).catch(() => {});
+      }
+    });
+    docker.stderr.on('data', (chunk) => { errData += chunk.toString(); });
+
+    const timer = setTimeout(() => {
+      killed.byTimeout = true;
+      docker.kill('SIGKILL');
+      execAsync(`docker kill ${containerName}`).catch(() => {});
+    }, timeoutMs);
+
+    docker.on('close', (code) => {
+      clearTimeout(timer);
+      try { fs.unlinkSync(hostTmp); } catch {}
+      if (killed.byTimeout) {
+        resolve({ stdout: '', stderr: 'Time Limit Exceeded', timedOut: true, exitCode: -1 });
+      } else if (killed.byOutput) {
+        resolve({ stdout: outData.slice(0, 1000), stderr: 'Output Limit Exceeded', exitCode: -1 });
+      } else {
+        resolve({ stdout: outData, stderr: errData, exitCode: code });
+      }
+    });
+
+    docker.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ stdout: '', stderr: `Docker error: ${err.message}`, exitCode: -1 });
+    });
+  });
+};
+
+
+// ─── ulimit sandbox (Linux/Mac) ───────────────────────────────────────────────
+const runWithUlimit = ({ execCmd, execArgs, inputData, timeoutMs }) => {
+  return new Promise((resolve) => {
+    let outData = '';
+    let errData = '';
+
+    const proc = spawn('bash', [
+      '-c',
+      // ulimit: virtual memory 256MB, file size 32MB, processes 50
+      `ulimit -v 262144 -f 32768 -u 50; ${execCmd} ${execArgs.join(' ')}`,
+    ], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+    if (inputData) { proc.stdin.write(inputData); proc.stdin.end(); }
+
+    proc.stdout.on('data', (chunk) => {
+      outData += chunk.toString();
+      if (Buffer.byteLength(outData) > MAX_OUTPUT_BYTES) proc.kill('SIGKILL');
+    });
+    proc.stderr.on('data', (chunk) => { errData += chunk.toString(); });
+
+    const timer = setTimeout(() => proc.kill('SIGKILL'), timeoutMs);
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ stdout: outData, stderr: errData, exitCode: code });
+    });
+    proc.on('error', (e) => {
+      clearTimeout(timer);
+      resolve({ stdout: '', stderr: e.message, exitCode: -1 });
+    });
+  });
+};
+
+
+// ─── Basic sandbox (Windows / dev only) ──────────────────────────────────────
+const runBasic = ({ execCmd, execArgs, inputData, timeoutMs }) => {
+  return new Promise((resolve) => {
+    let outData = '';
+    let errData = '';
+    let killed = false;
+
+    const proc = spawn(execCmd, execArgs, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+
+    if (inputData) { proc.stdin.write(inputData); proc.stdin.end(); }
+
+    proc.stdout.on('data', (chunk) => {
+      outData += chunk.toString();
+      if (Buffer.byteLength(outData) > MAX_OUTPUT_BYTES) {
+        killed = true;
+        proc.kill('SIGKILL');
+      }
+    });
+    proc.stderr.on('data', (chunk) => { errData += chunk.toString(); });
+
+    const timer = setTimeout(() => {
+      killed = true;
+      proc.kill('SIGKILL');
+    }, timeoutMs);
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ stdout: outData, stderr: errData, exitCode: code, killed });
+    });
+    proc.on('error', (e) => {
+      clearTimeout(timer);
+      resolve({ stdout: '', stderr: e.message, exitCode: -1, killed: true });
+    });
+  });
+};
+
+
+// Optimized code execution with better performance
+const executeCode = async (code, language, testCases, timeLimit, memoryLimit) => {
   const results = [];
   let totalRuntime = 0;
   let testCasesPassed = 0;
@@ -38,295 +218,229 @@ const executeCode = async (
 
   const uniqueId = uuidv4().slice(0, 8);
   const fileName = `solution_${uniqueId}`;
-  let filePath, compileCommand, executablePath, className;
+  let filePath, executablePath, className;
 
   try {
-    // Write code to file
+    // Write code to file based on language
     switch (language) {
       case "python":
         filePath = path.join(tempDir, `${fileName}.py`);
         fs.writeFileSync(filePath, code);
-        executablePath = "python3";
         break;
-
       case "javascript":
-        filePath = path.join(tempDir, `${fileName}.js`);
+        filePath = path.join(tempDir, `${fileName}.cjs`);
         fs.writeFileSync(filePath, code);
-        executablePath = "node";
         break;
-
       case "cpp":
         filePath = path.join(tempDir, `${fileName}.cpp`);
         fs.writeFileSync(filePath, code);
-        executablePath = path.join(tempDir, fileName);
-        compileCommand = `g++ -std=c++17 ${filePath} -o ${executablePath}`;
+        executablePath = path.join(tempDir, fileName + (process.platform === "win32" ? ".exe" : ""));
+        
+        // Compile C++ with optimizations
+        try {
+          const compileCmd = `g++ -std=c++17 -O2 "${filePath}" -o "${executablePath}"`;
+          const { stderr } = await execAsync(compileCmd, { timeout: 10000 });
+          if (stderr && !stderr.includes("warning")) {
+            return {
+              verdict: VERDICT.COMPILATION_ERROR,
+              runtime: 0,
+              testCasesPassed: 0,
+              errorMessage: stderr,
+              executionResults: testCases.map((tc, i) => ({
+                testCaseIndex: i,
+                passed: false,
+                input: tc.input,
+                expectedOutput: tc.expectedOutput,
+                actualOutput: "",
+                error: "Compilation Error",
+              })),
+            };
+          }
+        } catch (compileError) {
+          return {
+            verdict: VERDICT.COMPILATION_ERROR,
+            runtime: 0,
+            testCasesPassed: 0,
+            errorMessage: compileError.stderr || "Compilation failed",
+            executionResults: testCases.map((tc, i) => ({
+              testCaseIndex: i,
+              passed: false,
+              input: tc.input,
+              expectedOutput: tc.expectedOutput,
+              actualOutput: "",
+              error: "Compilation Error",
+            })),
+          };
+        }
         break;
-
       case "java":
         filePath = path.join(tempDir, `${fileName}.java`);
-        className = code.match(/class\s+(\w+)/)?.[1] || "Solution";
+        className = code.match(/public\s+class\s+(\w+)/)?.[1] || "Solution";
         fs.writeFileSync(filePath, code);
-        compileCommand = `javac ${filePath}`;
-        executablePath = "java";
+        
+        // Compile Java
+        try {
+          const compileCmd = `javac "${filePath}"`;
+          const { stderr } = await execAsync(compileCmd, { timeout: 10000 });
+          if (stderr) {
+            return {
+              verdict: VERDICT.COMPILATION_ERROR,
+              runtime: 0,
+              testCasesPassed: 0,
+              errorMessage: stderr,
+              executionResults: testCases.map((tc, i) => ({
+                testCaseIndex: i,
+                passed: false,
+                input: tc.input,
+                expectedOutput: tc.expectedOutput,
+                actualOutput: "",
+                error: "Compilation Error",
+              })),
+            };
+          }
+        } catch (compileError) {
+          return {
+            verdict: VERDICT.COMPILATION_ERROR,
+            runtime: 0,
+            testCasesPassed: 0,
+            errorMessage: compileError.stderr || "Compilation failed",
+            executionResults: testCases.map((tc, i) => ({
+              testCaseIndex: i,
+              passed: false,
+              input: tc.input,
+              expectedOutput: tc.expectedOutput,
+              actualOutput: "",
+              error: "Compilation Error",
+            })),
+          };
+        }
         break;
-
       default:
         throw new Error(`Unsupported language: ${language}`);
     }
 
-    // Compile if needed
-    if (compileCommand) {
-      try {
-        await execAsync(compileCommand, { timeout: 10000 });
-      } catch (compileError) {
-        return {
-          verdict: VERDICT.COMPILATION_ERROR,
-          runtime: 0,
-          testCasesPassed: 0,
-          errorMessage: compileError.stderr || "Compilation failed",
-          executionResults: testCases.map((tc, index) => ({
-            testCaseIndex: index,
-            passed: false,
-            input: tc.input,
-            expectedOutput: tc.expectedOutput,
-            actualOutput: "",
-            error: "Compilation Error",
-          })),
-        };
-      }
-    }
-
-    // Execute each test case
-    for (let i = 0; i < testCases.length; i++) {
-      const testCase = testCases[i];
+    // Process test cases in parallel for better performance
+    const testCasePromises = testCases.map(async (testCase, index) => {
       const startTime = Date.now();
+      
+      // Prepare input
+      let input = testCase.input;
+      if (input.includes('\\n')) {
+        input = input.replace(/\\n/g, '\n');
+      }
+      if (!input.endsWith('\n')) {
+        input += '\n';
+      }
+      const inputFile = path.join(tempDir, `input_${uniqueId}_${index}.txt`);
+      fs.writeFileSync(inputFile, input);
 
       try {
-        // CRITICAL FIX: Handle ALL line ending formats
-        let input = testCase.input;
-
-        // Step 1: Replace escaped \r\n sequences first (most specific)
-        if (input.includes("\\r\\n")) {
-          input = input.replace(/\\r\\n/g, "\n");
+        // ── Sandboxed execution ────────────────────────────────────────────
+        // Determine command based on language
+        let execCmd, execArgs;
+        switch (language) {
+          case "python":
+            execCmd = process.platform === "win32" ? "python" : "python3";
+            execArgs = [filePath];
+            break;
+          case "javascript":
+            execCmd = "node";
+            execArgs = [filePath];
+            break;
+          case "cpp":
+            execCmd = executablePath;
+            execArgs = [];
+            break;
+          case "java":
+            execCmd = "java";
+            execArgs = ["-cp", tempDir, className];
+            break;
         }
 
-        // Step 2: Replace escaped \n (backslash-n as text)
-        if (input.includes("\\n")) {
-          input = input.replace(/\\n/g, "\n");
-        }
-
-        // Step 3: Clean up any actual \r\n (Windows CRLF) to just \n (Unix LF)
-        if (input.includes("\r\n")) {
-          input = input.replace(/\r\n/g, "\n");
-        }
-
-        // Step 4: Clean up standalone \r (old Mac line endings)
-        if (input.includes("\r")) {
-          input = input.replace(/\r/g, "\n");
-        }
-
-        // Step 5: Ensure input ends with newline
-        if (!input.endsWith("\n")) {
-          input += "\n";
-        }
-
-        // Debug logging
-        console.log(
-          `Test case ${i + 1} input (raw):`,
-          JSON.stringify(testCase.input),
-        );
-        console.log(
-          `Test case ${i + 1} input (parsed):`,
-          JSON.stringify(input),
-        );
-        console.log(
-          `Test case ${i + 1} input bytes:`,
-          Buffer.from(input).toString("hex"),
-        );
-
-        // Determine command and arguments
-        let cmd, args;
-        if (language === "python") {
-          cmd = "python3";
-          args = [filePath];
-        } else if (language === "javascript") {
-          cmd = "node";
-          args = [filePath];
-        } else if (language === "cpp") {
-          cmd = executablePath;
-          args = [];
-        } else if (language === "java") {
-          cmd = "java";
-          args = ["-cp", tempDir, className];
-        }
-
-        // Use spawn for better input/output handling
-        const childProcess = spawn(cmd, args, {
-          timeout: timeLimit,
-          stdio: ["pipe", "pipe", "pipe"],
+        const sandboxResult = await runCodeSandboxed({
+          execCmd,
+          execArgs,
+          inputData: input,
+          timeoutMs: timeLimit,
+          language,
         });
 
-        let stdout = "";
-        let stderr = "";
+        // Clean up input file
+        try { fs.unlinkSync(inputFile); } catch (e) {}
 
-        // Collect stdout
-        childProcess.stdout.on("data", (data) => {
-          stdout += data.toString();
-        });
-
-        // Collect stderr
-        childProcess.stderr.on("data", (data) => {
-          stderr += data.toString();
-        });
-
-        // Set up timeout
-        let timeoutId = setTimeout(() => {
-          childProcess.kill("SIGKILL");
-        }, timeLimit);
-
-        // Write input to stdin
-        childProcess.stdin.write(input);
-        childProcess.stdin.end();
-
-        // Wait for process to complete
-        const exitCode = await new Promise((resolve, reject) => {
-          childProcess.on("close", (code) => {
-            clearTimeout(timeoutId);
-            resolve(code);
-          });
-
-          childProcess.on("error", (err) => {
-            clearTimeout(timeoutId);
-            reject(err);
-          });
-        });
+        const { stdout, stderr } = sandboxResult;
+        if (sandboxResult.timedOut) {
+          throw { message: "Time Limit Exceeded", stderr: "" };
+        }
+        if (sandboxResult.exitCode !== 0 && stderr && !stdout) {
+          throw { message: `Runtime error`, stderr };
+        }
 
         const runtime = Date.now() - startTime;
+        
+        // Clean outputs
+        const normalizeOutput = (s) =>
+          (s || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+            .split('\n').map(l => l.trimEnd()).join('\n').trim();
 
-        // CORRECTION: Subtract overhead for process spawning on Windows
-        // In a real production environment, we would use a sandbox or better isolation
-        const EXECUTION_OVERHEAD = process.platform === "win32" ? 600 : 100;
-        const adjustedRuntime = Math.max(0, runtime - EXECUTION_OVERHEAD);
-
-        totalRuntime += adjustedRuntime;
-
-        // Check if process was killed by timeout
-        if (timeoutId._destroyed) {
-          throw new Error("Time limit exceeded");
-        }
-
-        // Clean output - remove trailing whitespace
-        const actualOutput = stdout.trim();
-        const expectedOutput = testCase.expectedOutput.trim();
-
-        // Debug output
-        console.log(`Test case ${i + 1} output:`, JSON.stringify(actualOutput));
-        console.log(
-          `Test case ${i + 1} expected:`,
-          JSON.stringify(expectedOutput),
-        );
-        console.log(`Test case ${i + 1} stderr:`, JSON.stringify(stderr));
-
+        const actualOutput   = normalizeOutput(stdout);
+        const expectedOutput = normalizeOutput(testCase.expectedOutput);
         const passed = actualOutput === expectedOutput;
-        if (passed) testCasesPassed++;
 
-        results.push({
-          testCaseIndex: i,
+        return {
+          testCaseIndex: index,
           passed,
           input: testCase.input,
-          expectedOutput: expectedOutput,
+          expectedOutput: testCase.expectedOutput,
           actualOutput: actualOutput,
-          runtime: adjustedRuntime,
+          runtime,
           memory: 0,
           error: stderr || null,
-        });
-
-        // Check for time limit
-        if (adjustedRuntime > timeLimit) {
-          return {
-            verdict: VERDICT.TIME_LIMIT_EXCEEDED,
-            runtime: totalRuntime,
-            testCasesPassed,
-            errorMessage: `Time limit exceeded on test case ${i + 1}`,
-            executionResults: results,
-          };
-        }
+        };
       } catch (execError) {
         const runtime = Date.now() - startTime;
-        const EXECUTION_OVERHEAD = process.platform === "win32" ? 600 : 100;
-        const adjustedRuntime = Math.max(0, runtime - EXECUTION_OVERHEAD);
 
-        const errorMessage = execError.message || "Execution failed";
-
-        console.error(`Execution error on test case ${i + 1}:`, errorMessage);
-
-        results.push({
-          testCaseIndex: i,
+        return {
+          testCaseIndex: index,
           passed: false,
           input: testCase.input,
           expectedOutput: testCase.expectedOutput,
           actualOutput: "",
-          runtime: adjustedRuntime,
+          runtime,
           memory: 0,
-          error: errorMessage,
-        });
-
-        if (
-          errorMessage.includes("Time limit exceeded") ||
-          adjustedRuntime > timeLimit
-        ) {
-          return {
-            verdict: VERDICT.TIME_LIMIT_EXCEEDED,
-            runtime: totalRuntime + runtime,
-            testCasesPassed,
-            errorMessage: "Time limit exceeded",
-            executionResults: results,
-          };
-        }
-
-        return {
-          verdict: VERDICT.RUNTIME_ERROR,
-          runtime: totalRuntime + runtime,
-          testCasesPassed,
-          errorMessage: errorMessage,
-          executionResults: results,
+          error: execError.stderr || execError.message,
         };
       }
+    });
+
+    // Execute all test cases in parallel
+    const executedResults = await Promise.all(testCasePromises);
+    
+    // Process results
+    for (const result of executedResults) {
+      results.push(result);
+      totalRuntime += result.runtime;
+      if (result.passed) testCasesPassed++;
+      // Check for TLE (Removed: manual runtime check is inaccurate due to spawn overhead.
+      // The setTimeout SIGKILL inside the spawn block is sufficient to catch real TLEs.)
     }
 
-    // Cleanup temp files
+    // Clean up compiled files
     try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-      if (language === "cpp" && fs.existsSync(executablePath)) {
-        fs.unlinkSync(executablePath);
-      }
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      if (language === "cpp" && fs.existsSync(executablePath)) fs.unlinkSync(executablePath);
       if (language === "java") {
         const classFile = path.join(tempDir, `${fileName}.class`);
-        if (fs.existsSync(classFile)) {
-          fs.unlinkSync(classFile);
-        }
-        // Also clean up if class name is different
-        const actualClassName = code.match(/class\s+(\w+)/)?.[1];
-        if (actualClassName && actualClassName !== "Solution") {
-          const otherClassFile = path.join(tempDir, `${actualClassName}.class`);
-          if (fs.existsSync(otherClassFile)) {
-            fs.unlinkSync(otherClassFile);
-          }
-        }
+        if (fs.existsSync(classFile)) fs.unlinkSync(classFile);
       }
     } catch (cleanupError) {
-      console.error("Cleanup error:", cleanupError);
+      console.error('Cleanup error:', cleanupError);
     }
 
     // Determine verdict
-    let verdict = VERDICT.WRONG_ANSWER;
-    if (testCasesPassed === testCases.length) {
-      verdict = VERDICT.ACCEPTED;
-    } else if (testCasesPassed > 0) {
-      verdict = VERDICT.PARTIAL_ACCEPTED;
-    }
+    const verdict = testCasesPassed === testCases.length 
+      ? VERDICT.ACCEPTED 
+      : VERDICT.WRONG_ANSWER;
 
     return {
       verdict,
@@ -335,9 +449,9 @@ const executeCode = async (
       totalTestCases: testCases.length,
       executionResults: results,
     };
+
   } catch (error) {
     console.error("Execution error:", error);
-
     return {
       verdict: VERDICT.RUNTIME_ERROR,
       runtime: 0,
@@ -355,564 +469,404 @@ const executeCode = async (
   }
 };
 
-const executeCodeSimple = async (
-  code,
-  language,
-  testCases,
-  timeLimit,
-  memoryLimit,
-) => {
-  const tempDir = path.join(__dirname, "../../temp");
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
-  }
-
-  const uniqueId = uuidv4().slice(0, 8);
-  const fileName = `solution_${uniqueId}`;
-  let filePath, executablePath;
-
-  try {
-    // Write code to file
-    filePath = path.join(tempDir, `${fileName}.cpp`);
-    fs.writeFileSync(filePath, code);
-
-    // Compile C++
-    executablePath = path.join(tempDir, fileName);
-    const compileCmd = `g++ -std=c++17 "${filePath}" -o "${executablePath}"`;
-    console.log(`Compiling: ${compileCmd}`);
-
-    try {
-      await execAsync(compileCmd, { timeout: 10000 });
-      console.log("✅ Compiled successfully");
-    } catch (compileError) {
-      console.error("❌ Compilation failed:", compileError.stderr);
-      return {
-        verdict: VERDICT.COMPILATION_ERROR,
-        runtime: 0,
-        testCasesPassed: 0,
-        errorMessage: compileError.stderr || "Compilation failed",
-      };
-    }
-
-    // Run test cases
-    const results = [];
-    let totalRuntime = 0;
-    let testCasesPassed = 0;
-
-    for (let i = 0; i < testCases.length; i++) {
-      const testCase = testCases[i];
-      const startTime = Date.now();
-
-      // Prepare input - CRITICAL FIX FOR WINDOWS
-      let input = testCase.input;
-
-      // Convert escaped newlines to actual newlines
-      if (input.includes("\\n")) {
-        input = input.replace(/\\n/g, "\n");
-      }
-
-      // For Windows, we need to be careful about line endings
-      // Replace all \n with \r\n for Windows compatibility
-      input = input.replace(/\n/g, "\r\n");
-
-      console.log(`\n=== Test Case ${i + 1} ===`);
-      console.log(`Input:`, JSON.stringify(input));
-      console.log(`Input hex:`, Buffer.from(input).toString("hex"));
-
-      try {
-        // DEBUG: Try a simpler approach - write input to file and use file redirection
-        const inputFile = path.join(tempDir, `input_${uniqueId}.txt`);
-        fs.writeFileSync(inputFile, input);
-
-        // Use file redirection instead of stdin piping
-        const command = `"${executablePath}" < "${inputFile}"`;
-        console.log(`Command: ${command}`);
-
-        const { stdout, stderr } = await execAsync(command, {
-          timeout: timeLimit,
-          shell: true, // Need shell for redirection
-          maxBuffer: 1024 * 1024,
-          windowsHide: true, // Important for Windows
-        });
-
-        const runtime = Date.now() - startTime;
-        totalRuntime += runtime;
-
-        console.log(`Stdout: "${stdout}"`);
-        console.log(`Stderr: "${stderr}"`);
-        console.log(`Runtime: ${runtime}ms`);
-
-        const actualOutput = stdout.trim();
-        const expectedOutput = testCase.expectedOutput.trim();
-        const passed = actualOutput === expectedOutput;
-
-        if (passed) testCasesPassed++;
-
-        results.push({
-          testCaseIndex: i,
-          passed,
-          input: testCase.input,
-          expectedOutput: expectedOutput,
-          actualOutput: actualOutput,
-          runtime,
-          memory: 0,
-          error: stderr || null,
-        });
-
-        // Clean up input file
-        try {
-          fs.unlinkSync(inputFile);
-        } catch (e) {
-          // Ignore
-        }
-
-        if (runtime > timeLimit) {
-          return {
-            verdict: VERDICT.TIME_LIMIT_EXCEEDED,
-            runtime: totalRuntime,
-            testCasesPassed,
-            errorMessage: "Time limit exceeded",
-            executionResults: results,
-          };
-        }
-      } catch (execError) {
-        const runtime = Date.now() - startTime;
-        totalRuntime += runtime;
-
-        console.error(`❌ Error:`, execError.message);
-        console.error(`Signal:`, execError.signal);
-        console.error(`Killed:`, execError.killed);
-
-        if (execError.killed || execError.signal || runtime > timeLimit) {
-          return {
-            verdict: VERDICT.TIME_LIMIT_EXCEEDED,
-            runtime: totalRuntime,
-            testCasesPassed,
-            errorMessage: "Time limit exceeded",
-            executionResults: results,
-          };
-        }
-
-        return {
-          verdict: VERDICT.RUNTIME_ERROR,
-          runtime: totalRuntime,
-          testCasesPassed,
-          errorMessage: execError.stderr || "Runtime Error",
-          executionResults: results,
-        };
-      }
-    }
-
-    // Cleanup
-    try {
-      fs.unlinkSync(filePath);
-      if (fs.existsSync(executablePath)) {
-        fs.unlinkSync(executablePath);
-      }
-    } catch (e) {
-      console.error("Cleanup error:", e);
-    }
-
-    const verdict =
-      testCasesPassed === testCases.length
-        ? VERDICT.ACCEPTED
-        : VERDICT.WRONG_ANSWER;
-
-    return {
-      verdict,
-      runtime: totalRuntime,
-      testCasesPassed,
-      totalTestCases: testCases.length,
-      executionResults: results,
-    };
-  } catch (error) {
-    console.error("Execution error:", error);
-    return {
-      verdict: VERDICT.RUNTIME_ERROR,
-      runtime: 0,
-      testCasesPassed: 0,
-      errorMessage: error.message,
-    };
-  }
-};
-
-// Memory tracking function for Windows
-const getMemoryUsage = async (pid) => {
-  try {
-    if (process.platform === "win32") {
-      // Windows command
-      const cmd = `wmic process where processid=${pid} get WorkingSetSize /value`;
-      const result = await execAsync(cmd);
-      const match = result.stdout.match(/WorkingSetSize=(\d+)/);
-      if (match) {
-        return Math.round(parseInt(match[1]) / 1024 / 1024); // Convert to MB
-      }
-    }
-    // For Linux/Mac, you can implement later
-    return 0;
-  } catch (error) {
-    console.error("Memory check failed:", error);
-    return 0;
-  }
-};
-
 // @desc    Submit code for execution
 // @route   POST /api/v1/submissions
 // @access  Private
 export const submitCode = asyncHandler(async (req, res) => {
-  try {
-    console.log("=== SUBMISSION START ===");
-    console.log("User:", req.user._id);
-    console.log("Body:", {
-      problemId: req.body.problemId,
-      language: req.body.language,
-      codeLength: req.body.code?.length,
-    });
+  const { problemId, language, code } = req.body;
+  const userId = req.user._id;
 
-    const { problemId, language, code } = req.body;
-    const userId = req.user._id;
-
-    if (!problemId || !language || !code) {
-      console.log("Missing required fields");
-      throw ApiError.badRequest("Problem ID, language, and code are required");
-    }
-
-    if (code.trim().length === 0) {
-      throw ApiError.badRequest("Code cannot be empty");
-    }
-
-    console.log("Finding problem:", problemId);
-    const problem = await Problem.findOne({
-      _id: problemId,
-      "metadata.isPublished": true,
-    });
-
-    if (!problem) {
-      console.log("Problem not found or not published");
-      throw ApiError.notFound("Problem not found or not published");
-    }
-
-    console.log("Problem found:", problem.title);
-    console.log("Test cases:", problem.testCases?.length);
-
-    const existingSubmission = await Submission.findOne({
-      user: userId,
-      problem: problemId,
-      verdict: VERDICT.ACCEPTED,
-    });
-
-    const isResubmit = !!existingSubmission;
-    console.log("Is resubmit:", isResubmit);
-
-    console.log("Creating submission record...");
-    const submission = new Submission({
-      user: userId,
-      problem: problemId,
-      language,
-      code,
-      totalTestCases: problem.testCases?.length || 0,
-      executedAt: new Date(),
-      ipAddress: req.ip || "127.0.0.1",
-      userAgent: req.get("user-agent") || "Unknown",
-    });
-
-    await submission.save();
-    console.log("✅ Submission created:", submission._id);
-
-    console.log("Executing code...");
-    console.log("Language:", language);
-    console.log("Time limit:", problem.constraints?.timeLimit || 2000);
-
-    // Use the robust version for production
-    const executionResult = await executeCode(
-      code,
-      language,
-      problem.testCases || [],
-      problem.constraints?.timeLimit || 2000,
-      problem.constraints?.memoryLimit || 256,
-    );
-
-    console.log("Execution result:", {
-      verdict: executionResult.verdict,
-      runtime: executionResult.runtime,
-      testCasesPassed: executionResult.testCasesPassed,
-      totalTestCases: executionResult.totalTestCases,
-    });
-
-    submission.verdict = executionResult.verdict;
-    submission.runtime = executionResult.runtime;
-    submission.testCasesPassed = executionResult.testCasesPassed;
-    submission.executionResults = executionResult.executionResults;
-    submission.errorMessage = executionResult.errorMessage;
-    submission.executionTime = Date.now() - submission.createdAt;
-
-    await submission.save();
-    console.log("✅ Submission updated with results");
-
-    // Update user stats
-    console.log("Updating user stats...");
-    try {
-      const user = await User.findById(userId);
-      if (user) {
-        user.stats = user.stats || {};
-        user.stats.totalSubmissions = (user.stats.totalSubmissions || 0) + 1;
-
-        if (executionResult.verdict === VERDICT.ACCEPTED) {
-          user.stats.acceptedSubmissions =
-            (user.stats.acceptedSubmissions || 0) + 1;
-
-          const previouslySolved = await Submission.findOne({
-            user: userId,
-            problem: problemId,
-            verdict: VERDICT.ACCEPTED,
-            _id: { $ne: submission._id },
-          });
-
-          if (!previouslySolved) {
-            user.stats.totalProblemsSolved =
-              (user.stats.totalProblemsSolved || 0) + 1;
-
-            if (problem.difficulty === "easy") {
-              user.stats.easySolved = (user.stats.easySolved || 0) + 1;
-            } else if (problem.difficulty === "medium") {
-              user.stats.mediumSolved = (user.stats.mediumSolved || 0) + 1;
-            } else if (problem.difficulty === "hard") {
-              user.stats.hardSolved = (user.stats.hardSolved || 0) + 1;
-            }
-
-            if (!user.solvedProblems) user.solvedProblems = [];
-            if (!user.solvedProblems.includes(problemId)) {
-              user.solvedProblems.push(problemId);
-            }
-          }
-        }
-
-        if (!user.attemptedProblems) user.attemptedProblems = [];
-        if (!user.attemptedProblems.includes(problemId)) {
-          user.attemptedProblems.push(problemId);
-        }
-
-        await user.save();
-        console.log("✅ User stats updated");
-      }
-    } catch (userError) {
-      console.error("Error updating user stats:", userError);
-    }
-
-    // Update problem stats
-    console.log("Updating problem stats...");
-    try {
-      problem.metadata = problem.metadata || {};
-      problem.metadata.submissions = (problem.metadata.submissions || 0) + 1;
-
-      if (executionResult.verdict === VERDICT.ACCEPTED) {
-        problem.metadata.acceptedSubmissions =
-          (problem.metadata.acceptedSubmissions || 0) + 1;
-      }
-
-      if (problem.metadata.submissions > 0) {
-        problem.metadata.acceptanceRate = Math.round(
-          ((problem.metadata.acceptedSubmissions || 0) /
-            problem.metadata.submissions) *
-            100,
-        );
-      }
-
-      const userSubmissionCount = await Submission.countDocuments({
-        user: userId,
-        problem: problemId,
-      });
-
-      if (userSubmissionCount === 1) {
-        problem.metadata.views = (problem.metadata.views || 0) + 1;
-      }
-
-      await problem.save();
-      console.log("✅ Problem stats updated");
-    } catch (problemError) {
-      console.error("Error updating problem stats:", problemError);
-    }
-
-    const responseData = {
-      submission: {
-        _id: submission._id,
-        verdict: submission.verdict,
-        runtime: submission.runtime,
-        testCasesPassed: submission.testCasesPassed,
-        totalTestCases: submission.totalTestCases,
-        language: submission.language,
-        executedAt: submission.executedAt,
-        isResubmit,
-        isAccepted: submission.verdict === VERDICT.ACCEPTED,
-      },
-    };
-
-    if (process.env.NODE_ENV === "development") {
-      responseData.executionResults = submission.executionResults;
-    }
-
-    console.log("=== SUBMISSION COMPLETE ===");
-    res
-      .status(201)
-      .json(
-        ApiResponse.created(
-          responseData,
-          executionResult.verdict === VERDICT.ACCEPTED
-            ? "🎉 Problem solved successfully!"
-            : "Code executed. Check results.",
-        ),
-      );
-  } catch (error) {
-    console.error("=== SUBMISSION ERROR ===");
-    console.error("Error:", error.message);
-    console.error("Stack:", error.stack);
-
-    if (error instanceof ApiError) {
-      throw error;
-    }
-
-    throw ApiError.internal("Failed to process submission: " + error.message);
+  if (!problemId || !language || !code) {
+    throw ApiError.badRequest("Problem ID, language, and code are required");
   }
+
+  if (code.trim().length === 0) {
+    throw ApiError.badRequest("Code cannot be empty");
+  }
+
+  // Find problem
+  const problem = await Problem.findOne({
+    _id: problemId,
+    "metadata.isPublished": true,
+  });
+
+  if (!problem) {
+    throw ApiError.notFound("Problem not found or not published");
+  }
+
+  // Check if user already solved this problem
+  const existingAccepted = await Submission.findOne({
+    user: userId,
+    problem: problemId,
+    verdict: VERDICT.ACCEPTED,
+  });
+
+  const isResubmit = !!existingAccepted;
+
+  // Create submission record
+  const submission = new Submission({
+    user: userId,
+    problem: problemId,
+    language,
+    code,
+    totalTestCases: problem.testCases?.length || 0,
+    verdict: VERDICT.PENDING,
+    executedAt: new Date(),
+    ipAddress: req.ip || "127.0.0.1",
+    userAgent: req.get("user-agent") || "Unknown",
+  });
+
+  await submission.save();
+
+  // Execute code asynchronously
+  const executionResult = await executeCode(
+    code,
+    language,
+    problem.testCases || [],
+    problem.constraints?.timeLimit || 2000,
+    problem.constraints?.memoryLimit || 256,
+  );
+
+  // Update submission with results
+  submission.verdict = executionResult.verdict;
+  submission.runtime = executionResult.runtime;
+  submission.testCasesPassed = executionResult.testCasesPassed;
+  submission.executionResults = executionResult.executionResults;
+  submission.errorMessage = executionResult.errorMessage;
+  submission.executionTime = Date.now() - submission.createdAt;
+
+  await submission.save();
+
+  // Update user stats (run in background, don't await)
+  updateUserStats(userId, problem, executionResult.verdict, problemId, isResubmit)
+    .catch(err => console.error("Error updating user stats:", err));
+
+  // Update problem stats (run in background, don't await)
+  updateProblemStats(problemId, executionResult.verdict)
+    .catch(err => console.error("Error updating problem stats:", err));
+
+  // Send notification (background, non-blocking)
+  notificationService.notifySubmission(userId, {
+    status: executionResult.verdict,
+    problemTitle: problem.title,
+    executionTime: executionResult.runtime || 0,
+    testCasesPassed: executionResult.testCasesPassed || 0,
+    totalTestCases: problem.testCases?.length || 0,
+    submissionId: submission._id,
+  }).catch(err => console.error("Notification error:", err));
+
+  // Request AI analysis in background (non-blocking)
+  axios.post(`${AI_SERVICE_URL}/api/v1/analyze/code`, {
+    code: submission.code,
+    language: submission.language,
+    submission_id: submission._id.toString(),
+    runtime_ms: executionResult.runtime || 0,
+    test_cases_passed: executionResult.testCasesPassed || 0,
+    total_test_cases: problem.testCases?.length || 0,
+  }, { timeout: 30000 })
+    .then(res => {
+      if (res.data?.data) {
+        Submission.findByIdAndUpdate(submission._id, { aiAnalysis: res.data.data }).catch(() => {});
+      }
+    })
+    .catch(() => {}); // Silently ignore — AI service may not be running
+
+  const responseData = {
+    submission: {
+      _id: submission._id,
+      verdict: submission.verdict,
+      runtime: submission.runtime,
+      testCasesPassed: submission.testCasesPassed,
+      totalTestCases: submission.totalTestCases,
+      language: submission.language,
+      executedAt: submission.executedAt,
+      isResubmit,
+      isAccepted: submission.verdict === VERDICT.ACCEPTED,
+    },
+  };
+
+  // Only include execution results in development
+  if (process.env.NODE_ENV === "development") {
+    responseData.executionResults = submission.executionResults;
+  }
+
+  res.status(201).json(
+    ApiResponse.created(
+      responseData,
+      executionResult.verdict === VERDICT.ACCEPTED
+        ? "🎉 Problem solved successfully!"
+        : "Code executed. Check results.",
+    ),
+  );
+});
+
+// Helper function to update user stats
+async function updateUserStats(userId, problem, verdict, problemId, isResubmit) {
+  try {
+    const user = await User.findById(userId);
+    if (!user) return;
+
+    // Initialize stats if needed
+    user.stats = user.stats || {};
+    user.stats.totalSubmissions = (user.stats.totalSubmissions || 0) + 1;
+
+    if (verdict === VERDICT.ACCEPTED) {
+      user.stats.acceptedSubmissions = (user.stats.acceptedSubmissions || 0) + 1;
+
+      // Only increment solved count if it's a new problem
+      if (!isResubmit) {
+        user.stats.totalProblemsSolved = (user.stats.totalProblemsSolved || 0) + 1;
+
+        // Update difficulty counts
+        if (problem.difficulty === "easy") {
+          user.stats.easySolved = (user.stats.easySolved || 0) + 1;
+        } else if (problem.difficulty === "medium") {
+          user.stats.mediumSolved = (user.stats.mediumSolved || 0) + 1;
+        } else if (problem.difficulty === "hard") {
+          user.stats.hardSolved = (user.stats.hardSolved || 0) + 1;
+        }
+
+        // Add to solved problems array
+        if (!user.solvedProblems) user.solvedProblems = [];
+        if (!user.solvedProblems.includes(problemId)) {
+          user.solvedProblems.push(problemId);
+        }
+      }
+    }
+
+    // Add to attempted problems
+    if (!user.attemptedProblems) user.attemptedProblems = [];
+    if (!user.attemptedProblems.includes(problemId)) {
+      user.attemptedProblems.push(problemId);
+    }
+
+    await user.save();
+  } catch (error) {
+    console.error("Error in updateUserStats:", error);
+  }
+}
+
+// Helper function to update problem stats
+async function updateProblemStats(problemId, verdict) {
+  try {
+    const problem = await Problem.findById(problemId);
+    if (!problem) return;
+
+    problem.metadata = problem.metadata || {};
+    problem.metadata.submissions = (problem.metadata.submissions || 0) + 1;
+
+    if (verdict === VERDICT.ACCEPTED) {
+      problem.metadata.acceptedSubmissions = (problem.metadata.acceptedSubmissions || 0) + 1;
+    }
+
+    // Update acceptance rate
+    if (problem.metadata.submissions > 0) {
+      problem.metadata.acceptanceRate = Math.round(
+        ((problem.metadata.acceptedSubmissions || 0) / problem.metadata.submissions) * 100
+      );
+    }
+
+    await problem.save();
+  } catch (error) {
+    console.error("Error in updateProblemStats:", error);
+  }
+}
+
+// @desc    Run code without submission (sandbox)
+// @route   POST /api/v1/submissions/run
+// @access  Private
+export const runCode = asyncHandler(async (req, res) => {
+  const { language, code, input, problemId } = req.body;
+
+  if (!language || !code) {
+    throw ApiError.badRequest("Language and code are required");
+  }
+
+  let testCases = [];
+  if (input) {
+    testCases = [{
+      input: input,
+      expectedOutput: "",
+      isHidden: false,
+    }];
+  } else if (problemId) {
+    const problem = await Problem.findById(problemId).select('testCases');
+    if (problem) {
+      testCases = problem.testCases?.filter(tc => !tc.isHidden) || [];
+    }
+  }
+
+  const executionResult = await executeCode(
+    code,
+    language,
+    testCases,
+    5000, // 5 second timeout for custom runs
+    256,
+  );
+
+  res.status(200).json(
+    ApiResponse.success({
+      output: executionResult.executionResults?.[0]?.actualOutput || "",
+      error: executionResult.errorMessage || executionResult.executionResults?.[0]?.error,
+      runtime: executionResult.runtime,
+      verdict: executionResult.verdict,
+      testCasesPassed: executionResult.testCasesPassed,
+      totalTestCases: executionResult.totalTestCases || testCases.length,
+      isSuccess: executionResult.verdict === VERDICT.ACCEPTED,
+    }, "Code executed successfully"),
+  );
 });
 
 // @desc    Get user's submissions with filters
 // @route   GET /api/v1/submissions
 // @access  Private
 export const getUserSubmissions = asyncHandler(async (req, res) => {
-  try {
-    const {
-      page = 1,
-      limit = 20,
-      problemId,
-      verdict,
-      language,
-      startDate,
-      endDate,
-      sortBy = "-createdAt",
-    } = req.query;
+  const {
+    page = 1,
+    limit = 20,
+    problemId,
+    verdict,
+    language,
+    startDate,
+    endDate,
+    sortBy = "-createdAt",
+  } = req.query;
 
-    console.log("📊 Getting user submissions with filters:", {
-      page,
-      limit,
-      problemId,
-      verdict,
-      language,
-      sortBy,
-    });
+  const filter = { user: req.user._id };
 
-    const filter = { user: req.user._id };
+  if (problemId) filter.problem = problemId;
+  if (verdict) filter.verdict = verdict;
+  if (language) filter.language = language;
+  if (startDate || endDate) {
+    filter.createdAt = {};
+    if (startDate) filter.createdAt.$gte = new Date(startDate);
+    if (endDate) filter.createdAt.$lte = new Date(endDate);
+  }
 
-    if (problemId) filter.problem = problemId;
-    if (verdict) filter.verdict = verdict;
-    if (language) filter.language = language;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const limitNum = Math.min(parseInt(limit), 100);
 
-    if (startDate || endDate) {
-      filter.createdAt = {};
-      if (startDate) filter.createdAt.$gte = new Date(startDate);
-      if (endDate) filter.createdAt.$lte = new Date(endDate);
-    }
+  let sort = {};
+  if (sortBy.startsWith("-")) {
+    sort[sortBy.substring(1)] = -1;
+  } else {
+    sort[sortBy] = 1;
+  }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const limitNum = Math.min(parseInt(limit), 100);
-
-    let sort = {};
-    if (sortBy.startsWith("-")) {
-      sort[sortBy.substring(1)] = -1;
-    } else {
-      sort[sortBy] = 1;
-    }
-
-    // FIX: Use lean() to get plain objects, not mongoose documents
-    const submissions = await Submission.find(filter)
-      .populate({
-        path: "problem",
-        select: "title slug difficulty",
-        // FIX: Use transform to ensure problem is a plain object
-        transform: (doc) => {
-          if (!doc) return null;
-          return {
-            _id: doc._id,
-            title: doc.title || "Unknown Problem",
-            slug: doc.slug || "",
-            difficulty: doc.difficulty || "medium",
-          };
-        },
-      })
-      .select("-code -executionResults -aiAnalysis")
+  const [submissions, total] = await Promise.all([
+    Submission.find(filter)
+      .populate("problem", "title slug difficulty")
+      .select("-code -executionResults")
       .sort(sort)
       .skip(skip)
       .limit(limitNum)
-      .lean(); // ADD THIS: Get plain objects instead of mongoose documents
+      .lean(),
+    Submission.countDocuments(filter),
+  ]);
 
-    const total = await Submission.countDocuments(filter);
-
-    const stats = await Submission.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: 1 },
-          accepted: {
-            $sum: { $cond: [{ $eq: ["$verdict", VERDICT.ACCEPTED] }, 1, 0] },
-          },
-          avgRuntime: {
-            $avg: {
-              $cond: [
-                { $eq: ["$verdict", VERDICT.ACCEPTED] },
-                "$runtime",
-                null,
-              ],
-            },
+  // Get stats
+  const stats = await Submission.aggregate([
+    { $match: { user: req.user._id } },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        accepted: {
+          $sum: { $cond: [{ $eq: ["$verdict", VERDICT.ACCEPTED] }, 1, 0] },
+        },
+        avgRuntime: {
+          $avg: {
+            $cond: [{ $eq: ["$verdict", VERDICT.ACCEPTED] }, "$runtime", null],
           },
         },
       },
-    ]);
+    },
+  ]);
 
-    console.log(
-      `✅ Found ${submissions.length} submissions out of ${total} total`,
-    );
-
-    res.status(200).json(
-      ApiResponse.success(
-        {
-          submissions,
-          pagination: {
-            page: parseInt(page),
-            limit: limitNum,
-            total,
-            pages: Math.ceil(total / limitNum),
-          },
-          stats: stats[0] || { total: 0, accepted: 0, avgRuntime: 0 },
-        },
-        "Submissions fetched successfully",
-      ),
-    );
-  } catch (error) {
-    console.error("❌ Error in getUserSubmissions:", error);
-    console.error("Stack trace:", error.stack);
-    throw ApiError.internal("Failed to fetch submissions: " + error.message);
-  }
+  res.status(200).json(
+    ApiResponse.success({
+      submissions,
+      pagination: {
+        page: parseInt(page),
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
+      stats: stats[0] || { total: 0, accepted: 0, avgRuntime: 0 },
+    }, "Submissions fetched successfully"),
+  );
 });
-if (submission.status === 'accepted') {
-  // Update user stats
-  await user.updateStats(problem.difficulty);
-  
-  // Update streak
-  await streakService.updateStreak(user._id);
-  
-  // Check achievements
-  await achievementService.checkSubmissionAchievements(user._id, submission);
-  
-  // Send notification
-  await notificationService.notifySubmission(user._id, {
-    status: submission.status,
-    problemTitle: problem.title,
-    executionTime: submission.executionTime,
-    testCasesPassed: submission.testCasesPassed,
-    totalTestCases: submission.totalTestCases,
-    submissionId: submission._id
+
+// @desc    Get user's solved submissions
+// @route   GET /api/v1/submissions/user/solved
+// @access  Private
+export const getUserSolvedSubmissions = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+
+  const allSubmissions = await Submission.find({
+    user: userId,
+  })
+    .select("problem verdict")
+    .lean();
+
+  const attemptedProblems = new Set();
+  const solvedProblems = new Set();
+
+  for (const sub of allSubmissions) {
+    const problemId = sub.problem.toString();
+    if (sub.verdict === VERDICT.ACCEPTED) {
+      solvedProblems.add(problemId);
+    } else {
+      if (!solvedProblems.has(problemId)) {
+        attemptedProblems.add(problemId);
+      }
+    }
+  }
+
+  // Remove solved from attempted
+  solvedProblems.forEach(id => attemptedProblems.delete(id));
+
+  res.status(200).json(
+    ApiResponse.success({
+      solvedProblems: Array.from(solvedProblems),
+      attemptedProblems: Array.from(attemptedProblems),
+      totalSolved: solvedProblems.size,
+      totalAttempted: attemptedProblems.size,
+    }, "Solved problems fetched successfully"),
+  );
+});
+
+// @desc    Get recent submissions for dashboard
+// @route   GET /api/v1/submissions/recent
+// @access  Private
+export const getRecentSubmissions = asyncHandler(async (req, res) => {
+  const { limit = 10 } = req.query;
+
+  const submissions = await Submission.find({ user: req.user._id })
+    .populate("problem", "title slug difficulty")
+    .select("verdict runtime language createdAt")
+    .sort({ createdAt: -1 })
+    .limit(Math.min(parseInt(limit), 50))
+    .lean();
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const todaySubmissions = await Submission.countDocuments({
+    user: req.user._id,
+    createdAt: { $gte: today },
   });
-}
+
+  res.status(200).json(
+    ApiResponse.success({
+      submissions,
+      stats: {
+        todaySubmissions,
+        totalSubmissions: submissions.length,
+      },
+    }, "Recent submissions fetched"),
+  );
+});
 
 // @desc    Get single submission with details
 // @route   GET /api/v1/submissions/:id
@@ -925,25 +879,16 @@ export const getSubmission = asyncHandler(async (req, res) => {
     user: req.user._id,
   })
     .populate("problem", "title slug difficulty tags constraints")
-    .populate("user", "username profile.name");
+    .populate("user", "username")
+    .lean();
 
   if (!submission) {
     throw ApiError.notFound("Submission not found");
   }
 
-  const canViewDetails =
-    submission.user._id.toString() === req.user._id.toString() ||
-    req.user.role === "admin";
-
-  if (!canViewDetails) {
-    throw ApiError.forbidden("You can only view your own submissions");
-  }
-
-  res
-    .status(200)
-    .json(
-      ApiResponse.success({ submission }, "Submission fetched successfully"),
-    );
+  res.status(200).json(
+    ApiResponse.success({ submission }, "Submission fetched successfully"),
+  );
 });
 
 // @desc    Get submissions for a specific problem
@@ -953,7 +898,7 @@ export const getProblemSubmissions = asyncHandler(async (req, res) => {
   const { problemId } = req.params;
   const { page = 1, limit = 20, verdict } = req.query;
 
-  const problem = await Problem.findById(problemId);
+  const problem = await Problem.findById(problemId).select("title difficulty");
   if (!problem) {
     throw ApiError.notFound("Problem not found");
   }
@@ -970,12 +915,11 @@ export const getProblemSubmissions = asyncHandler(async (req, res) => {
 
   const [submissions, total] = await Promise.all([
     Submission.find(filter)
-      .select(
-        "verdict runtime language testCasesPassed totalTestCases createdAt",
-      )
+      .select("verdict runtime language testCasesPassed totalTestCases createdAt")
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limitNum),
+      .limit(limitNum)
+      .lean(),
     Submission.countDocuments(filter),
   ]);
 
@@ -985,293 +929,33 @@ export const getProblemSubmissions = asyncHandler(async (req, res) => {
     verdict: VERDICT.ACCEPTED,
   })
     .sort("runtime")
-    .select("runtime memory createdAt");
-
-  res.status(200).json(
-    ApiResponse.success(
-      {
-        problem: {
-          title: problem.title,
-          difficulty: problem.difficulty,
-        },
-        submissions,
-        bestSubmission,
-        pagination: {
-          page: parseInt(page),
-          limit: limitNum,
-          total,
-          pages: Math.ceil(total / limitNum),
-        },
-      },
-      "Problem submissions fetched successfully",
-    ),
-  );
-});
-
-// @desc    Get user's solved submissions
-// @route   GET /api/v1/submissions/user/solved
-// @access  Private
-export const getUserSolvedSubmissions = asyncHandler(async (req, res) => {
-  const userId = req.user._id;
-
-  console.log("📊 Fetching solved problems for user:", userId);
-
-  const allSubmissions = await Submission.find({
-    user: userId,
-  })
-    .select("problem verdict")
+    .select("runtime memory createdAt")
     .lean();
 
-  const attemptedProblems = new Set();
-  const solvedProblems = new Set();
-
-  allSubmissions.forEach((sub) => {
-    const problemId = sub.problem.toString();
-    if (sub.verdict === "accepted") {
-      solvedProblems.add(problemId);
-    } else {
-      if (!solvedProblems.has(problemId)) {
-        attemptedProblems.add(problemId);
-      }
-    }
-  });
-
-  // Remove solved from attempted
-  solvedProblems.forEach((id) => attemptedProblems.delete(id));
-
-  const response = {
-    solvedProblems: Array.from(solvedProblems),
-    attemptedProblems: Array.from(attemptedProblems),
-    totalSolved: solvedProblems.size,
-    totalAttempted: attemptedProblems.size,
-  };
-
-  console.log(
-    "✅ Solved:",
-    response.totalSolved,
-    "Attempted:",
-    response.totalAttempted,
+  res.status(200).json(
+    ApiResponse.success({
+      problem: {
+        title: problem.title,
+        difficulty: problem.difficulty,
+      },
+      submissions,
+      bestSubmission,
+      pagination: {
+        page: parseInt(page),
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
+    }, "Problem submissions fetched successfully"),
   );
-
-  res
-    .status(200)
-    .json(
-      ApiResponse.success(response, "Solved problems fetched successfully"),
-    );
 });
 
-// @desc    Get recent submissions for dashboard
-// @route   GET /api/v1/submissions/recent
-// @access  Private
-export const getRecentSubmissions = asyncHandler(async (req, res) => {
-  try {
-    const { limit = 10 } = req.query;
-
-    console.log("📊 Getting recent submissions for user:", req.user?._id);
-
-    if (!req.user?._id) {
-      throw ApiError.unauthorized("User not authenticated");
-    }
-
-    const submissions = await Submission.find({ user: req.user._id })
-      .populate("problem", "title slug difficulty")
-      .select("verdict runtime language createdAt codeSize")
-      .sort({ createdAt: -1 })
-      .limit(Math.min(parseInt(limit), 50));
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const todaySubmissions = await Submission.countDocuments({
-      user: req.user._id,
-      createdAt: { $gte: today },
-    });
-
-    console.log(`✅ Found ${submissions.length} recent submissions`);
-
-    res.status(200).json(
-      ApiResponse.success(
-        {
-          submissions,
-          stats: {
-            todaySubmissions,
-            totalSubmissions: submissions.length,
-          },
-        },
-        "Recent submissions fetched",
-      ),
-    );
-  } catch (error) {
-    console.error("❌ Error in getRecentSubmissions:", error);
-    throw ApiError.internal(
-      "Failed to fetch recent submissions: " + error.message,
-    );
-  }
-});
-
-// @desc    Run code without submission (sandbox)
-// @route   POST /api/v1/submissions/run
-// @access  Private
-export const runCode = asyncHandler(async (req, res) => {
-  try {
-    const { language, code, input, problemId } = req.body;
-
-    console.log("Run code request:", {
-      language,
-      codeLength: code?.length,
-      inputLength: input?.length,
-      problemId,
-    });
-
-    if (!language || !code) {
-      throw ApiError.badRequest("Language and code are required");
-    }
-
-    let testCases = [];
-    if (input) {
-      testCases = [
-        {
-          input: input,
-          expectedOutput: "",
-          isHidden: false,
-        },
-      ];
-    } else if (problemId) {
-      const problem = await Problem.findById(problemId);
-      if (problem) {
-        testCases = problem.testCases || [];
-      }
-    }
-
-    console.log(`Running ${testCases.length} test cases`);
-
-    const executionResult = await executeCodeSimple(
-      code,
-      language,
-      testCases,
-      5000,
-      256,
-    );
-
-    console.log("Execution result:", {
-      verdict: executionResult.verdict,
-      runtime: executionResult.runtime,
-      passed: executionResult.testCasesPassed,
-    });
-
-    res.status(200).json(
-      ApiResponse.success(
-        {
-          output: executionResult.executionResults?.[0]?.actualOutput || "",
-          error:
-            executionResult.errorMessage ||
-            executionResult.executionResults?.[0]?.error,
-          runtime: executionResult.runtime,
-          verdict: executionResult.verdict,
-          testCasesPassed: executionResult.testCasesPassed,
-          totalTestCases: executionResult.totalTestCases || testCases.length,
-          isSuccess: executionResult.verdict === VERDICT.ACCEPTED,
-        },
-        "Code executed successfully",
-      ),
-    );
-  } catch (error) {
-    console.error("Error in runCode:", error);
-
-    if (error instanceof ApiError) {
-      throw error;
-    }
-
-    res.status(500).json(
-      ApiResponse.error(
-        {
-          message: error.message || "Failed to execute code",
-          error:
-            process.env.NODE_ENV === "development" ? error.stack : undefined,
-        },
-        "Code execution failed",
-        500,
-      ),
-    );
-  }
-});
-
-// Add this after line 264 (after executionResult is obtained)
-
-// NEW: AI Analysis Integration
-export const analyzeWithAI = async (submission, executionResult, problem) => {
-  try {
-    const aiServiceUrl = process.env.AI_SERVICE_URL || "http://localhost:8000";
-
-    const aiRequest = {
-      submission_id: submission._id.toString(),
-      user_id: submission.user.toString(),
-      problem_id: submission.problem.toString(),
-      code: submission.code,
-      language: submission.language,
-      execution_results: {
-        runtime: executionResult.runtime,
-        memory: executionResult.memory || 0,
-        test_cases_passed: executionResult.testCasesPassed,
-        total_test_cases:
-          executionResult.totalTestCases || problem.testCases.length,
-        verdict: executionResult.verdict,
-      },
-      problem_constraints: {
-        time_limit: problem.constraints?.timeLimit || 2000,
-        memory_limit: problem.constraints?.memoryLimit || 256,
-        difficulty: problem.difficulty || "medium",
-      },
-    };
-
-    console.log("🤖 Sending to AI service for analysis...");
-
-    const response = await fetch(`${aiServiceUrl}/api/v1/analyze/submission`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(aiRequest),
-    });
-
-    if (response.ok) {
-      const aiAnalysis = await response.json();
-      console.log("✅ AI analysis completed:", aiAnalysis.quality_label);
-
-      // Store AI analysis in submission
-      submission.aiAnalysis = {
-        complexity: {
-          time: aiAnalysis.time_complexity,
-          space: aiAnalysis.space_complexity,
-        },
-        codeQuality: aiAnalysis.quality_score,
-        suggestions: aiAnalysis.suggestions,
-        vulnerabilities: aiAnalysis.anti_patterns || [],
-      };
-
-      await submission.save();
-
-      return aiAnalysis;
-    } else {
-      console.warn("⚠️ AI service unavailable or error:", response.status);
-    }
-  } catch (error) {
-    console.error("❌ AI analysis error:", error.message);
-    // Don't fail the submission if AI service is down
-  }
-
-  return null;
+export default {
+  submitCode,
+  getUserSubmissions,
+  getSubmission,
+  getProblemSubmissions,
+  getRecentSubmissions,
+  runCode,
+  getUserSolvedSubmissions,
 };
-
-// Then in your submitCode function, after line 290 (after executionResult):
-// const aiAnalysis = await analyzeWithAI(submission, executionResult, problem);
-
-// // Add AI analysis to response if available
-// if (aiAnalysis) {
-//     responseData.submission.ai_analysis = {
-//         quality_score: aiAnalysis.quality_score,
-//         quality_label: aiAnalysis.quality_label,
-//         time_complexity: aiAnalysis.time_complexity,
-//         suggestions: aiAnalysis.suggestions || []
-//     };
-// }

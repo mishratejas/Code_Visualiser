@@ -62,7 +62,7 @@ export const authenticate = asyncHandler(async (req, res, next) => {
     }
   }
 });
-
+export const protect = authenticate;
 /**
  * Grant access to specific roles
  */
@@ -184,5 +184,3 @@ export const authRateLimiter = (maxAttempts = 5, windowMs = 15 * 60 * 1000) => {
     next();
   };
 };
-
-export default { authenticate, authorize, optionalAuth, checkOwnership, authRateLimiter };

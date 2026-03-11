@@ -51,7 +51,7 @@ const CreateContest = () => {
   const availableTags = [
     { name: 'Beginner Friendly', color: 'bg-green-500/20 text-green-400' },
     { name: 'Advanced', color: 'bg-red-500/20 text-red-400' },
-    { name: 'Algorithms', color: 'bg-blue-500/20 text-blue-400' },
+    { name: 'Algorithms', color: 'bg-blue-500/20 text-rose-400' },
     { name: 'Data Structures', color: 'bg-purple-500/20 text-purple-400' },
     { name: 'Dynamic Programming', color: 'bg-yellow-500/20 text-yellow-400' },
     { name: 'Graph Theory', color: 'bg-pink-500/20 text-pink-400' },
@@ -323,7 +323,7 @@ const handleSubmit = async (e) => {
                 placeholder="e.g., Weekly Coding Challenge #42"
                 className={`w-full px-4 py-3 bg-gray-700/50 border ${
                   errors.title ? 'border-red-500' : 'border-gray-600'
-                } rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-gray-500 transition-all`}
+                } rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-white placeholder-gray-500 transition-all`}
               />
               {errors.title && (
                 <p className="mt-2 text-sm text-red-400 flex items-center gap-2">
@@ -344,7 +344,7 @@ const handleSubmit = async (e) => {
                 placeholder="Describe what this contest is about, what participants can expect, and any special themes..."
                 className={`w-full px-4 py-3 bg-gray-700/50 border ${
                   errors.description ? 'border-red-500' : 'border-gray-600'
-                } rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-gray-500 resize-none transition-all`}
+                } rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-white placeholder-gray-500 resize-none transition-all`}
               />
               <div className="flex justify-between mt-2">
                 {errors.description && (
@@ -371,7 +371,7 @@ const handleSubmit = async (e) => {
                       onClick={() => setFormData(prev => ({ ...prev, contestType: type.value }))}
                       className={`p-4 rounded-xl border-2 transition-all text-left ${
                         formData.contestType === type.value
-                          ? 'border-blue-500 bg-blue-500/10'
+                          ? 'border-rose-500 bg-rose-500/10'
                           : 'border-gray-600 hover:border-gray-500'
                       }`}
                     >
@@ -397,7 +397,7 @@ const handleSubmit = async (e) => {
                       onClick={() => setFormData(prev => ({ ...prev, difficulty: diff.value }))}
                       className={`w-full p-4 rounded-xl border-2 transition-all ${
                         formData.difficulty === diff.value
-                          ? 'border-blue-500 bg-gradient-to-r from-blue-500/10 to-purple-500/10'
+                          ? 'border-rose-500 bg-gradient-to-r from-rose-500/10 to-red-500/10'
                           : 'border-gray-600 hover:border-gray-500'
                       }`}
                     >
@@ -433,7 +433,7 @@ const handleSubmit = async (e) => {
                   onChange={handleChange}
                   className={`w-full px-4 py-3 bg-gray-700/50 border ${
                     errors.startTime ? 'border-red-500' : 'border-gray-600'
-                  } rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white transition-all`}
+                  } rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-white transition-all`}
                 />
                 {errors.startTime && (
                   <p className="mt-2 text-sm text-red-400 flex items-center gap-2">
@@ -453,7 +453,7 @@ const handleSubmit = async (e) => {
                   onChange={handleChange}
                   className={`w-full px-4 py-3 bg-gray-700/50 border ${
                     errors.endTime ? 'border-red-500' : 'border-gray-600'
-                  } rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white transition-all`}
+                  } rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-white transition-all`}
                 />
                 {errors.endTime && (
                   <p className="mt-2 text-sm text-red-400 flex items-center gap-2">
@@ -464,14 +464,14 @@ const handleSubmit = async (e) => {
             </div>
 
             {formData.startTime && formData.endTime && (
-              <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-xl border border-blue-500/30 p-6">
+              <div className="bg-gradient-to-r from-rose-500/10 to-red-500/10 rounded-xl border border-rose-500/30 p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="font-medium text-white mb-2">Contest Duration</h4>
                     <div className="text-3xl font-bold text-white">
                       {Math.round((new Date(formData.endTime) - new Date(formData.startTime)) / (1000 * 60))} minutes
                     </div>
-                    <p className="text-sm text-blue-300 mt-2">
+                    <p className="text-sm text-red-300 mt-2">
                       {new Date(formData.startTime).toLocaleDateString('en-US', { 
                         weekday: 'long', 
                         year: 'numeric', 
@@ -480,7 +480,7 @@ const handleSubmit = async (e) => {
                       })}
                     </p>
                   </div>
-                  <div className="p-4 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl">
+                  <div className="p-4 bg-gradient-to-r from-rose-600 to-red-600 rounded-xl">
                     <FiClock className="h-8 w-8 text-white" />
                   </div>
                 </div>
@@ -489,7 +489,7 @@ const handleSubmit = async (e) => {
 
             <div className="bg-gray-700/30 rounded-xl p-6 border border-gray-600/50">
               <h4 className="font-medium text-white mb-3 flex items-center gap-2">
-                <FiInfo className="h-5 w-5 text-blue-400" />
+                <FiInfo className="h-5 w-5 text-rose-400" />
                 Schedule Tips
               </h4>
               <ul className="space-y-2 text-sm text-gray-300">
@@ -525,7 +525,7 @@ const handleSubmit = async (e) => {
                   onChange={handleChange}
                   placeholder="Leave empty for unlimited participants"
                   min="1"
-                  className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-gray-500 transition-all"
+                  className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-white placeholder-gray-500 transition-all"
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
                   <FiUsers className="h-5 w-5" />
@@ -540,7 +540,7 @@ const handleSubmit = async (e) => {
               <div className="flex items-start space-x-4 mb-4">
                 <div className="flex-shrink-0">
                   <div className={`p-3 rounded-lg ${formData.isPrivate 
-                    ? 'bg-gradient-to-r from-blue-600 to-purple-600' 
+                    ? 'bg-gradient-to-r from-rose-600 to-red-600' 
                     : 'bg-gray-600'
                   }`}>
                     {formData.isPrivate ? (
@@ -583,7 +583,7 @@ const handleSubmit = async (e) => {
                     placeholder="Enter password for private contest"
                     className={`w-full px-4 py-3 bg-gray-700/50 border ${
                       errors.registrationPassword ? 'border-red-500' : 'border-gray-600'
-                    } rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-gray-500 transition-all`}
+                    } rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-white placeholder-gray-500 transition-all`}
                   />
                   {errors.registrationPassword && (
                     <p className="mt-2 text-sm text-red-400 flex items-center gap-2">
@@ -634,7 +634,7 @@ const handleSubmit = async (e) => {
                 onChange={handleChange}
                 rows="4"
                 placeholder="Specify any special rules, code of conduct, or guidelines for participants..."
-                className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-gray-500 resize-none transition-all"
+                className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-white placeholder-gray-500 resize-none transition-all"
               />
             </div>
 
@@ -648,7 +648,7 @@ const handleSubmit = async (e) => {
                 value={formData.prizes}
                 onChange={handleChange}
                 placeholder="e.g., Certificate, Premium Subscription, Swag (comma-separated)"
-                className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-gray-500 transition-all"
+                className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-white placeholder-gray-500 transition-all"
               />
               <div className="flex items-center gap-2 mt-2 text-sm text-gray-500">
                 <FiAward className="h-4 w-4" />
@@ -663,7 +663,7 @@ const handleSubmit = async (e) => {
           <div className="space-y-6">
             <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl border border-gray-700/50 p-6">
               <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl">
+                <div className="p-3 bg-gradient-to-r from-rose-600 to-red-600 rounded-xl">
                   <MdOutlineEmojiEvents className="h-6 w-6 text-white" />
                 </div>
                 <div>
@@ -722,9 +722,9 @@ const handleSubmit = async (e) => {
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-xl border border-blue-500/30 p-6">
+            <div className="bg-gradient-to-br from-rose-500/10 to-red-500/10 rounded-xl border border-rose-500/30 p-6">
               <h4 className="font-medium text-white mb-3 flex items-center gap-2">
-                <FiInfo className="h-5 w-5 text-blue-400" />
+                <FiInfo className="h-5 w-5 text-rose-400" />
                 Next Step: Add Problems
               </h4>
               <p className="text-gray-300 text-sm">
@@ -743,7 +743,7 @@ const handleSubmit = async (e) => {
     <div className="max-w-5xl mx-auto space-y-8">
       {/* Header */}
       <div className="relative overflow-hidden rounded-3xl">
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 opacity-90"></div>
+        <div className="absolute inset-0 bg-gradient-to-r from-rose-600 via-red-600 to-pink-600 opacity-90"></div>
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-32 translate-x-32"></div>
         
         <div className="relative z-10 p-8 text-white">
@@ -753,7 +753,7 @@ const handleSubmit = async (e) => {
             </div>
             <div>
               <h1 className="text-4xl font-bold">Create New Contest</h1>
-              <p className="text-blue-100 mt-2 text-lg">
+              <p className="text-red-100 mt-2 text-lg">
                 Design an exciting coding competition for the community
               </p>
             </div>
@@ -777,7 +777,7 @@ const handleSubmit = async (e) => {
             <div className="flex justify-between relative">
               <div className="absolute top-4 left-0 right-0 h-0.5 bg-gray-700 -z-10"></div>
               <div 
-                className="absolute top-4 left-0 h-0.5 bg-gradient-to-r from-blue-600 to-purple-600 -z-10 transition-all duration-500"
+                className="absolute top-4 left-0 h-0.5 bg-gradient-to-r from-rose-600 to-red-600 -z-10 transition-all duration-500"
                 style={{ width: `${((activeStep - 1) / (steps.length - 1)) * 100}%` }}
               ></div>
               
@@ -790,7 +790,7 @@ const handleSubmit = async (e) => {
                   <div key={step.number} className="flex flex-col items-center">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
                       isActive 
-                        ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg scale-110'
+                        ? 'bg-gradient-to-r from-rose-600 to-red-600 text-white shadow-lg scale-110'
                         : isCompleted
                           ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
                           : 'bg-gray-700 text-gray-400'
@@ -842,7 +842,7 @@ const handleSubmit = async (e) => {
               <button
                 type="button"
                 onClick={nextStep}
-                className="inline-flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all font-medium"
+                className="inline-flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-rose-600 to-red-600 text-white rounded-xl hover:shadow-lg transition-all font-medium"
               >
                 Next Step
                 <FiChevronRight className="h-5 w-5" />

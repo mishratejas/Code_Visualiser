@@ -17,9 +17,9 @@ import submissionRoutes from "./routes/submission.routes.js";
 import userRoutes from "./routes/user.routes.js";
 import leaderboardRoutes from "./routes/leaderboard.routes.js";
 import contestRoutes from "./routes/contest.routes.js";
-import aiRoutes from "./routes/ai.routes.js"; // ✅ AI ROUTES
 import notificationRoutes from "./routes/notification.routes.js";
 import achievementRoutes from "./routes/achievement.routes.js";
+import aiRoutes from "./routes/ai.routes.js";
 
 class App {
   constructor() {
@@ -173,7 +173,6 @@ class App {
           `${apiPrefix}/submissions`,
           `${apiPrefix}/users`,
           `${apiPrefix}/leaderboard`,
-          `${apiPrefix}/ai`, // ✅ AI routes
         ],
       });
     });
@@ -218,14 +217,6 @@ class App {
             global: `GET ${apiPrefix}/leaderboard`,
             contest: `GET ${apiPrefix}/contests/:id/leaderboard`,
           },
-          ai: {
-            analyzeSubmission: `POST ${apiPrefix}/ai/submissions/:id/analyze`,
-            analyzeCode: `POST ${apiPrefix}/ai/analyze/code`,
-            recommendations: `GET ${apiPrefix}/ai/recommendations`,
-            skillGap: `GET ${apiPrefix}/ai/skill-gap`,
-            startInterview: `POST ${apiPrefix}/ai/interview/start`,
-            checkPlagiarism: `POST ${apiPrefix}/ai/plagiarism/check`,
-          },
         },
       });
     });
@@ -240,13 +231,12 @@ class App {
     this.app.use(`${apiPrefix}/submissions`, submissionRoutes);
     this.app.use(`${apiPrefix}/users`, userRoutes);
     this.app.use(`${apiPrefix}/leaderboard`, leaderboardRoutes);
-    this.app.use(`${apiPrefix}/ai`, aiRoutes); // ✅ AI ROUTES
 
     // For backward compatibility, also register routes without version
     this.app.use(`${apiBase}/auth`, authRoutes);
-    this.app.use(`${apiBase}/ai`, aiRoutes); // ✅ AI ROUTES (no version)
     this.app.use(`${apiPrefix}/notifications`, notificationRoutes);
     this.app.use(`${apiPrefix}/achievements`, achievementRoutes);
+    this.app.use(`${apiPrefix}/ai`,           aiRoutes);
 
     // Test endpoint to verify all routes
     this.app.get(`${apiPrefix}/routes`, (req, res) => {
@@ -286,7 +276,6 @@ class App {
           submissions: `${apiPrefix}/submissions`,
           users: `${apiPrefix}/users`,
           leaderboard: `${apiPrefix}/leaderboard`,
-          ai: `${apiPrefix}/ai`, // ✅ AI endpoint
           health: `${apiPrefix}/health`,
           docs: `${apiPrefix}/docs`,
         },
@@ -355,7 +344,6 @@ class App {
     this.server = this.app.listen(serverPort, () => {
       logger.info(`🚀 Server running on port ${serverPort}`);
       logger.info(`📝 API Docs: http://localhost:${serverPort}/api/v1/docs`);
-      logger.info(`🤖 AI Service: http://localhost:${serverPort}/api/v1/ai`);
     });
 
     // Graceful shutdown

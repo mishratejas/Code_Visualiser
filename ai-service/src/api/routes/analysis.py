@@ -1,121 +1,62 @@
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List, Optional
-import json
+"""
+Analysis API Routes
+POST /api/v1/analyze/code        — analyze a code submission
+POST /api/v1/analyze/complexity  — quick complexity-only analysis
+"""
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import Optional
 
-from src.api.schemas import (
-    SubmissionAnalysisRequest,
-    AnalysisResponse,
-    BatchAnalysisRequest,
-    ComparisonRequest
-)
-from src.services.analysis_service import AnalysisService
-from src.cache import get_cache, set_cache
+from src.services.analysis_service import analysis_service
 
 router = APIRouter()
-analysis_service = AnalysisService()
 
-@router.post("/submission", response_model=AnalysisResponse)
-async def analyze_submission(request: SubmissionAnalysisRequest):
-    """
-    Analyze a single code submission
-    """
-    try:
-        result = await analysis_service.analyze_submission(request.dict())
-        
-        return AnalysisResponse(
-            submission_id=request.submission_id,
-            quality_score=result.quality_score,
-            quality_label=result.quality_label,
-            time_complexity=result.time_complexity,
-            space_complexity=result.space_complexity,
-            anti_patterns=result.anti_patterns,
-            suggestions=result.suggestions,
-            cyclomatic_complexity=result.cyclomatic_complexity,
-            lines_of_code=result.lines_of_code,
-            performance_rating=result.performance_rating,
-            bottleneck_analysis=result.bottleneck_analysis,
-            confidence=result.quality_confidence
-        )
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
-@router.post("/batch")
-async def batch_analyze(request: BatchAnalysisRequest):
-    """
-    Analyze multiple submissions in batch
-    """
-    try:
-        results = await analysis_service.batch_analyze(request.submissions)
-        
-        return {
-            "results": [
-                {
-                    "submission_id": sub.get("submission_id"),
-                    "quality_score": res.quality_score,
-                    "quality_label": res.quality_label,
-                    "time_complexity": res.time_complexity
-                }
-                for sub, res in zip(request.submissions, results)
-            ],
-            "total_analyzed": len(results)
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Batch analysis failed: {str(e)}")
+class AnalyzeRequest(BaseModel):
+    code: str
+    language: str                   # python | javascript | java | cpp
+    submission_id: Optional[str] = ""
+    runtime_ms: Optional[int] = 0
+    test_cases_passed: Optional[int] = 0
+    total_test_cases: Optional[int] = 0
+
+
+@router.post("/code")
+async def analyze_code(req: AnalyzeRequest):
+    """Full analysis: complexity + quality + anti-patterns + suggestions"""
+    if not req.code.strip():
+        raise HTTPException(status_code=400, detail="Code is required")
+    if len(req.code) > 50_000:
+        raise HTTPException(status_code=400, detail="Code too long (max 50k chars)")
+
+    result = await analysis_service.analyze_code(
+        code=req.code,
+        language=req.language,
+        runtime_ms=req.runtime_ms,
+        test_cases_passed=req.test_cases_passed,
+        total_test_cases=req.total_test_cases,
+        submission_id=req.submission_id,
+    )
+    return {"success": True, "data": result}
+
 
 @router.post("/complexity")
-async def estimate_complexity(code: str, language: str):
-    """
-    Estimate time and space complexity of code
-    """
-    try:
-        # This is a simplified endpoint
-        # In practice, you'd use the complexity model
-        
-        features = analysis_service.feature_extractor.extract_features(code, language)
-        feature_dict = analysis_service.feature_extractor.features_to_dict(features)
-        
-        prediction = analysis_service.complexity_model.predict(feature_dict)
-        
-        return {
-            "time_complexity": prediction["time_complexity"],
-            "space_complexity": prediction["space_complexity"],
-            "confidence": prediction["confidence"],
-            "explanation": self._generate_complexity_explanation(prediction)
+async def quick_complexity(req: AnalyzeRequest):
+    """Quick structural metrics only (no Gemini call, instant)"""
+    from src.services.analysis_service import extract_structural_metrics
+    m = extract_structural_metrics(req.code, req.language)
+    return {
+        "success": True,
+        "data": {
+            "lines_of_code":          m.lines_of_code,
+            "function_count":         m.function_count,
+            "loop_count":             m.loop_count,
+            "max_nesting_depth":      m.max_nesting_depth,
+            "cyclomatic_complexity":  m.cyclomatic_complexity,
+            "comment_density":        round(m.comment_density, 2),
+            "uses_recursion":         m.uses_recursion,
+            "uses_dp":                m.uses_dp,
+            "uses_sorting":           m.uses_sorting,
+            "uses_binary_search":     m.uses_binary_search,
         }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Complexity analysis failed: {str(e)}")
-
-@router.post("/compare")
-async def compare_with_benchmark(request: ComparisonRequest):
-    """
-    Compare submission with benchmark solution
-    """
-    try:
-        comparison = await analysis_service.compare_with_benchmark(
-            request.submission_data,
-            request.benchmark_data
-        )
-        
-        return comparison
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Comparison failed: {str(e)}")
-
-def _generate_complexity_explanation(prediction: dict) -> str:
-    """Generate human-readable explanation for complexity"""
-    time_comp = prediction["time_complexity"]
-    
-    explanations = {
-        "O(1)": "Constant time - Excellent!",
-        "O(log n)": "Logarithmic time - Very efficient!",
-        "O(n)": "Linear time - Good performance",
-        "O(n log n)": "Linearithmic time - Acceptable for sorting operations",
-        "O(n²)": "Quadratic time - May be slow for large inputs",
-        "O(n³)": "Cubic time - Consider optimizing",
-        "O(2^n)": "Exponential time - May be too slow for practical use"
     }
-    
-    return explanations.get(time_comp, "Complexity analysis completed")

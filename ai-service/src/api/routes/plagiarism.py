@@ -1,99 +1,53 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from typing import List
-import asyncio
+"""
+Plagiarism Detection Routes
+POST /api/v1/plagiarism/check    — check full contest
+POST /api/v1/plagiarism/compare  — compare exactly 2 submissions
+"""
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import List, Dict, Optional
 
-from src.api.schemas import (
-    PlagiarismCheckRequest,
-    PlagiarismCheckResponse,
-    SimilarityPair
-)
-from src.services.plagiarism_service import PlagiarismService
-from src.cache import set_cache, get_cache
+from src.services.plagiarism_service import plagiarism_service
 
 router = APIRouter()
-plagiarism_service = PlagiarismService()
 
-@router.post("/check", response_model=PlagiarismCheckResponse)
-async def check_plagiarism(request: PlagiarismCheckRequest, background_tasks: BackgroundTasks):
+
+class SubmissionItem(BaseModel):
+    id: Optional[str] = ""
+    submission_id: Optional[str] = ""
+    user_id: str
+    code: str
+    language: str
+
+
+class ContestCheckRequest(BaseModel):
+    contest_id: str
+    submissions: List[SubmissionItem]
+
+
+class CompareRequest(BaseModel):
+    submission1: SubmissionItem
+    submission2: SubmissionItem
+
+
+@router.post("/check")
+async def check_contest(req: ContestCheckRequest):
     """
-    Check for plagiarism in contest submissions
+    Check all submissions in a contest for plagiarism.
+    Uses Winnowing (token fingerprinting) + AST similarity.
+    O(n²) pairs — suitable for contests with < 500 submissions.
     """
-    try:
-        # Check cache first
-        cache_key = f"plagiarism:{request.contest_id}"
-        cached_result = await get_cache(cache_key)
-        if cached_result:
-            return PlagiarismCheckResponse(**cached_result)
-        
-        # Run plagiarism check
-        result = await plagiarism_service.check_contest(
-            request.contest_id,
-            request.submissions
-        )
-        
-        # Cache result for 1 hour
-        await set_cache(cache_key, result.dict(), expire=3600)
-        
-        # Store result in background
-        background_tasks.add_task(
-            store_plagiarism_result,
-            request.contest_id,
-            result
-        )
-        
-        return result
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Plagiarism check failed: {str(e)}")
+    subs = [s.dict() for s in req.submissions]
+    # Normalise id field
+    for s in subs:
+        if not s.get("id"):
+            s["id"] = s.get("submission_id", "")
+    result = await plagiarism_service.check_contest(req.contest_id, subs)
+    return {"success": True, "data": result}
+
 
 @router.post("/compare")
-async def compare_two_submissions(submission1: dict, submission2: dict):
-    """
-    Compare two specific submissions
-    """
-    try:
-        similarity = await plagiarism_service.compare_pair(
-            submission1,
-            submission2
-        )
-        
-        return {
-            "similarity": similarity,
-            "is_suspicious": similarity > 0.85
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Comparison failed: {str(e)}")
-
-@router.get("/contest/{contest_id}/results")
-async def get_plagiarism_results(contest_id: str):
-    """
-    Get plagiarism results for a contest
-    """
-    try:
-        cache_key = f"plagiarism:{contest_id}"
-        result = await get_cache(cache_key)
-        
-        if not result:
-            return {
-                "contest_id": contest_id,
-                "status": "not_checked",
-                "message": "Run plagiarism check first"
-            }
-        
-        return PlagiarismCheckResponse(**result)
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get results: {str(e)}")
-
-async def store_plagiarism_result(contest_id: str, result: PlagiarismCheckResponse):
-    """
-    Store plagiarism result in database (background task)
-    """
-    try:
-        # In practice, store in your database
-        # For now, just log it
-        print(f"Stored plagiarism result for contest {contest_id}")
-        
-    except Exception as e:
-        print(f"Failed to store plagiarism result: {e}")
+async def compare_two(req: CompareRequest):
+    """Compare exactly two submissions"""
+    result = await plagiarism_service.compare_pair(req.submission1.dict(), req.submission2.dict())
+    return {"success": True, "data": result}

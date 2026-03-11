@@ -1,9 +1,6 @@
 import api from './api';
-import { SUBMISSION_STATUS, PAGINATION, LANGUAGE_CONFIG } from '../utils/constants';
+import { VERDICT } from '../utils/constants';
 
-/**
- * Comprehensive submission service with all required methods
- */
 export const submissionService = {
   /**
    * Submit a solution
@@ -11,9 +8,9 @@ export const submissionService = {
   submitSolution: async (data) => {
     try {
       const response = await api.post('/submissions', data);
-      return response.data;
+      return response;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to submit solution' };
+      throw error;
     }
   },
 
@@ -23,9 +20,9 @@ export const submissionService = {
   runCode: async (data) => {
     try {
       const response = await api.post('/submissions/run', data);
-      return response.data;
+      return response;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to run code' };
+      throw error;
     }
   },
 
@@ -34,25 +31,10 @@ export const submissionService = {
    */
   getSubmissions: async (params = {}) => {
     try {
-      const defaultParams = {
-        page: params.page || PAGINATION.DEFAULT_PAGE,
-        limit: params.limit || PAGINATION.SUBMISSIONS_PER_PAGE,
-        sort: params.sort || 'newest',
-      };
-
-      // Remove undefined values
-      Object.keys(params).forEach(key => {
-        if (params[key] === undefined || params[key] === '') {
-          delete params[key];
-        }
-      });
-
-      const response = await api.get('/submissions', {
-        params: { ...defaultParams, ...params },
-      });
-      return response.data;
+      const response = await api.get('/submissions', { params });
+      return response;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch submissions' };
+      throw error;
     }
   },
 
@@ -62,280 +44,120 @@ export const submissionService = {
   getSubmissionById: async (submissionId) => {
     try {
       const response = await api.get(`/submissions/${submissionId}`);
-      return response.data;
+      return response;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch submission' };
+      throw error;
     }
   },
 
   /**
    * Get user's solved problems
    */
-  getSolvedProblems: async () => {
+  getUserSolved: async () => {
     try {
       const response = await api.get('/submissions/user/solved');
-      return response.data;
+      return response;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch solved problems' };
+      throw error;
     }
   },
 
   /**
-   * Get submission statistics
+   * Get recent submissions
    */
-  getSubmissionStats: async () => {
+  getRecentSubmissions: async (limit = 10) => {
     try {
-      const response = await api.get('/submissions/stats');
-      return response.data;
+      const response = await api.get('/submissions/recent', { params: { limit } });
+      return response;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch statistics' };
+      throw error;
     }
   },
 
   /**
-   * Get submission history for a specific problem
+   * Get problem submissions
    */
   getProblemSubmissions: async (problemId, params = {}) => {
     try {
       const response = await api.get(`/submissions/problem/${problemId}`, { params });
-      return response.data;
+      return response;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch problem submissions' };
+      throw error;
     }
   },
 
   /**
-   * Batch run multiple test cases
-   */
-  runTestCases: async (problemId, code, language, testCases = []) => {
-    try {
-      const response = await api.post('/submissions/test', {
-        problemId,
-        code,
-        language,
-        testCases,
-      });
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to run test cases' };
-    }
-  },
-
-  /**
-   * Get execution results with polling
-   */
-  getExecutionResult: async (executionId, pollInterval = 1000, maxAttempts = 30) => {
-    try {
-      const poll = async (attempt = 0) => {
-        const response = await api.get(`/submissions/execution/${executionId}`);
-        const data = response.data;
-
-        if (data.status === 'completed' || attempt >= maxAttempts) {
-          return data;
-        }
-
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-        return poll(attempt + 1);
-      };
-
-      return await poll();
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to get execution result' };
-    }
-  },
-
-  /**
-   * Get leaderboard submissions
-   */
-  getLeaderboardSubmissions: async (contestId = null, params = {}) => {
-    try {
-      const url = contestId 
-        ? `/submissions/contest/${contestId}/leaderboard`
-        : '/submissions/leaderboard';
-      
-      const response = await api.get(url, { params });
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch leaderboard' };
-    }
-  },
-
-  /**
-   * Export submissions
-   */
-  exportSubmissions: async (params = {}) => {
-    try {
-      const response = await api.get('/submissions/export', {
-        params,
-        responseType: 'blob',
-      });
-      
-      // Create download link
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `submissions_${Date.now()}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      
-      return true;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to export submissions' };
-    }
-  },
-
-  /**
-   * Delete submission
-   */
-  deleteSubmission: async (submissionId) => {
-    try {
-      const response = await api.delete(`/submissions/${submissionId}`);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to delete submission' };
-    }
-  },
-
-  /**
-   * Get submission analytics
-   */
-  getAnalytics: async (timeRange = 'month') => {
-    try {
-      const response = await api.get(`/submissions/analytics/${timeRange}`);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch analytics' };
-    }
-  },
-
-  /**
-   * Get language-specific submission stats
-   */
-  getLanguageStats: async () => {
-    try {
-      const response = await api.get('/submissions/stats/languages');
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch language stats' };
-    }
-  },
-
-  /**
-   * Get difficulty-specific submission stats
-   */
-  getDifficultyStats: async () => {
-    try {
-      const response = await api.get('/submissions/stats/difficulty');
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch difficulty stats' };
-    }
-  },
-
-  /**
-   * Get daily submission streak
-   */
-  getStreak: async () => {
-    try {
-      const response = await api.get('/submissions/streak');
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch streak' };
-    }
-  },
-
-  /**
-   * Compare two submissions
-   */
-  compareSubmissions: async (submissionId1, submissionId2) => {
-    try {
-      const response = await api.get(`/submissions/compare/${submissionId1}/${submissionId2}`);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to compare submissions' };
-    }
-  },
-
-  /**
-   * Get submission verdict with real-time updates
-   */
-  getVerdictWithUpdates: async (submissionId, onUpdate = () => {}) => {
-    try {
-      let attempts = 0;
-      const maxAttempts = 60; // 2 minutes max
-
-      const poll = async () => {
-        const response = await api.get(`/submissions/${submissionId}/status`);
-        const data = response.data;
-        
-        onUpdate(data);
-        
-        if (data.status === SUBMISSION_STATUS.PENDING || data.status === SUBMISSION_STATUS.RUNNING) {
-          if (attempts < maxAttempts) {
-            attempts++;
-            setTimeout(poll, 2000);
-          }
-          return;
-        }
-        
-        return data;
-      };
-
-      return await poll();
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to get verdict' };
-    }
-  },
-
-  /**
-   * Get default code template for language
+   * Get default code template
    */
   getDefaultCodeTemplate: (problemTitle, language) => {
-    const template = LANGUAGE_CONFIG[language]?.defaultCode || '';
+    const templates = {
+      javascript: `/**
+ * @param {any} args
+ * @return {any}
+ */
+function ${problemTitle?.replace(/\s+/g, '')?.toLowerCase() || 'solution'}(...args) {
+    // Write your code here
     
-    // Replace function name with sanitized problem title
-    const functionName = problemTitle
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, '')
-      .replace(/\s+/g, '_');
+}`,
+      python: `class Solution:
+    def ${problemTitle?.replace(/\s+/g, '_')?.toLowerCase() || 'solution'}(self, *args):
+        # Write your code here
+        pass`,
+      java: `class Solution {
+    public Object ${problemTitle?.replace(/\s+/g, '')?.toLowerCase() || 'solution'}(Object... args) {
+        // Write your code here
+        return null;
+    }
+}`,
+      cpp: `class Solution {
+public:
+    auto ${problemTitle?.replace(/\s+/g, '')?.toLowerCase() || 'solution'}(/* params */) {
+        // Write your code here
+        
+    }
+};`,
+      c: `#include <stdio.h>
+
+int ${problemTitle?.replace(/\s+/g, '_')?.toLowerCase() || 'solution'}(/* params */) {
+    // Write your code here
+    return 0;
+}`
+    };
     
-    return template.replace(/solve/g, functionName);
+    return templates[language] || templates.javascript;
   },
 
   /**
-   * Validate code before submission
+   * Validate code
    */
   validateCode: (code, language) => {
     if (!code || code.trim().length === 0) {
       return { valid: false, error: 'Code cannot be empty' };
     }
 
-    if (code.trim().length < 10) {
+    if (code.trim().length < 5) {
       return { valid: false, error: 'Code is too short' };
-    }
-
-    // Language-specific validations
-    switch (language) {
-      case 'python':
-        if (!code.includes('def ') && !code.includes('class ')) {
-          return { valid: false, error: 'Python code must contain a function or class' };
-        }
-        break;
-      case 'javascript':
-        if (!code.includes('function') && !code.includes('=>') && !code.includes('const ') && !code.includes('let ') && !code.includes('class ')) {
-          return { valid: false, error: 'JavaScript code must contain a function or class' };
-        }
-        break;
-      case 'java':
-        if (!code.includes('public class') && !code.includes('class')) {
-          return { valid: false, error: 'Java code must contain a class' };
-        }
-        break;
     }
 
     return { valid: true, error: '' };
   },
+
+  /**
+   * Get verdict info
+   */
+  getVerdictInfo: (verdict) => {
+    const verdictMap = {
+      [VERDICT.ACCEPTED]: { label: 'Accepted', color: 'text-green-500', bg: 'bg-green-500/10' },
+      [VERDICT.WRONG_ANSWER]: { label: 'Wrong Answer', color: 'text-red-500', bg: 'bg-red-500/10' },
+      [VERDICT.TIME_LIMIT_EXCEEDED]: { label: 'Time Limit Exceeded', color: 'text-yellow-500', bg: 'bg-yellow-500/10' },
+      [VERDICT.RUNTIME_ERROR]: { label: 'Runtime Error', color: 'text-red-500', bg: 'bg-red-500/10' },
+      [VERDICT.COMPILATION_ERROR]: { label: 'Compilation Error', color: 'text-gray-500', bg: 'bg-gray-500/10' },
+      [VERDICT.MEMORY_LIMIT_EXCEEDED]: { label: 'Memory Limit Exceeded', color: 'text-purple-500', bg: 'bg-purple-500/10' },
+      [VERDICT.PENDING]: { label: 'Pending', color: 'text-blue-500', bg: 'bg-blue-500/10' },
+    };
+    
+    return verdictMap[verdict] || { label: verdict || 'Unknown', color: 'text-gray-500', bg: 'bg-gray-500/10' };
+  }
 };
 
 export default submissionService;

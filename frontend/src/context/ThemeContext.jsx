@@ -1,3 +1,4 @@
+// frontend/src/context/ThemeContext.jsx
 import React, { createContext, useState, useContext, useEffect } from 'react';
 
 const ThemeContext = createContext();
@@ -12,7 +13,6 @@ export const useTheme = () => {
 
 export const ThemeProvider = ({ children }) => {
   const [theme, setTheme] = useState(() => {
-    // Check localStorage first, then system preference
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme) {
       return savedTheme;
@@ -25,7 +25,6 @@ export const ThemeProvider = ({ children }) => {
   });
 
   useEffect(() => {
-    // Apply theme to document
     const root = document.documentElement;
     
     if (theme === 'dark') {
@@ -36,17 +35,14 @@ export const ThemeProvider = ({ children }) => {
       root.classList.remove('dark');
     }
     
-    // Save to localStorage
     localStorage.setItem('theme', theme);
   }, [theme]);
 
   useEffect(() => {
-    // Save editor theme
     localStorage.setItem('editorTheme', editorTheme);
   }, [editorTheme]);
 
   useEffect(() => {
-    // Listen for system theme changes
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     
     const handleChange = (e) => {
@@ -64,8 +60,8 @@ export const ThemeProvider = ({ children }) => {
   };
 
   const setThemeMode = (mode) => {
-    if (['light', 'dark', 'auto'].includes(mode)) {
-      if (mode === 'auto') {
+    if (['light', 'dark', 'system'].includes(mode)) {
+      if (mode === 'system') {
         localStorage.removeItem('theme');
         const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         setTheme(systemTheme);

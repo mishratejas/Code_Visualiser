@@ -1,15 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { FiBell, FiCheck, FiTrash2, FiFilter } from 'react-icons/fi';
+import { FiBell, FiCheck, FiTrash2, FiFilter, FiCheckCircle, FiAlertCircle, FiAward, FiCalendar, FiCode, FiRefreshCw } from 'react-icons/fi';
 import { toast } from 'react-hot-toast';
 import api from '../services/api';
 import Loader from '../components/common/Loader';
+import { useTheme } from '../context/ThemeContext';
+import ThemeToggle from '../components/common/ThemeToggle';
 
 const Notifications = () => {
+  const { isDark } = useTheme();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all'); // all, unread, read
+  const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  const [stats, setStats] = useState({ total: 0, unread: 0 });
+
+  useEffect(() => {
+    setPage(1);
+    setNotifications([]);
+  }, [filter]);
 
   useEffect(() => {
     fetchNotifications();
@@ -18,25 +27,30 @@ const Notifications = () => {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const params = {
-        page,
-        limit: 20,
-        ...(filter === 'unread' && { unread: true })
-      };
+      const params = { page, limit: 20 };
+      if (filter === 'unread') params.unread = true;
+      if (filter === 'read') params.read = true;
 
       const response = await api.get('/notifications', { params });
-      const data = response.data?.data || {};
+      const resData = response.data?.data || response.data || {};
       
+      const notifs = resData.notifications || resData.data || [];
+      const pagination = resData.pagination || {};
+
       if (page === 1) {
-        setNotifications(data.notifications || []);
+        setNotifications(notifs);
       } else {
-        setNotifications(prev => [...prev, ...(data.notifications || [])]);
+        setNotifications(prev => [...prev, ...notifs]);
       }
-      
-      setHasMore(data.pagination?.page < data.pagination?.pages);
+
+      setHasMore((pagination.page || 1) < (pagination.pages || 1));
+      setStats({
+        total: pagination.total || notifs.length,
+        unread: resData.unreadCount || notifs.filter(n => !n.read && !n.isRead).length,
+      });
     } catch (error) {
       console.error('Failed to fetch notifications:', error);
-      toast.error('Failed to load notifications');
+      setNotifications([]);
     } finally {
       setLoading(false);
     }
@@ -45,16 +59,11 @@ const Notifications = () => {
   const markAsRead = async (id) => {
     try {
       await api.post(`/notifications/mark-read/${id}`);
-      
       setNotifications(prev =>
-        prev.map(notif =>
-          notif._id === id ? { ...notif, read: true } : notif
-        )
+        prev.map(n => n._id === id ? { ...n, read: true, isRead: true } : n)
       );
-      
-      toast.success('Marked as read');
-    } catch (error) {
-      console.error('Failed to mark as read:', error);
+      setStats(prev => ({ ...prev, unread: Math.max(0, prev.unread - 1) }));
+    } catch {
       toast.error('Failed to mark as read');
     }
   };
@@ -62,14 +71,10 @@ const Notifications = () => {
   const markAllAsRead = async () => {
     try {
       await api.post('/notifications/mark-all-read');
-      
-      setNotifications(prev =>
-        prev.map(notif => ({ ...notif, read: true }))
-      );
-      
+      setNotifications(prev => prev.map(n => ({ ...n, read: true, isRead: true })));
+      setStats(prev => ({ ...prev, unread: 0 }));
       toast.success('All notifications marked as read');
-    } catch (error) {
-      console.error('Failed to mark all as read:', error);
+    } catch {
       toast.error('Failed to mark all as read');
     }
   };
@@ -77,198 +82,214 @@ const Notifications = () => {
   const deleteNotification = async (id) => {
     try {
       await api.delete(`/notifications/${id}`);
-      
-      setNotifications(prev => prev.filter(notif => notif._id !== id));
+      setNotifications(prev => prev.filter(n => n._id !== id));
       toast.success('Notification deleted');
-    } catch (error) {
-      console.error('Failed to delete notification:', error);
+    } catch {
       toast.error('Failed to delete notification');
     }
   };
 
-  const clearReadNotifications = async () => {
-    if (!window.confirm('Are you sure you want to clear all read notifications?')) {
-      return;
-    }
-
-    try {
-      await api.delete('/notifications/clear-read');
-      
-      setNotifications(prev => prev.filter(notif => !notif.read));
-      toast.success('Read notifications cleared');
-    } catch (error) {
-      console.error('Failed to clear notifications:', error);
-      toast.error('Failed to clear notifications');
-    }
-  };
-
-  const getNotificationIcon = (type) => {
+  const getNotifIcon = (type) => {
     const icons = {
-      submission: '✅',
-      achievement: '🏆',
-      contest: '🎯',
-      system: '📢',
-      interview: '🎓',
-      reminder: '⏰'
+      submission: <FiCode className="h-4 w-4" />,
+      achievement: <FiAward className="h-4 w-4" />,
+      contest: <FiCalendar className="h-4 w-4" />,
+      system: <FiAlertCircle className="h-4 w-4" />,
+      warning: <FiAlertCircle className="h-4 w-4" />,
     };
-    return icons[type] || '📬';
+    return icons[type] || <FiBell className="h-4 w-4" />;
   };
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const getNotifColor = (type) => {
+    const colors = {
+      submission: 'from-green-500 to-teal-500',
+      achievement: 'from-yellow-400 to-amber-500',
+      contest: 'from-blue-500 to-cyan-500',
+      system: 'from-gray-500 to-gray-600',
+      warning: 'from-orange-500 to-red-500',
+    };
+    return colors[type] || 'from-rose-500 to-red-500';
+  };
 
-  if (loading && page === 1) {
-    return <Loader />;
-  }
+  const formatTime = (date) => {
+    if (!date) return '';
+    const d = new Date(date);
+    const now = new Date();
+    const diff = now - d;
+    if (diff < 60000) return 'Just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return d.toLocaleDateString();
+  };
+
+  const bgClass = isDark ? 'bg-gray-950' : 'bg-gray-50';
+  const cardClass = isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200 shadow-sm';
+  const textClass = isDark ? 'text-white' : 'text-gray-900';
+  const subTextClass = isDark ? 'text-gray-400' : 'text-gray-600';
+  const filterBtn = (active) => active
+    ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white'
+    : `${isDark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`;
+
+  const unreadNotifs = notifications.filter(n => !n.read && !n.isRead);
 
   return (
-    <div className="min-h-screen bg-gray-900 py-8">
-      <div className="container mx-auto px-4 max-w-4xl">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-white mb-2">Notifications</h1>
-          <p className="text-gray-400">
-            {unreadCount > 0 ? (
-              <>You have <span className="text-blue-400 font-semibold">{unreadCount}</span> unread notification{unreadCount !== 1 ? 's' : ''}</>
-            ) : (
-              'You\'re all caught up!'
-            )}
-          </p>
-        </div>
+    <div className={`min-h-screen ${bgClass} py-6 px-4`}>
+      <div className="max-w-3xl mx-auto space-y-6">
 
-        {/* Actions Bar */}
-        <div className="bg-gray-800 rounded-lg p-4 mb-6 flex flex-wrap items-center justify-between gap-4">
-          {/* Filters */}
-          <div className="flex items-center gap-2">
-            <FiFilter className="w-4 h-4 text-gray-400" />
-            <div className="flex gap-2">
-              {['all', 'unread', 'read'].map((f) => (
-                <button
-                  key={f}
-                  onClick={() => {
-                    setFilter(f);
-                    setPage(1);
-                  }}
-                  className={`px-3 py-1 rounded-lg text-sm transition-colors ${
-                    filter === f
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  {f.charAt(0).toUpperCase() + f.slice(1)}
-                </button>
-              ))}
+        {/* Header */}
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="p-2.5 rounded-xl bg-gradient-to-br from-rose-500 to-red-500">
+                <FiBell className="h-6 w-6 text-white" />
+              </div>
+              {stats.unread > 0 && (
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                  <span className="text-white text-xs font-bold">{stats.unread > 9 ? '9+' : stats.unread}</span>
+                </div>
+              )}
+            </div>
+            <div>
+              <h1 className={`text-2xl font-bold ${textClass}`}>Notifications</h1>
+              <p className={`text-sm ${subTextClass}`}>
+                {stats.unread > 0 ? `${stats.unread} unread` : 'All caught up!'}
+              </p>
             </div>
           </div>
-
-          {/* Actions */}
-          <div className="flex gap-2">
-            {unreadCount > 0 && (
+          <div className="flex items-center gap-3">
+            {stats.unread > 0 && (
               <button
                 onClick={markAllAsRead}
-                className="flex items-center gap-2 px-3 py-1 bg-green-600 hover:bg-green-700 rounded-lg text-sm transition-colors"
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${isDark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
               >
-                <FiCheck className="w-4 h-4" />
-                <span>Mark All Read</span>
+                <FiCheckCircle className="h-4 w-4" />
+                Mark all read
               </button>
             )}
-            
-            {notifications.some(n => n.read) && (
-              <button
-                onClick={clearReadNotifications}
-                className="flex items-center gap-2 px-3 py-1 bg-red-600 hover:bg-red-700 rounded-lg text-sm transition-colors"
-              >
-                <FiTrash2 className="w-4 h-4" />
-                <span>Clear Read</span>
-              </button>
-            )}
+            <button
+              onClick={() => { setPage(1); fetchNotifications(); }}
+              className={`p-2 rounded-lg ${isDark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+            >
+              <FiRefreshCw className="h-4 w-4" />
+            </button>
+            <ThemeToggle />
           </div>
+        </div>
+
+        {/* Filter Tabs */}
+        <div className={`${cardClass} border rounded-xl p-3 flex gap-2`}>
+          {[
+            { value: 'all', label: 'All', count: stats.total },
+            { value: 'unread', label: 'Unread', count: stats.unread },
+            { value: 'read', label: 'Read' },
+          ].map(({ value, label, count }) => (
+            <button
+              key={value}
+              onClick={() => setFilter(value)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${filterBtn(filter === value)}`}
+            >
+              {label}
+              {count !== undefined && count > 0 && (
+                <span className={`text-xs px-1.5 py-0.5 rounded-full ${filter === value ? 'bg-white/20' : isDark ? 'bg-gray-700' : 'bg-gray-200'}`}>
+                  {count}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
 
         {/* Notifications List */}
-        {notifications.length === 0 ? (
-          <div className="bg-gray-800 rounded-lg p-12 text-center">
-            <FiBell className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-400 mb-2">No notifications</h3>
-            <p className="text-gray-500">
-              {filter === 'unread'
-                ? 'You have no unread notifications'
-                : 'You\'ll see notifications here when you have activity'}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {notifications.map((notification) => (
-              <div
-                key={notification._id}
-                className={`bg-gray-800 rounded-lg p-4 border transition-all hover:border-gray-600 ${
-                  notification.read
-                    ? 'border-gray-700'
-                    : 'border-blue-500/30 bg-blue-500/5'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  {/* Icon */}
-                  <div className="text-2xl flex-shrink-0">
-                    {notification.icon || getNotificationIcon(notification.type)}
-                  </div>
+        <div className={`${cardClass} border rounded-xl overflow-hidden`}>
+          {loading && page === 1 ? (
+            <div className="flex justify-center py-12"><Loader /></div>
+          ) : notifications.length > 0 ? (
+            <div className={`divide-y ${isDark ? 'divide-gray-800' : 'divide-gray-100'}`}>
+              {notifications.map((notif) => {
+                const isRead = notif.read || notif.isRead;
+                const type = notif.type || 'system';
+                return (
+                  <div
+                    key={notif._id}
+                    className={`flex items-start gap-4 p-4 transition-colors ${
+                      !isRead ? (isDark ? 'bg-rose-500/5' : 'bg-rose-50/50') : ''
+                    } ${isDark ? 'hover:bg-gray-800/50' : 'hover:bg-gray-50'}`}
+                  >
+                    {/* Icon */}
+                    <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${getNotifColor(type)} flex items-center justify-center text-white flex-shrink-0`}>
+                      {getNotifIcon(type)}
+                    </div>
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <h3 className="font-semibold text-white">{notification.title}</h3>
-                      {!notification.read && (
-                        <span className="flex-shrink-0 w-2 h-2 bg-blue-500 rounded-full mt-2"></span>
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className={`font-medium text-sm ${textClass} ${!isRead ? 'font-semibold' : ''}`}>
+                            {notif.title || 'Notification'}
+                          </p>
+                          <p className={`text-xs ${subTextClass} mt-0.5 line-clamp-2`}>
+                            {notif.message || notif.content || notif.body}
+                          </p>
+                          <p className={`text-xs ${subTextClass} mt-1`}>{formatTime(notif.createdAt)}</p>
+                        </div>
+                        {!isRead && <div className="w-2 h-2 rounded-full bg-rose-500 flex-shrink-0 mt-1" />}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {!isRead && (
+                        <button
+                          onClick={() => markAsRead(notif._id)}
+                          className={`p-1.5 rounded-lg ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'} text-green-500 transition-colors`}
+                          title="Mark as read"
+                        >
+                          <FiCheck className="h-4 w-4" />
+                        </button>
                       )}
-                    </div>
-                    
-                    <p className="text-gray-300 text-sm mb-2">{notification.message}</p>
-                    
-                    <div className="flex items-center gap-3 text-xs text-gray-500">
-                      <span>{notification.timeAgo}</span>
-                      <span className="px-2 py-0.5 bg-gray-700 rounded">
-                        {notification.type}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex gap-1">
-                    {!notification.read && (
                       <button
-                        onClick={() => markAsRead(notification._id)}
-                        className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                        title="Mark as read"
+                        onClick={() => deleteNotification(notif._id)}
+                        className={`p-1.5 rounded-lg ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'} text-red-500 transition-colors`}
+                        title="Delete"
                       >
-                        <FiCheck className="w-4 h-4 text-gray-400" />
+                        <FiTrash2 className="h-4 w-4" />
                       </button>
-                    )}
-                    
-                    <button
-                      onClick={() => deleteNotification(notification._id)}
-                      className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                      title="Delete"
-                    >
-                      <FiTrash2 className="w-4 h-4 text-gray-400 hover:text-red-400" />
-                    </button>
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+                );
+              })}
 
-        {/* Load More */}
-        {hasMore && notifications.length > 0 && (
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => setPage(p => p + 1)}
-              disabled={loading}
-              className="px-6 py-2 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-800 disabled:opacity-50 rounded-lg transition-colors"
-            >
-              {loading ? 'Loading...' : 'Load More'}
-            </button>
-          </div>
-        )}
+              {/* Load More */}
+              {hasMore && (
+                <div className="p-4 text-center">
+                  <button
+                    onClick={() => setPage(p => p + 1)}
+                    disabled={loading}
+                    className="px-6 py-2 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-lg text-sm disabled:opacity-50"
+                  >
+                    {loading ? 'Loading...' : 'Load More'}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className={`py-16 text-center ${subTextClass}`}>
+              <FiBell className="h-16 w-16 mx-auto mb-4 opacity-20" />
+              <h3 className={`text-xl font-bold ${textClass} mb-2`}>No notifications</h3>
+              <p className="text-sm">
+                {filter === 'unread' ? "You've read all your notifications! 🎉" : "You'll see activity here as you use the platform."}
+              </p>
+              {filter !== 'all' && (
+                <button
+                  onClick={() => setFilter('all')}
+                  className="mt-4 px-5 py-2 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-lg text-sm"
+                >
+                  View All
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   );

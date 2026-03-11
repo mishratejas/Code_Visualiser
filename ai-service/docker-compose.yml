@@ -1,64 +1,137 @@
-version: '3.8'
+version: '3.9'
+
+# ═══════════════════════════════════════════════════════════════════
+# CodeForge — Full Stack Docker Compose
+#
+# Services:
+#   backend     → Node.js Express  (port 8000)
+#   ai-service  → FastAPI Python   (port 8001)
+#   redis       → Cache            (port 6379)
+#   judge       → Isolated code execution sandbox (no exposed port)
+#
+# MongoDB: Uses Atlas cloud → NOT containerized here
+# PostgreSQL: Add below if you want local (currently using Atlas)
+# ═══════════════════════════════════════════════════════════════════
 
 services:
-  ai-service:
-    build: .
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql://postgres:password@db:5432/ai_platform
-      - REDIS_URL=redis://redis:6379
-      - NODE_BACKEND_URL=http://host.docker.internal:5000
-      - DEBUG=True
-    volumes:
-      - ./models:/app/models
-      - ./data:/app/data
-    depends_on:
-      - db
-      - redis
-    networks:
-      - ai-network
-    restart: unless-stopped
 
-  db:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_DB: ai_platform
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    networks:
-      - ai-network
-    restart: unless-stopped
-
+  # ─── Redis Cache ─────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
+    container_name: codeforge_redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    networks:
-      - ai-network
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
+    networks:
+      - codeforge_net
 
-  qdrant:
-    image: qdrant/qdrant:latest
+  # ─── AI Service (FastAPI) ─────────────────────────────────────────
+  ai-service:
+    build:
+      context: ./Ai-service
+      dockerfile: Dockerfile
+    container_name: codeforge_ai
     ports:
-      - "6333:6333"
+      - "8001:8001"         # NOTE: 8001, NOT 8000 (Node uses 8000)
+    environment:
+      - PORT=8001
+      - REDIS_URL=redis://redis:6379
+      - NODE_BACKEND_URL=http://backend:8000
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=gemini-1.5-flash
+      - PLAGIARISM_THRESHOLD=0.75
+      - LOG_LEVEL=INFO
+      - DEBUG=False
     volumes:
-      - qdrant_data:/qdrant/storage
-    networks:
-      - ai-network
+      - ai_logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
+    networks:
+      - codeforge_net
 
-networks:
-  ai-network:
-    driver: bridge
+  # ─── Node.js Backend ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: codeforge_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - NODE_ENV=production
+      - PORT=8000
+      - MONGODB_URI=${MONGODB_URI}
+      - REDIS_URL=redis://redis:6379
+      - AI_SERVICE_URL=http://ai-service:8001   # Internal Docker DNS
+      - JWT_SECRET=${JWT_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL}
+      - CLIENT_URL=${CLIENT_URL}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+    volumes:
+      - backend_temp:/app/temp    # Temp files for code execution
+      - backend_logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - codeforge_net
 
+  # ─── Frontend (Nginx serving React build) ─────────────────────────
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    container_name: codeforge_frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - VITE_API_URL=http://backend:8000/api/v1
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - codeforge_net
+
+# ─── Volumes ────────────────────────────────────────────────────────
 volumes:
-  postgres_data:
   redis_data:
-  qdrant_data:
+  ai_logs:
+  backend_temp:
+  backend_logs:
+
+# ─── Networks ───────────────────────────────────────────────────────
+networks:
+  codeforge_net:
+    driver: bridge
+    # All services can talk to each other by container name
+    # e.g. backend → http://ai-service:8001
+    #      ai-service → http://backend:8000

@@ -1,4 +1,5 @@
 import Problem from '../models/problem.models.js';
+import Submission from '../models/submission.models.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import ApiError from '../utils/ApiError.js';
@@ -41,6 +42,34 @@ export const getAllProblems = asyncHandler(async (req, res) => {
       .lean(),
     Problem.countDocuments(filter)
   ]);
+  
+  // Attach per-user solved/attempted status if logged in
+  if (req.user) {
+    const userId = req.user._id;
+    const problemIds = problems.map(p => p._id);
+
+    // Get all user submissions for these problems in one query
+    const userSubs = await Submission.find({
+      user: userId,
+      problem: { $in: problemIds }
+    }).select('problem verdict').lean();
+
+    // Build status map: problemId -> 'solved' | 'attempted'
+    const statusMap = {};
+    for (const sub of userSubs) {
+      const pid = sub.problem.toString();
+      if (sub.verdict === 'accepted') {
+        statusMap[pid] = 'solved';
+      } else if (!statusMap[pid]) {
+        statusMap[pid] = 'attempted';
+      }
+    }
+
+    // Attach to each problem
+    for (const p of problems) {
+      p.userStatus = statusMap[p._id.toString()] || 'none';
+    }
+  }
   
   res.status(200).json(
     ApiResponse.success({

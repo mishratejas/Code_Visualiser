@@ -1,106 +1,158 @@
+/**
+ * api.js — Axios instance + all API helpers
+ *
+ * All AI calls go through the Node backend (/api/v1/ai/*)
+ * which proxies to the FastAPI AI service (:8001).
+ * Frontend never calls :8001 directly.
+ *
+ * Architecture:
+ *   Frontend → Node Backend :8000/api/v1/ai/* → AI Service :8001/api/v1/*
+ */
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 const api = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  baseURL: BASE_URL,
   withCredentials: true,
+  timeout: 30000,
 });
 
-// Request interceptor
+// Request interceptor — attach JWT
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Response interceptor
+// Response interceptor — unwrap data, handle errors
 api.interceptors.response.use(
   (response) => response.data,
   (error) => {
-    const message = error.response?.data?.message || error.message || 'An error occurred';
-    
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
-    } else if (error.response?.status === 403) {
-      toast.error('You do not have permission to perform this action');
-    } else if (error.response?.status === 429) {
-      toast.error('Too many requests. Please try again later.');
-    } else if (error.response?.status >= 500) {
-      toast.error('Server error. Please try again later.');
-    } else {
-      toast.error(message);
-    }
-    
+    if (error.response?.status === 429) toast.error('Too many requests. Please try again later.');
+    else if (error.response?.status >= 500) toast.error('Server error. Please try again later.');
     return Promise.reject(error);
   }
 );
 
-// Individual function exports
-export const getProblemById = (id) => api.get(`/problems/${id}`);
-export const runCode = (data) => api.post('/submissions/run', data);
-export const submitSolution = (data) => api.post('/submissions', data);
-
-// API group exports
+// ── Auth ─────────────────────────────────────────────────────────────────────
 export const authApi = {
-  login: (credentials) => api.post('/auth/login', credentials),
-  register: (userData) => api.post('/auth/register', userData),
-  logout: () => api.post('/auth/logout'),
-  refresh: () => api.post('/auth/refresh'),
-  verify: () => api.get('/auth/verify'),
+  login:    (data)  => api.post('/auth/login', data),
+  register: (data)  => api.post('/auth/register', data),
+  logout:   ()      => api.post('/auth/logout'),
+  me:       ()      => api.get('/auth/me'),
+  refresh:  ()      => api.post('/auth/refresh'),
 };
 
+// ── Problems ─────────────────────────────────────────────────────────────────
 export const problemsApi = {
-  getAll: (params) => api.get('/problems', { params }),
-  getById: (id) => api.get(`/problems/${id}`), // This is also here
-  create: (problemData) => api.post('/problems', problemData),
-  update: (id, problemData) => api.put(`/problems/${id}`, problemData),
-  delete: (id) => api.delete(`/problems/${id}`),
-  runTests: (data) => api.post('/problems/run', data),
+  getAll:       (params) => api.get('/problems', { params }),
+  getById:      (id)     => api.get(`/problems/${id}`),
+  getBySlug:    (slug)   => api.get(`/problems/slug/${slug}`),
+  getCategories:()       => api.get('/problems/categories'),
+  getFavorites: ()       => api.get('/problems/favorites'),
+  toggleFav:   (id)      => api.post(`/problems/${id}/favorite`),
+  create:      (data)    => api.post('/problems', data),
 };
 
+// ── Submissions ───────────────────────────────────────────────────────────────
 export const submissionsApi = {
-  getAll: (params) => api.get('/submissions', { params }),
-  getById: (id) => api.get(`/submissions/${id}`),
-  create: (submissionData) => api.post('/submissions', submissionData),
-  getUserSubmissions: (userId) => api.get(`/submissions/user/${userId}`),
-  getProblemSubmissions: (problemId) => api.get(`/submissions/problem/${problemId}`),
+  submit:            (data)        => api.post('/submissions', data),
+  runCode:           (data)        => api.post('/submissions/run', data),
+  getAll:            (params)      => api.get('/submissions', { params }),
+  getById:           (id)          => api.get(`/submissions/${id}`),
+  getForProblem:     (problemId)   => api.get(`/submissions/problem/${problemId}`),
+  getRecent:         ()            => api.get('/submissions/recent'),
 };
 
-export const contestsApi = {
-  getAll: (params) => api.get('/contests', { params }),
-  getById: (id) => api.get(`/contests/${id}`),
-  create: (contestData) => api.post('/contests', contestData),
-  update: (id, contestData) => api.put(`/contests/${id}`, contestData),
-  delete: (id) => api.delete(`/contests/${id}`),
-  register: (id) => api.post(`/contests/${id}/register`),
-  submit: (contestId, submissionData) => api.post(`/contests/${contestId}/submit`, submissionData),
-  getLeaderboard: (contestId) => api.get(`/contests/${contestId}/leaderboard`),
+// ── Users ─────────────────────────────────────────────────────────────────────
+export const usersApi = {
+  getProfile:   (id)    => api.get(`/users/${id}`),
+  updateProfile:(id, d) => api.patch(`/users/${id}`, d),
+  getStats:     (id)    => api.get(`/users/${id}/stats`),
+  uploadAvatar: (formData) => api.post('/users/avatar', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
 };
 
+// ── Leaderboard ──────────────────────────────────────────────────────────────
 export const leaderboardApi = {
   getGlobal: (params) => api.get('/leaderboard', { params }),
-  getContest: (contestId) => api.get(`/leaderboard/contest/${contestId}`),
+  getContest:(id)     => api.get(`/leaderboard/contest/${id}`),
 };
 
-export const usersApi = {
-  getProfile: (username) => api.get(`/users/${username}`),
-  updateProfile: (userData) => api.put('/users/profile', userData),
-  updateAvatar: (formData) => api.put('/users/avatar', formData),
-  getStats: (userId) => api.get(`/users/${userId}/stats`),
+// ── Notifications ────────────────────────────────────────────────────────────
+export const notificationsApi = {
+  getAll:    (params) => api.get('/notifications', { params }),
+  markRead:  (id)     => api.patch(`/notifications/${id}/read`),
+  markAllRead:()      => api.patch('/notifications/read-all'),
+  getUnreadCount:()   => api.get('/notifications/unread-count'),
+};
+
+// ── Achievements ─────────────────────────────────────────────────────────────
+export const achievementsApi = {
+  getAll:   ()   => api.get('/achievements'),
+  getMine:  ()   => api.get('/achievements/me'),
+};
+
+// ── Contests ─────────────────────────────────────────────────────────────────
+export const contestsApi = {
+  getAll:    (params) => api.get('/contests', { params }),
+  getById:   (id)     => api.get(`/contests/${id}`),
+  create:    (data)   => api.post('/contests', data),
+  register:  (id)     => api.post(`/contests/${id}/register`),
+  getLeaderboard:(id) => api.get(`/contests/${id}/leaderboard`),
+};
+
+// ── AI Service (proxied through Node backend) ─────────────────────────────────
+export const aiApi = {
+  /**
+   * Full code analysis: complexity + quality + anti-patterns + suggestions
+   * Node backend proxies this to AI service :8001/api/v1/analyze/code
+   */
+  analyze: (data) => api.post('/ai/analyze', data),
+
+  /**
+   * Quick structural-only analysis (no Gemini, instant response)
+   */
+  quickComplexity: (data) => api.post('/ai/complexity', data),
+
+  /**
+   * Plagiarism check for a contest
+   */
+  checkPlagiarism: (contestId) => api.post('/plagiarism/check', { contestId }),
+
+  /**
+   * Compare two submissions
+   */
+  comparePlagiarism: (sub1Id, sub2Id) => api.post('/plagiarism/compare', { submission1Id: sub1Id, submission2Id: sub2Id }),
+
+  /**
+   * Get AI interview question
+   */
+  getInterviewQuestion: (params) => api.post('/ai/interview/question', params),
+
+  /**
+   * Evaluate interview solution
+   */
+  evaluateInterview: (data) => api.post('/ai/interview/evaluate', data),
+
+  /**
+   * Get hint for interview
+   */
+  getHint: (data) => api.post('/ai/interview/hint', data),
+
+  /**
+   * Get personalized problem recommendations
+   */
+  getRecommendations: (data) => api.post('/ai/recommendations', data),
+
+  /**
+   * Get learning path
+   */
+  getLearningPath: (data) => api.post('/ai/learning-path', data),
 };
 
 export default api;

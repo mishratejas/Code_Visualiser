@@ -1,187 +1,146 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FiMail, FiLock, FiEye, FiEyeOff, FiCode } from 'react-icons/fi';
+import { useTheme } from '../context/ThemeContext';
+import { FiMail, FiLock, FiEye, FiEyeOff, FiCode, FiSun, FiMoon } from 'react-icons/fi';
 import { FcGoogle } from 'react-icons/fc';
 import { toast } from 'react-hot-toast';
 import Button from '../components/common/Button';
 
+const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1')
+  .replace('/api/v1', '');
+
 const Login = () => {
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  });
+  const [formData, setFormData]         = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const [loading, setLoading]           = useState(false);
+  const { login }                       = useAuth();
+  const { toggleTheme, isDark }         = useTheme();
+  const navigate                        = useNavigate();
+  const location                        = useLocation();
   const from = location.state?.from?.pathname || '/dashboard';
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
-  };
+  const handleChange = (e) =>
+    setFormData({ ...formData, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-
     try {
       await login(formData);
       navigate(from, { replace: true });
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Login failed');
-    } finally {
-      setLoading(false);
-    }
+    } catch { /* toast already shown in AuthContext */ }
+    finally { setLoading(false); }
   };
 
   const handleGoogleLogin = () => {
-    toast.success('Google login coming soon!');
+    window.location.href = `${BACKEND_URL}/api/v1/auth/google`;
   };
 
+  const bg    = isDark ? 'bg-gray-950'   : 'bg-gray-50';
+  const txt   = isDark ? 'text-white'    : 'text-gray-900';
+  const sub   = isDark ? 'text-gray-400' : 'text-gray-600';
+  const card  = isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200';
+  const inp   = isDark ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500'
+                       : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-400';
+  const lbl   = isDark ? 'text-gray-300' : 'text-gray-700';
+  const divCl = isDark ? 'border-gray-700': 'border-gray-300';
+
   return (
-    <div className="min-h-[80vh] flex items-center justify-center px-4 bg-gray-950">
-      <div className="max-w-md w-full space-y-8">
-        <div className="text-center">
-          <div className="flex justify-center mb-4">
-            <div className="h-12 w-12 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 flex items-center justify-center">
-              <FiCode className="h-6 w-6 text-white" />
+    <div className={`min-h-screen flex items-center justify-center px-4 py-12 ${bg}`}>
+      {/* Theme toggle */}
+      <button onClick={toggleTheme}
+        className={`fixed top-20 right-4 z-50 p-2.5 rounded-full ${
+          isDark ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700'
+                 : 'bg-white text-gray-700 hover:bg-gray-100 shadow-lg'
+        } transition-all`}>
+        {isDark ? <FiSun className="w-4 h-4" /> : <FiMoon className="w-4 h-4" />}
+      </button>
+
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="text-center mb-6">
+          <div className="flex justify-center mb-3">
+            <div className="h-10 w-10 rounded-lg bg-gradient-to-r from-rose-500 to-red-500 flex items-center justify-center">
+              <FiCode className="h-5 w-5 text-white" />
             </div>
           </div>
-          <h2 className="text-3xl font-bold text-white">
-            Welcome Back
-          </h2>
-          <p className="mt-2 text-gray-400">
-            Sign in to your account to continue
-          </p>
+          <h2 className={`text-2xl font-bold ${txt}`}>Welcome Back</h2>
+          <p className={`mt-1 text-sm ${sub}`}>Sign in to your CodeForge account</p>
         </div>
 
-        <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8 shadow-2xl">
-          {/* Google Login Button */}
-          <button
-            onClick={handleGoogleLogin}
-            className="w-full flex items-center justify-center px-4 py-3 border border-gray-700 rounded-lg hover:bg-gray-800 transition mb-6"
-          >
-            <FcGoogle className="h-5 w-5 mr-2" />
-            <span className="text-gray-300 font-medium">
-              Continue with Google
-            </span>
+        <div className={`${card} border rounded-xl p-6 shadow-lg`}>
+          {/* Google */}
+          <button onClick={handleGoogleLogin}
+            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 border ${divCl} rounded-lg ${
+              isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-50'
+            } transition mb-4`}>
+            <FcGoogle className="h-5 w-5" />
+            <span className={`text-sm font-medium ${sub}`}>Continue with Google</span>
           </button>
 
-          <div className="relative mb-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-700"></div>
+          <div className="relative mb-4">
+            <div className={`absolute inset-0 flex items-center`}>
+              <div className={`w-full border-t ${divCl}`} />
             </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-gray-900 text-gray-500">
+            <div className="relative flex justify-center text-xs">
+              <span className={`px-3 ${isDark ? 'bg-gray-900 text-gray-500' : 'bg-white text-gray-400'}`}>
                 Or continue with email
               </span>
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
+              <label htmlFor="email" className={`block text-xs font-medium ${lbl} mb-1.5`}>
                 Email address
               </label>
               <div className="relative">
-                <FiMail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-white placeholder-gray-500"
-                  placeholder="you@example.com"
-                />
+                <FiMail className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm ${sub}`} />
+                <input id="email" name="email" type="email" autoComplete="email" required
+                  value={formData.email} onChange={handleChange}
+                  className={`w-full pl-9 pr-4 py-2.5 ${inp} border rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-sm`}
+                  placeholder="you@example.com" />
               </div>
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
+              <label htmlFor="password" className={`block text-xs font-medium ${lbl} mb-1.5`}>
                 Password
               </label>
               <div className="relative">
-                <FiLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                <input
-                  id="password"
-                  name="password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  required
-                  value={formData.password}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-12 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-white placeholder-gray-500"
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-rose-400"
-                >
-                  {showPassword ? <FiEyeOff /> : <FiEye />}
+                <FiLock className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm ${sub}`} />
+                <input id="password" name="password" type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password" required
+                  value={formData.password} onChange={handleChange}
+                  className={`w-full pl-9 pr-10 py-2.5 ${inp} border rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-sm`}
+                  placeholder="••••••••" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)}
+                  className={`absolute right-3 top-1/2 -translate-y-1/2 ${sub}`}>
+                  {showPassword ? <FiEyeOff className="h-4 w-4" /> : <FiEye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
 
             <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <input
-                  id="remember-me"
-                  name="remember-me"
-                  type="checkbox"
-                  className="h-4 w-4 text-rose-600 focus:ring-rose-500 border-gray-700 rounded bg-gray-800"
-                />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-300">
-                  Remember me
-                </label>
-              </div>
-
-              <Link
-                to="/forgot-password"
-                className="text-sm text-rose-400 hover:text-rose-300"
-              >
+              <label className={`flex items-center gap-2 text-xs ${sub}`}>
+                <input type="checkbox" className="h-3.5 w-3.5 rounded text-rose-500 focus:ring-rose-500" />
+                Remember me
+              </label>
+              <Link to="/forgot-password" className="text-xs text-rose-500 hover:text-rose-400">
                 Forgot password?
               </Link>
             </div>
 
-            <Button
-              type="submit"
-              loading={loading}
-              size="large"
-              fullWidth
-              className="bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700"
-            >
-              {loading ? 'Signing in...' : 'Sign in'}
+            <Button type="submit" loading={loading} size="medium" fullWidth
+              className="py-2.5 text-sm bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-600 hover:to-red-600">
+              {loading ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
 
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-400">
-              Don't have an account?{' '}
-              <Link
-                to="/register"
-                className="font-medium text-rose-400 hover:text-rose-300"
-              >
-                Sign up
-              </Link>
-            </p>
-          </div>
-        </div>
-
-        <div className="text-center">
-          <p className="text-xs text-gray-500">
-            By continuing, you agree to our{' '}
-            <Link to="/terms" className="underline text-gray-400 hover:text-rose-400">Terms of Service</Link>{' '}
-            and{' '}
-            <Link to="/privacy" className="underline text-gray-400 hover:text-rose-400">Privacy Policy</Link>.
+          <p className={`mt-4 text-center text-xs ${sub}`}>
+            Don't have an account?{' '}
+            <Link to="/register" className="font-medium text-rose-500 hover:text-rose-400">Sign up</Link>
           </p>
         </div>
       </div>

@@ -14,7 +14,7 @@ import {
   searchUsers,
   deleteAccount
 } from '../controllers/user.controller.js';
-import { authenticate, authorize } from '../middlewares/auth.middleware.js';
+import { protect, authorize } from '../middlewares/auth.middleware.js';
 import { UserValidation } from '../middlewares/validate.middleware.js';
 import { uploadAvatar, deleteAvatar, updatePreferences, getStreak } from '../controllers/user.controller.js';
 import { upload } from '../middlewares/upload.js';
@@ -25,8 +25,8 @@ const router = express.Router();
 router.get('/leaderboard', getLeaderboard);
 router.get('/search', searchUsers);
 
-// ============ AUTHENTICATED ROUTES ============
-router.use(authenticate);
+// ============ protectD ROUTES ============
+router.use(protect);
 
 // Current user endpoints (use /me)
 router.get('/me/profile', getUserProfile);

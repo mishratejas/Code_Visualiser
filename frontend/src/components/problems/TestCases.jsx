@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { FiCheck, FiX, FiEye, FiEyeOff, FiCopy, FiChevronRight, FiChevronDown } from 'react-icons/fi';
+import { useTheme } from '../../context/ThemeContext';
+import { FiCheck, FiX, FiCopy, FiChevronRight, FiChevronDown } from 'react-icons/fi';
 import { BsLightning, BsMemory } from 'react-icons/bs';
 import { toast } from 'react-hot-toast';
 
@@ -12,16 +13,23 @@ const TestCase = ({
   result = null,
   isExpanded = false
 }) => {
+  const { isDark } = useTheme();
   const [copied, setCopied] = useState(false);
   const [localExpanded, setLocalExpanded] = useState(isExpanded);
 
   const passed = result?.passed || false;
   const status = passed ? 'passed' : (result ? 'failed' : 'pending');
-  
-  // Format text to handle \n properly
+
+  // Theme-specific classes
+  const cardClass = isDark 
+    ? 'bg-gray-800 border-gray-700' 
+    : 'bg-white border-gray-200';
+  const textClass = isDark ? 'text-white' : 'text-gray-900';
+  const subTextClass = isDark ? 'text-gray-400' : 'text-gray-600';
+  const codeBgClass = isDark ? 'bg-gray-900' : 'bg-gray-100';
+
   const formatText = (text) => {
     if (!text) return '';
-    // Replace escaped newlines with actual newlines
     return text.replace(/\\n/g, '\n');
   };
 
@@ -34,208 +42,138 @@ const TestCase = ({
 
   const getStatusColor = () => {
     switch (status) {
-      case 'passed': return {
-        bg: 'bg-gradient-to-r from-green-50 to-emerald-50/50 dark:from-green-900/20 dark:to-emerald-900/10',
-        border: 'border-green-200/50 dark:border-green-800/30',
-        text: 'text-green-700 dark:text-green-300',
-        icon: <FiCheck className="text-green-500" />,
-        badge: 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
-      };
-      case 'failed': return {
-        bg: 'bg-gradient-to-r from-red-50 to-pink-50/50 dark:from-red-900/20 dark:to-pink-900/10',
-        border: 'border-red-200/50 dark:border-red-800/30',
-        text: 'text-red-700 dark:text-red-300',
-        icon: <FiX className="text-red-500" />,
-        badge: 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
-      };
-      default: return {
-        bg: 'bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-gray-800 dark:to-gray-900',
-        border: 'border-gray-200/50 dark:border-gray-700/30',
-        text: 'text-gray-700 dark:text-gray-300',
-        icon: null,
-        badge: 'bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200'
-      };
+      case 'passed':
+        return {
+          bg: isDark ? 'bg-green-500/10' : 'bg-green-50',
+          border: isDark ? 'border-green-800' : 'border-green-200',
+          text: 'text-green-500',
+          icon: <FiCheck className="text-green-500" />
+        };
+      case 'failed':
+        return {
+          bg: isDark ? 'bg-red-500/10' : 'bg-red-50',
+          border: isDark ? 'border-red-800' : 'border-red-200',
+          text: 'text-red-500',
+          icon: <FiX className="text-red-500" />
+        };
+      default:
+        return {
+          bg: isDark ? 'bg-gray-800' : 'bg-gray-50',
+          border: isDark ? 'border-gray-700' : 'border-gray-200',
+          text: subTextClass,
+          icon: null
+        };
     }
   };
 
   const statusColor = getStatusColor();
 
   return (
-    <div className={`test-case rounded-2xl border ${statusColor.border} p-5 mb-4 transition-all duration-300 hover:shadow-lg ${statusColor.bg}`}>
+    <div className={`${cardClass} border rounded-xl p-4 mb-3 transition-all`}>
       {/* Header */}
       <button
         onClick={() => setLocalExpanded(!localExpanded)}
-        className="w-full flex items-center justify-between mb-4"
+        className="w-full flex items-center justify-between"
       >
-        <div className="flex items-center space-x-4">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${statusColor.bg} border ${statusColor.border}`}>
-            <span className="font-bold text-gray-900 dark:text-white">{index + 1}</span>
+        <div className="flex items-center gap-3">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${statusColor.bg}`}>
+            <span className={`text-sm font-medium ${textClass}`}>{index + 1}</span>
           </div>
-          
-          <div>
-            <div className="flex items-center space-x-3">
-              <h4 className="font-bold text-gray-900 dark:text-white">
-                Test Case {index + 1}
-              </h4>
-              {isHidden && (
-                <span className="flex items-center px-2.5 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs rounded-lg font-medium">
-                  <FiEyeOff className="mr-1.5" size={12} />
-                  Hidden
+          <div className="flex items-center gap-3">
+            <span className={`text-sm font-medium ${textClass}`}>
+              Test Case {index + 1}
+            </span>
+            {isHidden && (
+              <span className={`px-2 py-0.5 text-xs ${isDark ? 'bg-gray-700' : 'bg-gray-200'} rounded-full ${subTextClass}`}>
+                Hidden
+              </span>
+            )}
+            {result && (
+              <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${statusColor.bg}`}>
+                {statusColor.icon}
+                <span className={`text-xs font-medium ${statusColor.text}`}>
+                  {passed ? 'Passed' : 'Failed'}
                 </span>
-              )}
-              {!isHidden && explanation && (
-                <span className="flex items-center px-2.5 py-1 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs rounded-lg font-medium">
-                  <FiEye className="mr-1.5" size={12} />
-                  With Explanation
-                </span>
-              )}
-            </div>
-            
-            <div className="flex items-center space-x-4 mt-1">
-              <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-                <BsLightning className="mr-1.5" />
-                {result?.runtime || 0}ms
               </div>
-              <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-                <BsMemory className="mr-1.5" />
-                {result?.memory || 0}MB
-              </div>
-            </div>
+            )}
           </div>
         </div>
-        
-        <div className="flex items-center space-x-4">
-          {result && (
-            <div className={`flex items-center px-4 py-2 rounded-xl font-bold ${statusColor.badge}`}>
-              {statusColor.icon}
-              <span className="ml-2">{passed ? 'PASSED' : 'FAILED'}</span>
-            </div>
-          )}
-          
-          {/* FIXED: Changed from isExpanded to localExpanded */}
-          {localExpanded ? (
-            <FiChevronDown className="text-gray-400 text-xl" />
-          ) : (
-            <FiChevronRight className="text-gray-400 text-xl" />
-          )}
-        </div>
+        {localExpanded ? (
+          <FiChevronDown className={subTextClass} />
+        ) : (
+          <FiChevronRight className={subTextClass} />
+        )}
       </button>
-      
+
       {/* Expanded Content */}
-      {/* FIXED: Changed from isExpanded to localExpanded */}
       {localExpanded && (
-        <div className="space-y-6 pt-4 border-t border-gray-200/50 dark:border-gray-700/30">
-          {/* Input/Output Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <div className="flex justify-between items-center mb-3">
-                <div className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
-                  <span className="mr-2">📥</span> Input
-                </div>
-                <button
-                  onClick={() => copyToClipboard(input)}
-                  className="flex items-center text-sm px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                >
-                  {copied ? (
-                    <>
-                      <FiCheck className="mr-1.5 text-green-500" />
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <FiCopy className="mr-1.5" />
-                      Copy
-                    </>
-                  )}
-                </button>
-              </div>
-              <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
-                <pre className="text-sm whitespace-pre-wrap break-words font-mono text-gray-100">
-                  {formatText(input) || "No input"}
-                </pre>
-              </div>
+        <div className="mt-4 space-y-4">
+          {/* Input */}
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className={`text-sm font-medium ${textClass}`}>Input:</span>
+              <button
+                onClick={() => copyToClipboard(input)}
+                className={`flex items-center gap-1 text-xs ${subTextClass} hover:${isDark ? 'text-rose-400' : 'text-rose-600'}`}
+              >
+                {copied ? (
+                  <><FiCheck className="h-3 w-3" /> Copied!</>
+                ) : (
+                  <><FiCopy className="h-3 w-3" /> Copy</>
+                )}
+              </button>
             </div>
-            
-            <div>
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center">
-                <span className="mr-2">📤</span> Expected Output
-              </div>
-              <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
-                <pre className="text-sm whitespace-pre-wrap break-words font-mono text-gray-100">
-                  {formatText(expectedOutput) || "No output"}
-                </pre>
-              </div>
-            </div>
+            <pre className={`${codeBgClass} p-3 rounded-lg text-sm font-mono overflow-x-auto ${textClass}`}>
+              {formatText(input) || '(empty)'}
+            </pre>
           </div>
-          
-          {/* Your Output (if result exists) */}
-          {result && (
+
+          {/* Expected Output */}
+          <div>
+            <span className={`text-sm font-medium ${textClass}`}>Expected Output:</span>
+            <pre className={`${codeBgClass} p-3 rounded-lg text-sm font-mono mt-2 ${textClass}`}>
+              {formatText(expectedOutput) || '(empty)'}
+            </pre>
+          </div>
+
+          {/* Actual Output (if result exists) */}
+          {result?.actualOutput && (
             <div>
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center">
-                <span className="mr-2">🖥️</span> Your Output
-              </div>
-              <div className={`rounded-xl p-4 border ${passed ? 'border-green-200/50 dark:border-green-800/30 bg-green-50/30 dark:bg-green-900/10' : 'border-red-200/50 dark:border-red-800/30 bg-red-50/30 dark:bg-red-900/10'}`}>
-                <pre className="text-sm whitespace-pre-wrap break-words font-mono">
-                  {formatText(result.actualOutput) || "No output"}
-                </pre>
-              </div>
+              <span className={`text-sm font-medium ${textClass}`}>Your Output:</span>
+              <pre className={`${codeBgClass} p-3 rounded-lg text-sm font-mono mt-2 ${textClass}`}>
+                {formatText(result.actualOutput) || '(empty)'}
+              </pre>
             </div>
           )}
-          
+
           {/* Error Message */}
           {result?.error && (
-            <div>
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center">
-                <span className="mr-2">⚠️</span> Error Message
-              </div>
-              <div className="bg-red-900/20 rounded-xl p-4 border border-red-800/30">
-                <pre className="text-sm whitespace-pre-wrap break-words font-mono text-red-200">
-                  {result.error}
-                </pre>
-              </div>
+            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+              <span className={`text-sm font-medium text-red-500`}>Error:</span>
+              <pre className={`text-sm font-mono mt-1 text-red-400`}>
+                {result.error}
+              </pre>
             </div>
           )}
-          
+
           {/* Explanation */}
           {explanation && !isHidden && (
             <div>
-              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center">
-                <span className="mr-2">💡</span> Explanation
-              </div>
-              <div className="bg-gradient-to-r from-blue-50/30 to-cyan-50/20 dark:from-blue-900/10 dark:to-cyan-900/10 rounded-xl p-4 border border-blue-200/30 dark:border-blue-700/30">
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                  {explanation}
-                </div>
-              </div>
+              <span className={`text-sm font-medium ${textClass}`}>Explanation:</span>
+              <p className={`text-sm ${subTextClass} mt-1`}>{explanation}</p>
             </div>
           )}
-          
+
           {/* Performance Stats */}
           {result && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200/30 dark:border-gray-700/30">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Status</div>
-                <div className={`font-bold ${passed ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                  {passed ? 'Passed' : 'Failed'}
-                </div>
+            <div className="flex gap-4 pt-2">
+              <div className="flex items-center gap-1">
+                <BsLightning className={subTextClass} />
+                <span className={`text-xs ${textClass}`}>{result.runtime || 0}ms</span>
               </div>
-              <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200/30 dark:border-gray-700/30">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Runtime</div>
-                <div className="font-bold text-gray-900 dark:text-white">
-                  {result.runtime || 0}ms
-                </div>
-              </div>
-              <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200/30 dark:border-gray-700/30">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Memory</div>
-                <div className="font-bold text-gray-900 dark:text-white">
-                  {result.memory || 0}MB
-                </div>
-              </div>
-              <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200/30 dark:border-gray-700/30">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Score</div>
-                <div className="font-bold text-gray-900 dark:text-white">
-                  {result.score || (passed ? '100' : '0')}
-                </div>
+              <div className="flex items-center gap-1">
+                <BsMemory className={subTextClass} />
+                <span className={`text-xs ${textClass}`}>{result.memory || 0}MB</span>
               </div>
             </div>
           )}
@@ -245,89 +183,4 @@ const TestCase = ({
   );
 };
 
-// TestCaseList Component
-const TestCaseList = ({ testCases = [], results = [] }) => {
-  const [expandedAll, setExpandedAll] = useState(false);
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Test Cases ({testCases.length})
-          </h3>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            {results.length > 0 
-              ? `${results.filter(r => r.passed).length} of ${results.length} passed`
-              : 'Run code to see results'
-            }
-          </p>
-        </div>
-        
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={() => setExpandedAll(!expandedAll)}
-            className="px-4 py-2 bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium"
-          >
-            {expandedAll ? 'Collapse All' : 'Expand All'}
-          </button>
-          <button className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-medium">
-            Run All Tests
-          </button>
-        </div>
-      </div>
-
-      {/* Test Cases Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {testCases.map((testCase, index) => (
-          <TestCase
-            key={index}
-            index={index}
-            {...testCase}
-            result={results[index]}
-            isExpanded={expandedAll}
-          />
-        ))}
-      </div>
-
-      {/* Summary */}
-      {results.length > 0 && (
-        <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-2xl shadow-lg border border-gray-200/50 dark:border-gray-700/30 p-6">
-          <h4 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
-            Test Results Summary
-          </h4>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <div className="text-3xl font-extrabold text-green-600 dark:text-green-400">
-                {results.filter(r => r.passed).length}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Passed</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-extrabold text-red-600 dark:text-red-400">
-                {results.filter(r => !r.passed).length}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Failed</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-extrabold text-gray-900 dark:text-white">
-                {Math.round(results.reduce((sum, r) => sum + (r.runtime || 0), 0) / results.length)}ms
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Avg Runtime</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-extrabold text-gray-900 dark:text-white">
-                {Math.round((results.filter(r => r.passed).length / results.length) * 100)}%
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Success Rate</div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default TestCaseList;
-export { TestCase };
+export default TestCase;

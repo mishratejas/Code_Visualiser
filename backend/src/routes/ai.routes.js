@@ -1,51 +1,49 @@
+/**
+ * AI Routes — Node backend proxies all /api/v1/ai/* to FastAPI AI service (:8001)
+ * 
+ * This way the frontend only ever talks to one backend (:8000).
+ * The AI service is an internal microservice.
+ */
 import express from 'express';
-import {
-    analyzeSubmission,
-    getRecommendations,
-    getSkillGapAnalysis,
-    analyzeCode,
-    startInterview,
-    runPlagiarismCheck
-} from '../controllers/ai.controller.js';
-import { authenticate, authorize } from '../middlewares/auth.middleware.js';
+import axios from 'axios';
+import { protect } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
+const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8001';
 
-// All routes require authentication
-router.use(authenticate);
+const proxyToAI = (path) => async (req, res) => {
+  try {
+    const response = await axios({
+      method: req.method,
+      url: `${AI_URL}${path}`,
+      data: req.body,
+      timeout: 45000,
+    });
+    res.json(response.data);
+  } catch (err) {
+    const status = err.response?.status || 503;
+    const detail = err.response?.data?.detail || 'AI service unavailable';
+    res.status(status).json({ success: false, message: detail });
+  }
+};
 
-// ============================================
-// SUBMISSION ANALYSIS ROUTES
-// ============================================
+// All AI routes require authentication
+router.use(protect);
 
-// Analyze a specific submission
-router.post('/submissions/:id/analyze', analyzeSubmission);
+// Code analysis (full: Gemini + structural)
+router.post('/analyze',          proxyToAI('/api/v1/analyze/code'));
 
-// Real-time code analysis (no submission required)
-router.post('/analyze/code', analyzeCode);
+// Quick structural complexity only (no Gemini call)
+router.post('/complexity',       proxyToAI('/api/v1/analyze/complexity'));
 
-// ============================================
-// RECOMMENDATIONS & LEARNING ROUTES
-// ============================================
+// Interview
+router.post('/interview/question',     proxyToAI('/api/v1/interview/question'));
+router.post('/interview/evaluate',     proxyToAI('/api/v1/interview/evaluate'));
+router.post('/interview/hint',         proxyToAI('/api/v1/interview/hint'));
+router.post('/interview/check-explanation', proxyToAI('/api/v1/interview/check-explanation'));
 
-// Get personalized problem recommendations
-router.get('/recommendations', getRecommendations);
-
-// Get user's skill gap analysis
-router.get('/skill-gap', getSkillGapAnalysis);
-
-// ============================================
-// INTERVIEW SYSTEM ROUTES
-// ============================================
-
-// Start an AI-powered interview session
-router.post('/interview/start', startInterview);
-
-// ============================================
-// PLAGIARISM DETECTION (ADMIN ONLY)
-// ============================================
-
-// Run plagiarism check for a contest (admin only)
-router.post('/plagiarism/check', authorize('admin'), runPlagiarismCheck);
+// Recommendations
+router.post('/recommendations',  proxyToAI('/api/v1/recommendations/problems'));
+router.post('/learning-path',    proxyToAI('/api/v1/recommendations/learning-path'));
 
 export default router;

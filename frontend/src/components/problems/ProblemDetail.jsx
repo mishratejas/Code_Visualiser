@@ -1,33 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import { FiChevronDown, FiChevronUp, FiCopy, FiCheck, FiShare2, FiBookmark, FiBookmarkFill } from 'react-icons/fi';
-import { BsLightningFill, BsCheckCircle, BsClock, BsCodeSlash } from 'react-icons/bs';
-import { AiOutlineRocket } from 'react-icons/ai';
+// frontend/src/components/problems/ProblemDetail.jsx
+import React, { useState } from 'react';
+import { useTheme } from '../../context/ThemeContext';
+import { FiChevronDown, FiChevronUp, FiCopy, FiCheck, FiShare2, FiBookmark, FiClock, FiBarChart2, FiCpu } from 'react-icons/fi';
+import { BsLightningFill } from 'react-icons/bs';
 import { toast } from 'react-hot-toast';
 
 const ProblemDetail = ({ problem }) => {
+  const { isDark } = useTheme();
   const [copiedIndex, setCopiedIndex] = useState(-1);
   const [expandedSections, setExpandedSections] = useState({
     description: true,
     examples: true,
     constraints: true,
-    tags: true,
-    hints: true
   });
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [activeExample, setActiveExample] = useState(0);
 
-  useEffect(() => {
-    // Check if problem is bookmarked
-    const bookmarks = JSON.parse(localStorage.getItem('bookmarkedProblems') || '[]');
-    setIsBookmarked(bookmarks.includes(problem._id));
-  }, [problem._id]);
-
-  const toggleSection = (section) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [section]: !prev[section]
-    }));
-  };
+  // Theme-specific classes
+  const cardClass = isDark 
+    ? 'bg-gray-800 border-gray-700' 
+    : 'bg-white border-gray-200 shadow-sm';
+  const textClass = isDark ? 'text-white' : 'text-gray-900';
+  const subTextClass = isDark ? 'text-gray-400' : 'text-gray-600';
+  const accentClass = isDark ? 'text-rose-400' : 'text-rose-600';
+  const codeBgClass = isDark ? 'bg-gray-900' : 'bg-gray-100';
 
   const copyToClipboard = (text, index) => {
     navigator.clipboard.writeText(text);
@@ -37,145 +33,93 @@ const ProblemDetail = ({ problem }) => {
   };
 
   const toggleBookmark = () => {
-    const bookmarks = JSON.parse(localStorage.getItem('bookmarkedProblems') || '[]');
-    if (isBookmarked) {
-      const newBookmarks = bookmarks.filter(id => id !== problem._id);
-      localStorage.setItem('bookmarkedProblems', JSON.stringify(newBookmarks));
-      setIsBookmarked(false);
-      toast.success('Removed from bookmarks');
-    } else {
-      bookmarks.push(problem._id);
-      localStorage.setItem('bookmarkedProblems', JSON.stringify(bookmarks));
-      setIsBookmarked(true);
-      toast.success('Added to bookmarks');
+    setIsBookmarked(!isBookmarked);
+    toast.success(isBookmarked ? 'Removed from bookmarks' : 'Added to bookmarks');
+  };
+
+  const getDifficultyColor = (difficulty) => {
+    switch(difficulty?.toLowerCase()) {
+      case 'easy': return 'text-green-500 bg-green-500/10';
+      case 'medium': return 'text-yellow-500 bg-yellow-500/10';
+      case 'hard': return 'text-red-500 bg-red-500/10';
+      default: return 'text-gray-500 bg-gray-500/10';
     }
   };
 
-  const shareProblem = () => {
-    const url = window.location.href;
-    navigator.clipboard.writeText(url);
-    toast.success('Link copied to clipboard!');
+  const formatText = (text) => {
+    if (!text) return '';
+    return text.replace(/\\n/g, '\n');
   };
 
-  const renderDifficultyBadge = (difficulty) => {
-    const styles = {
-      easy: 'bg-gradient-to-r from-green-400 to-emerald-500 text-white',
-      medium: 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white',
-      hard: 'bg-gradient-to-r from-red-400 to-pink-500 text-white'
-    };
-    
-    return (
-      <span className={`px-4 py-2 rounded-full text-sm font-bold shadow-lg ${styles[difficulty] || 'bg-gray-100 text-gray-800'}`}>
-        {difficulty?.toUpperCase()}
-      </span>
-    );
-  };
-
-  const renderStatItem = (icon, label, value, color) => (
-    <div className={`bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-2xl p-5 border border-gray-200/50 dark:border-gray-700/50 hover:shadow-lg transition-all hover:scale-[1.02] ${color}`}>
-      <div className="flex flex-col items-center text-center">
-        <div className="mb-3 p-3 rounded-xl bg-opacity-20 bg-white dark:bg-gray-700">
-          {icon}
-        </div>
-        <div className="text-2xl font-extrabold text-gray-900 dark:text-white mb-1">
-          {value}
-        </div>
-        <div className="text-sm text-gray-600 dark:text-gray-400 font-medium">
-          {label}
-        </div>
-      </div>
-    </div>
-  );
+  if (!problem) return null;
 
   return (
-    <div className="space-y-8">
-      {/* Problem Header */}
-      <div className="bg-gradient-to-br from-white to-blue-50/30 dark:from-gray-800 dark:to-blue-900/10 rounded-3xl p-8 shadow-xl border border-blue-100/50 dark:border-blue-900/30">
-        <div className="flex flex-col lg:flex-row justify-between items-start gap-6 mb-6">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className={`${cardClass} rounded-xl p-6 border`}>
+        <div className="flex flex-col md:flex-row justify-between gap-4">
           <div className="flex-1">
-            <div className="flex items-center gap-4 mb-4">
-              {renderDifficultyBadge(problem.difficulty)}
-              <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-lg">
-                Problem ID: {problem._id?.slice(-6).toUpperCase()}
-              </div>
+            <div className="flex items-center gap-3 mb-3">
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${getDifficultyColor(problem.difficulty)}`}>
+                {problem.difficulty?.toUpperCase()}
+              </span>
+              <span className={`text-xs ${subTextClass}`}>ID: {problem._id?.slice(-6)}</span>
             </div>
-            <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white mb-4 leading-tight">
-              {problem.title}
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400 text-lg max-w-3xl">
-              {problem.shortDescription || problem.description?.substring(0, 200) + '...'}
-            </p>
+            <h1 className={`text-2xl font-bold ${textClass} mb-2`}>{problem.title}</h1>
+            <p className={`text-sm ${subTextClass}`}>{problem.description}</p>
           </div>
           
-          <div className="flex flex-col items-end gap-4">
-            <div className="text-right">
-              <div className="text-4xl font-extrabold text-gray-900 dark:text-white mb-1">
-                {problem.metadata?.acceptanceRate?.toFixed(1) || 0}%
-              </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400 font-medium">Acceptance</div>
-            </div>
-            
-            <div className="flex gap-3">
-              <button
-                onClick={toggleBookmark}
-                className="p-3 rounded-xl bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 hover:from-gray-200 hover:to-gray-300 dark:hover:from-gray-600 dark:hover:to-gray-700 transition-all hover:scale-105"
-                title={isBookmarked ? "Remove bookmark" : "Bookmark problem"}
-              >
-                {isBookmarked ? 
-                  <FiBookmarkFill className="text-yellow-500 text-xl" /> : 
-                  <FiBookmark className="text-gray-500 dark:text-gray-400 text-xl" />
-                }
-              </button>
-              
-              <button
-                onClick={shareProblem}
-                className="p-3 rounded-xl bg-gradient-to-r from-blue-100 to-blue-200 dark:from-blue-900 dark:to-blue-800 hover:from-blue-200 hover:to-blue-300 dark:hover:from-blue-800 dark:hover:to-blue-700 transition-all hover:scale-105"
-                title="Share problem"
-              >
-                <FiShare2 className="text-blue-600 dark:text-blue-400 text-xl" />
-              </button>
-            </div>
+          <div className="flex items-start gap-2">
+            <button
+              onClick={toggleBookmark}
+              className={`p-2 rounded-lg ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} transition-colors`}
+            >
+              <FiBookmark className={`h-5 w-5 ${isBookmarked ? accentClass : subTextClass}`} />
+            </button>
+            <button
+              onClick={() => copyToClipboard(window.location.href, -1)}
+              className={`p-2 rounded-lg ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} transition-colors`}
+            >
+              <FiShare2 className={`h-5 w-5 ${subTextClass}`} />
+            </button>
           </div>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mb-8">
-          {renderStatItem(
-            <BsLightningFill className="text-2xl text-yellow-500" />,
-            'Time Limit',
-            `${problem.constraints?.timeLimit || 2000}ms`,
-            'hover:border-yellow-200 dark:hover:border-yellow-800'
-          )}
-          {renderStatItem(
-            <BsCodeSlash className="text-2xl text-purple-500" />,
-            'Memory Limit',
-            `${problem.constraints?.memoryLimit || 256}MB`,
-            'hover:border-purple-200 dark:hover:border-purple-800'
-          )}
-          {renderStatItem(
-            <BsCheckCircle className="text-2xl text-green-500" />,
-            'Submissions',
-            (problem.metadata?.submissions || 0).toLocaleString(),
-            'hover:border-green-200 dark:hover:border-green-800'
-          )}
-          {renderStatItem(
-            <BsClock className="text-2xl text-blue-500" />,
-            'Views',
-            (problem.metadata?.views || 0).toLocaleString(),
-            'hover:border-blue-200 dark:hover:border-blue-800'
-          )}
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+          <div className="text-center">
+            <div className={`text-xl font-bold ${textClass}`}>
+              {problem.metadata?.acceptanceRate?.toFixed(1) || 0}%
+            </div>
+            <div className={`text-xs ${subTextClass}`}>Acceptance</div>
+          </div>
+          <div className="text-center">
+            <div className={`text-xl font-bold ${textClass}`}>
+              {problem.constraints?.timeLimit || 2000}ms
+            </div>
+            <div className={`text-xs ${subTextClass}`}>Time Limit</div>
+          </div>
+          <div className="text-center">
+            <div className={`text-xl font-bold ${textClass}`}>
+              {problem.constraints?.memoryLimit || 256}MB
+            </div>
+            <div className={`text-xs ${subTextClass}`}>Memory</div>
+          </div>
+          <div className="text-center">
+            <div className={`text-xl font-bold ${textClass}`}>
+              {problem.metadata?.submissions || 0}
+            </div>
+            <div className={`text-xs ${subTextClass}`}>Submissions</div>
+          </div>
         </div>
 
         {/* Tags */}
         {problem.tags && problem.tags.length > 0 && (
-          <div className="flex flex-wrap gap-3">
-            <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center">
-              <span className="mr-2">🏷️</span> Tags:
-            </div>
+          <div className="flex flex-wrap gap-2 mt-4">
             {problem.tags.map((tag, index) => (
               <span
                 key={index}
-                className="px-4 py-2 bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/40 dark:to-blue-800/40 text-blue-700 dark:text-blue-300 text-sm font-medium rounded-xl border border-blue-200/50 dark:border-blue-700/50 hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-md transition-all"
+                className={`px-3 py-1 text-xs ${isDark ? 'bg-gray-800' : 'bg-gray-100'} rounded-full ${subTextClass}`}
               >
                 {tag}
               </span>
@@ -184,310 +128,183 @@ const ProblemDetail = ({ problem }) => {
         )}
       </div>
 
-      {/* Problem Sections */}
-      <div className="space-y-6">
-        {/* Description */}
-        <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-3xl shadow-xl overflow-hidden border border-gray-200/50 dark:border-gray-700/50">
-          <button
-            onClick={() => toggleSection('description')}
-            className="w-full px-8 py-6 flex justify-between items-center hover:bg-gray-50/50 dark:hover:bg-gray-750/50 transition-all"
-          >
-            <div className="flex items-center">
-              <div className="w-2 h-8 bg-gradient-to-b from-blue-500 to-purple-500 rounded-full mr-4"></div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                Description
-              </h2>
+      {/* Description */}
+      <div className={`${cardClass} rounded-xl border overflow-hidden`}>
+        <button
+          onClick={() => setExpandedSections(prev => ({ ...prev, description: !prev.description }))}
+          className="w-full px-6 py-4 flex justify-between items-center"
+        >
+          <h2 className={`font-bold ${textClass}`}>Description</h2>
+          {expandedSections.description ? 
+            <FiChevronUp className={subTextClass} /> : 
+            <FiChevronDown className={subTextClass} />
+          }
+        </button>
+        {expandedSections.description && (
+          <div className="px-6 pb-6">
+            <div className={`text-sm ${subTextClass} whitespace-pre-line`}>
+              {problem.description}
             </div>
-            {expandedSections.description ? 
-              <FiChevronUp className="text-gray-500 text-xl" /> : 
-              <FiChevronDown className="text-gray-500 text-xl" />
+          </div>
+        )}
+      </div>
+
+      {/* Input/Output Format */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {problem.inputFormat && (
+          <div className={`${cardClass} rounded-xl p-6 border`}>
+            <h3 className={`font-bold mb-3 ${textClass}`}>Input Format</h3>
+            <div className={`text-sm ${subTextClass} whitespace-pre-line`}>
+              {problem.inputFormat}
+            </div>
+          </div>
+        )}
+        {problem.outputFormat && (
+          <div className={`${cardClass} rounded-xl p-6 border`}>
+            <h3 className={`font-bold mb-3 ${textClass}`}>Output Format</h3>
+            <div className={`text-sm ${subTextClass} whitespace-pre-line`}>
+              {problem.outputFormat}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Examples */}
+      {problem.sampleInput && problem.sampleInput.length > 0 && (
+        <div className={`${cardClass} rounded-xl border overflow-hidden`}>
+          <button
+            onClick={() => setExpandedSections(prev => ({ ...prev, examples: !prev.examples }))}
+            className="w-full px-6 py-4 flex justify-between items-center"
+          >
+            <h2 className={`font-bold ${textClass}`}>Examples</h2>
+            {expandedSections.examples ? 
+              <FiChevronUp className={subTextClass} /> : 
+              <FiChevronDown className={subTextClass} />
             }
           </button>
-          {expandedSections.description && (
-            <div className="px-8 pb-8">
-              <div 
-                className="prose prose-lg dark:prose-invert max-w-none prose-blue prose-headings:font-bold prose-code:bg-gray-100 dark:prose-code:bg-gray-800 prose-code:px-2 prose-code:py-1 prose-code:rounded-lg"
-                dangerouslySetInnerHTML={{ __html: problem.description }}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Input/Output Format */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-gradient-to-br from-white to-emerald-50/30 dark:from-gray-800 dark:to-emerald-900/10 rounded-3xl shadow-xl overflow-hidden border border-emerald-100/50 dark:border-emerald-800/30">
-            <div className="px-8 py-6 border-b border-emerald-200/30 dark:border-emerald-700/30 bg-gradient-to-r from-emerald-50/50 to-transparent dark:from-emerald-900/20">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center">
-                <span className="mr-3 text-emerald-500">📥</span>
-                Input Format
-              </h2>
-            </div>
-            <div className="px-8 py-6">
-              <pre className="text-sm whitespace-pre-wrap bg-gray-900 text-gray-100 p-6 rounded-xl font-mono border border-gray-800">
-                {problem.inputFormat || 'No specific input format defined.'}
-              </pre>
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-br from-white to-purple-50/30 dark:from-gray-800 dark:to-purple-900/10 rounded-3xl shadow-xl overflow-hidden border border-purple-100/50 dark:border-purple-800/30">
-            <div className="px-8 py-6 border-b border-purple-200/30 dark:border-purple-700/30 bg-gradient-to-r from-purple-50/50 to-transparent dark:from-purple-900/20">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center">
-                <span className="mr-3 text-purple-500">📤</span>
-                Output Format
-              </h2>
-            </div>
-            <div className="px-8 py-6">
-              <pre className="text-sm whitespace-pre-wrap bg-gray-900 text-gray-100 p-6 rounded-xl font-mono border border-gray-800">
-                {problem.outputFormat || 'No specific output format defined.'}
-              </pre>
-            </div>
-          </div>
-        </div>
-
-        {/* Examples */}
-        {problem.sampleInput && problem.sampleInput.length > 0 && (
-          <div className="bg-gradient-to-br from-white to-yellow-50/30 dark:from-gray-800 dark:to-yellow-900/10 rounded-3xl shadow-xl overflow-hidden border border-yellow-100/50 dark:border-yellow-800/30">
-            <button
-              onClick={() => toggleSection('examples')}
-              className="w-full px-8 py-6 flex justify-between items-center hover:bg-yellow-50/30 dark:hover:bg-yellow-900/20 transition-all"
-            >
-              <div className="flex items-center">
-                <div className="w-2 h-8 bg-gradient-to-b from-yellow-500 to-orange-500 rounded-full mr-4"></div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                  Examples ({problem.sampleInput.length})
-                </h2>
-              </div>
-              {expandedSections.examples ? 
-                <FiChevronUp className="text-gray-500 text-xl" /> : 
-                <FiChevronDown className="text-gray-500 text-xl" />
-              }
-            </button>
-            {expandedSections.examples && (
-              <div className="px-8 pb-8">
-                {/* Example Navigation */}
-                <div className="flex space-x-2 mb-6 overflow-x-auto pb-2">
+          {expandedSections.examples && (
+            <div className="px-6 pb-6">
+              {/* Example Navigation */}
+              {problem.sampleInput.length > 1 && (
+                <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
                   {problem.sampleInput.map((_, index) => (
                     <button
                       key={index}
                       onClick={() => setActiveExample(index)}
-                      className={`px-5 py-3 rounded-xl font-medium whitespace-nowrap transition-all ${activeExample === index
-                          ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white shadow-lg'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                        }`}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        activeExample === index
+                          ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white'
+                          : isDark
+                            ? 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
                     >
                       Example {index + 1}
                     </button>
                   ))}
                 </div>
-                
-                {/* Active Example Content */}
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div>
-                      <div className="flex justify-between items-center mb-3">
-                        <div className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
-                          <span className="mr-2">📥</span> Input
-                        </div>
-                        <button
-                          onClick={() => copyToClipboard(problem.sampleInput[activeExample], activeExample)}
-                          className="flex items-center text-sm px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                        >
-                          {copiedIndex === activeExample ? (
-                            <>
-                              <FiCheck className="mr-1 text-green-500" />
-                              Copied!
-                            </>
-                          ) : (
-                            <>
-                              <FiCopy className="mr-1" />
-                              Copy Input
-                            </>
-                          )}
-                        </button>
-                      </div>
-                      <pre className="text-sm whitespace-pre-wrap bg-gray-900 text-gray-100 p-5 rounded-xl border border-gray-800">
-                        {problem.sampleInput[activeExample]}
-                      </pre>
-                    </div>
-                    
-                    {problem.sampleOutput && problem.sampleOutput[activeExample] && (
-                      <div>
-                        <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center">
-                          <span className="mr-2">📤</span> Output
-                        </div>
-                        <pre className="text-sm whitespace-pre-wrap bg-gray-900 text-gray-100 p-5 rounded-xl border border-gray-800">
-                          {problem.sampleOutput[activeExample]}
-                        </pre>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-gray-800/50 dark:to-gray-900/50 p-5 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
-                    <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center">
-                      <span className="mr-2">💡</span> Explanation
-                    </div>
-                    <div className="text-gray-600 dark:text-gray-400 italic">
-                      {problem.sampleExplanation?.[activeExample] || 'No explanation provided.'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
 
-        {/* Constraints */}
-        {problem.constraints && (
-          <div className="bg-gradient-to-br from-white to-red-50/30 dark:from-gray-800 dark:to-red-900/10 rounded-3xl shadow-xl overflow-hidden border border-red-100/50 dark:border-red-800/30">
-            <button
-              onClick={() => toggleSection('constraints')}
-              className="w-full px-8 py-6 flex justify-between items-center hover:bg-red-50/30 dark:hover:bg-red-900/20 transition-all"
-            >
-              <div className="flex items-center">
-                <div className="w-2 h-8 bg-gradient-to-b from-red-500 to-pink-500 rounded-full mr-4"></div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                  Constraints
-                </h2>
-              </div>
-              {expandedSections.constraints ? 
-                <FiChevronUp className="text-gray-500 text-xl" /> : 
-                <FiChevronDown className="text-gray-500 text-xl" />
-              }
-            </button>
-            {expandedSections.constraints && (
-              <div className="px-8 pb-8">
-                <div className="bg-gradient-to-br from-gray-50 to-gray-100/30 dark:from-gray-800/50 dark:to-gray-900/50 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50">
-                  <ul className="space-y-4">
-                    <li className="flex items-start">
-                      <div className="w-2 h-2 bg-red-500 rounded-full mt-2 mr-3"></div>
-                      <div className="text-gray-700 dark:text-gray-300">
-                        <strong className="font-semibold">Time Limit:</strong> {problem.constraints.timeLimit}ms
-                      </div>
-                    </li>
-                    <li className="flex items-start">
-                      <div className="w-2 h-2 bg-red-500 rounded-full mt-2 mr-3"></div>
-                      <div className="text-gray-700 dark:text-gray-300">
-                        <strong className="font-semibold">Memory Limit:</strong> {problem.constraints.memoryLimit}MB
-                      </div>
-                    </li>
-                    {problem.constraints.inputConstraints && (
-                      <li className="flex items-start">
-                        <div className="w-2 h-2 bg-red-500 rounded-full mt-2 mr-3"></div>
-                        <div className="text-gray-700 dark:text-gray-300">
-                          <strong className="font-semibold">Input Constraints:</strong> {problem.constraints.inputConstraints}
-                        </div>
-                      </li>
-                    )}
-                    {problem.constraints.otherConstraints && (
-                      <li className="flex items-start">
-                        <div className="w-2 h-2 bg-red-500 rounded-full mt-2 mr-3"></div>
-                        <div className="text-gray-700 dark:text-gray-300">
-                          <strong className="font-semibold">Other:</strong> {problem.constraints.otherConstraints}
-                        </div>
-                      </li>
-                    )}
-                  </ul>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Hints */}
-        {problem.hints && problem.hints.length > 0 && (
-          <div className="bg-gradient-to-br from-white to-blue-50/50 dark:from-gray-800 dark:to-blue-900/20 rounded-3xl shadow-xl overflow-hidden border border-blue-100/50 dark:border-blue-800/30">
-            <button
-              onClick={() => toggleSection('hints')}
-              className="w-full px-8 py-6 flex justify-between items-center hover:bg-blue-50/30 dark:hover:bg-blue-900/20 transition-all"
-            >
-              <div className="flex items-center">
-                <div className="w-2 h-8 bg-gradient-to-b from-blue-500 to-cyan-500 rounded-full mr-4"></div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                  💡 Hints ({problem.hints.length})
-                </h2>
-              </div>
-              {expandedSections.hints ? 
-                <FiChevronUp className="text-gray-500 text-xl" /> : 
-                <FiChevronDown className="text-gray-500 text-xl" />
-              }
-            </button>
-            {expandedSections.hints && (
-              <div className="px-8 pb-8">
-                <div className="space-y-4">
-                  {problem.hints.map((hint, index) => (
-                    <div
-                      key={index}
-                      className="flex items-start space-x-4 p-5 bg-gradient-to-r from-blue-50/50 to-cyan-50/30 dark:from-blue-900/20 dark:to-cyan-900/10 rounded-2xl border border-blue-200/30 dark:border-blue-700/30 hover:border-blue-300 dark:hover:border-blue-600 transition-all"
+              {/* Active Example */}
+              <div className="space-y-4">
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className={`text-sm font-medium ${textClass}`}>Input:</span>
+                    <button
+                      onClick={() => copyToClipboard(problem.sampleInput[activeExample], activeExample)}
+                      className={`flex items-center gap-1 text-xs ${subTextClass} hover:${accentClass}`}
                     >
-                      <span className="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl text-sm font-bold">
-                        {index + 1}
-                      </span>
-                      <p className="text-gray-700 dark:text-gray-300 pt-1">{hint}</p>
-                    </div>
-                  ))}
+                      {copiedIndex === activeExample ? (
+                        <><FiCheck className="h-3 w-3" /> Copied!</>
+                      ) : (
+                        <><FiCopy className="h-3 w-3" /> Copy</>
+                      )}
+                    </button>
+                  </div>
+                  <pre className={`${codeBgClass} p-3 rounded-lg text-sm font-mono overflow-x-auto ${textClass}`}>
+                    {formatText(problem.sampleInput[activeExample])}
+                  </pre>
+                </div>
+                
+                {problem.sampleOutput && problem.sampleOutput[activeExample] && (
+                  <div>
+                    <span className={`text-sm font-medium ${textClass}`}>Output:</span>
+                    <pre className={`${codeBgClass} p-3 rounded-lg text-sm font-mono mt-2 ${textClass}`}>
+                      {formatText(problem.sampleOutput[activeExample])}
+                    </pre>
+                  </div>
+                )}
+                
+                {problem.sampleExplanation && problem.sampleExplanation[activeExample] && (
+                  <div>
+                    <span className={`text-sm font-medium ${textClass}`}>Explanation:</span>
+                    <p className={`text-sm ${subTextClass} mt-2`}>
+                      {problem.sampleExplanation[activeExample]}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Constraints */}
+      {problem.constraints && (
+        <div className={`${cardClass} rounded-xl border overflow-hidden`}>
+          <button
+            onClick={() => setExpandedSections(prev => ({ ...prev, constraints: !prev.constraints }))}
+            className="w-full px-6 py-4 flex justify-between items-center"
+          >
+            <h2 className={`font-bold ${textClass}`}>Constraints</h2>
+            {expandedSections.constraints ? 
+              <FiChevronUp className={subTextClass} /> : 
+              <FiChevronDown className={subTextClass} />
+            }
+          </button>
+          {expandedSections.constraints && (
+            <div className="px-6 pb-6">
+              <div className="space-y-2">
+                {problem.constraints.inputConstraints && (
+                  <div className={`text-sm ${subTextClass}`}>
+                    <span className="font-medium">Input:</span> {problem.constraints.inputConstraints}
+                  </div>
+                )}
+                {problem.constraints.outputConstraints && (
+                  <div className={`text-sm ${subTextClass}`}>
+                    <span className="font-medium">Output:</span> {problem.constraints.outputConstraints}
+                  </div>
+                )}
+                <div className={`text-sm ${subTextClass}`}>
+                  <span className="font-medium">Time Limit:</span> {problem.constraints.timeLimit}ms
+                </div>
+                <div className={`text-sm ${subTextClass}`}>
+                  <span className="font-medium">Memory Limit:</span> {problem.constraints.memoryLimit}MB
                 </div>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
+      )}
 
-        {/* Follow-up */}
-        {problem.followUp && (
-          <div className="bg-gradient-to-br from-white to-emerald-50/50 dark:from-gray-800 dark:to-emerald-900/20 rounded-3xl shadow-xl p-8 border border-emerald-100/50 dark:border-emerald-800/30">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <AiOutlineRocket className="mr-3 text-emerald-500 text-2xl" />
-              🚀 Follow-up Challenge
-            </h2>
-            <p className="text-gray-700 dark:text-gray-300 bg-gradient-to-r from-emerald-50/30 to-transparent dark:from-emerald-900/10 p-5 rounded-2xl">
-              {problem.followUp}
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Quick Action Bar */}
-      <div className="sticky bottom-6 bg-gradient-to-r from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-2xl shadow-2xl border border-gray-200/70 dark:border-gray-700/70 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={toggleBookmark}
-              className={`flex items-center px-4 py-2.5 rounded-xl font-medium transition-all ${isBookmarked
-                  ? 'bg-gradient-to-r from-yellow-50 to-yellow-100 dark:from-yellow-900/30 dark:to-yellow-800/30 text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-700'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                }`}
-            >
-              {isBookmarked ? 
-                <FiBookmarkFill className="mr-2" /> : 
-                <FiBookmark className="mr-2" />
-              }
-              {isBookmarked ? 'Bookmarked' : 'Bookmark'}
-            </button>
-            <button
-              onClick={shareProblem}
-              className="flex items-center px-4 py-2.5 bg-gradient-to-r from-blue-100 to-blue-200 dark:from-blue-900/30 dark:to-blue-800/30 text-blue-700 dark:text-blue-300 rounded-xl font-medium hover:from-blue-200 hover:to-blue-300 dark:hover:from-blue-800 dark:hover:to-blue-700 transition-all"
-            >
-              <FiShare2 className="mr-2" />
-              Share
-            </button>
-          </div>
-          
-          <div className="flex items-center space-x-4">
-            <a
-              href={`/submit/${problem._id}`}
-              className="flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-blue-500/30 transition-all hover:scale-105"
-            >
-              <BsLightningFill className="mr-2" />
-              Solve Problem
-            </a>
-            <a
-              href={`/problems`}
-              className="flex items-center px-6 py-3 bg-gradient-to-r from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 text-gray-800 dark:text-gray-300 rounded-xl font-bold hover:shadow-lg transition-all hover:scale-105"
-            >
-              Browse Problems
-            </a>
+      {/* Hints */}
+      {problem.hints && problem.hints.length > 0 && (
+        <div className={`${cardClass} rounded-xl p-6 border`}>
+          <h3 className={`font-bold mb-3 ${textClass}`}>Hints</h3>
+          <div className="space-y-3">
+            {problem.hints.map((hint, index) => (
+              <div key={index} className="flex gap-3">
+                <div className={`flex-shrink-0 w-6 h-6 rounded-full bg-rose-500/20 flex items-center justify-center text-rose-500 text-xs font-bold`}>
+                  {index + 1}
+                </div>
+                <p className={`text-sm ${subTextClass}`}>
+                  {typeof hint === 'string' ? hint : hint.content || hint.title}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

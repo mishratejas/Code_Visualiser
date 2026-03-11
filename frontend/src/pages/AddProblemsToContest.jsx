@@ -138,7 +138,7 @@ const fetchData = async () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 to-black">
+      <div className="flex items-center justify-center py-20">
         <div className="text-center">
           <Loader />
           <p className="text-gray-400 mt-4">Loading contest and problems...</p>
@@ -149,7 +149,7 @@ const fetchData = async () => {
 
   if (!contest) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 to-black">
+      <div className="flex items-center justify-center py-20">
         <div className="text-center">
           <p className="text-gray-400">Contest not found</p>
           <button
@@ -167,7 +167,7 @@ const fetchData = async () => {
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
       <div className="relative overflow-hidden rounded-3xl">
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 opacity-90"></div>
+        <div className="absolute inset-0 bg-gradient-to-r from-rose-600 via-red-600 to-pink-600 opacity-90"></div>
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-32 translate-x-32"></div>
         
         <div className="relative z-10 p-8 text-white">
@@ -210,13 +210,13 @@ const fetchData = async () => {
               placeholder="Search problems by title or description..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-gray-500 transition-all"
+              className="w-full pl-12 pr-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-blue-500 text-white placeholder-gray-500 transition-all"
             />
           </div>
           <select
             value={difficultyFilter}
             onChange={(e) => setDifficultyFilter(e.target.value)}
-            className="px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl text-white focus:ring-2 focus:ring-blue-500 transition-all min-w-[180px]"
+            className="px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl text-white focus:ring-2 focus:ring-rose-500 transition-all min-w-[180px]"
           >
             <option value="all">All Difficulties</option>
             <option value="easy">Easy</option>
@@ -246,7 +246,7 @@ const fetchData = async () => {
                   setSearchQuery('');
                   setDifficultyFilter('all');
                 }}
-                className="mt-4 text-blue-400 hover:text-blue-300"
+                className="mt-4 text-rose-400 hover:text-blue-300"
               >
                 Clear filters
               </button>
@@ -262,13 +262,13 @@ const fetchData = async () => {
                   onClick={() => toggleProblem(problem._id)}
                   className={`group p-5 rounded-xl border-2 transition-all cursor-pointer hover:scale-[1.01] ${
                     isSelected
-                      ? 'border-blue-500 bg-blue-500/10 shadow-lg'
-                      : 'border-gray-700 hover:border-gray-600 bg-gray-800/30'
+                      ? 'border-rose-500 bg-rose-500/10 shadow-lg'
+                      : 'border-gray-700 hover:border-rose-500/40 bg-gray-800/30'
                   }`}
                 >
                   <div className="flex items-start gap-4">
                     <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                      isSelected ? 'bg-blue-500' : 'bg-gray-700 group-hover:bg-gray-600'
+                      isSelected ? 'bg-rose-500' : 'bg-gray-700 group-hover:bg-gray-600'
                     }`}>
                       {isSelected ? (
                         <FiCheck className="h-6 w-6 text-white" />
@@ -340,7 +340,7 @@ const fetchData = async () => {
             className={`flex-1 px-6 py-3 rounded-xl font-medium transition-all ${
               submitting || selectedProblems.length === 0
                 ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:shadow-lg'
+                : 'bg-gradient-to-r from-rose-600 to-red-600 text-white hover:shadow-lg'
             }`}
           >
             {submitting ? (

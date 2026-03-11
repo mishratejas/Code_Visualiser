@@ -1,27 +1,49 @@
-// Home.jsx
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { 
-  FiCode, FiZap, FiAward, FiBarChart2, FiCpu, FiShield,
-  FiArrowRight, FiUsers, FiTarget, FiCheckCircle, FiMessageSquare,
-  FiBookOpen, FiStar, FiTrendingUp, FiGlobe, FiClock
-} from 'react-icons/fi';
-import { TbBrandPython, TbBinary } from 'react-icons/tb';
-import { SiJavascript, SiOpenjdk, SiCplusplus, SiTypescript } from 'react-icons/si';
-import { FaReact, FaNodeJs, FaGitAlt } from 'react-icons/fa';
+// frontend/src/pages/Home.jsx
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
+import {
+  FiCode,
+  FiZap,
+  FiAward,
+  FiBarChart2,
+  FiCpu,
+  FiShield,
+  FiArrowRight,
+  FiUsers,
+  FiTarget,
+  FiCheckCircle,
+  FiMessageSquare,
+  FiBookOpen,
+  FiStar,
+  FiTrendingUp,
+  FiGlobe,
+  FiClock,
+  FiMoon,
+  FiSun,
+} from "react-icons/fi";
+import { TbBrandPython, TbBinary } from "react-icons/tb";
+import {
+  SiJavascript,
+  SiOpenjdk,
+  SiCplusplus,
+  SiTypescript,
+} from "react-icons/si";
+import { FaReact, FaNodeJs, FaGitAlt } from "react-icons/fa";
 
-import BinaryBackground from '../animations/BinaryBackground';
-import Button from '../components/common/Button';
+import BinaryBackground from "../animations/BinaryBackground";
+import Button from "../components/common/Button";
 
 const Home = () => {
   const { isAuthenticated } = useAuth();
+  const { theme, toggleTheme, isDark } = useTheme();
   const navigate = useNavigate();
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/dashboard');
+      navigate("/dashboard");
     }
 
     const timer = setInterval(() => {
@@ -33,221 +55,381 @@ const Home = () => {
 
   const features = [
     {
-      icon: <FiCode className="text-xl" />,
-      title: 'Advanced Editor',
-      description: 'Full-featured code editor with real-time collaboration and debugging tools.',
-      color: 'from-rose-500/20 to-red-500/10',
-      iconColor: 'text-rose-400'
+      icon: <FiCode className="text-lg" />,
+      title: "Advanced Editor",
+      description:
+        "Full-featured code editor with real-time collaboration and debugging tools.",
+      color: "from-rose-500/20 to-red-500/10",
+      iconColor: "text-rose-400",
+      lightColor: "from-rose-500/10 to-red-500/5",
     },
     {
-      icon: <FiZap className="text-xl" />,
-      title: 'Fast Execution',
-      description: 'Execute code in milliseconds with detailed performance analytics.',
-      color: 'from-orange-500/20 to-red-500/10',
-      iconColor: 'text-orange-400'
+      icon: <FiZap className="text-lg" />,
+      title: "Fast Execution",
+      description:
+        "Execute code in milliseconds with detailed performance analytics.",
+      color: "from-orange-500/20 to-red-500/10",
+      iconColor: "text-orange-400",
+      lightColor: "from-orange-500/10 to-red-500/5",
     },
     {
-      icon: <FiAward className="text-xl" />,
-      title: 'Competitions',
-      description: 'Weekly coding contests with global leaderboards and prizes.',
-      color: 'from-amber-500/20 to-orange-500/10',
-      iconColor: 'text-amber-400'
+      icon: <FiAward className="text-lg" />,
+      title: "Competitions",
+      description:
+        "Weekly coding contests with global leaderboards and prizes.",
+      color: "from-amber-500/20 to-orange-500/10",
+      iconColor: "text-amber-400",
+      lightColor: "from-amber-500/10 to-orange-500/5",
     },
     {
-      icon: <FiBarChart2 className="text-xl" />,
-      title: 'Progress Tracking',
-      description: 'Detailed analytics and personalized learning recommendations.',
-      color: 'from-red-500/20 to-rose-500/10',
-      iconColor: 'text-red-400'
+      icon: <FiBarChart2 className="text-lg" />,
+      title: "Progress Tracking",
+      description:
+        "Detailed analytics and personalized learning recommendations.",
+      color: "from-red-500/20 to-rose-500/10",
+      iconColor: "text-red-400",
+      lightColor: "from-red-500/10 to-rose-500/5",
     },
     {
-      icon: <FiCpu className="text-xl" />,
-      title: 'Multi-Language',
-      description: 'Support for 20+ programming languages and frameworks.',
-      color: 'from-pink-500/20 to-rose-500/10',
-      iconColor: 'text-pink-400'
+      icon: <FiCpu className="text-lg" />,
+      title: "Multi-Language",
+      description: "Support for 20+ programming languages and frameworks.",
+      color: "from-pink-500/20 to-rose-500/10",
+      iconColor: "text-pink-400",
+      lightColor: "from-pink-500/10 to-rose-500/5",
     },
     {
-      icon: <FiShield className="text-xl" />,
-      title: 'Secure Platform',
-      description: 'Isolated execution environment with enterprise-grade security.',
-      color: 'from-purple-500/20 to-pink-500/10',
-      iconColor: 'text-purple-400'
+      icon: <FiShield className="text-lg" />,
+      title: "Secure Platform",
+      description:
+        "Isolated execution environment with enterprise-grade security.",
+      color: "from-purple-500/20 to-pink-500/10",
+      iconColor: "text-purple-400",
+      lightColor: "from-purple-500/10 to-pink-500/5",
     },
   ];
 
   const languages = [
-    { icon: <TbBrandPython />, name: 'Python', color: 'bg-gradient-to-r from-red-500 to-orange-500' },
-    { icon: <SiJavascript />, name: 'JavaScript', color: 'bg-gradient-to-r from-amber-500 to-yellow-500' },
-    { icon: <SiOpenjdk />, name: 'Java', color: 'bg-gradient-to-r from-red-600 to-rose-600' },
-    { icon: <SiCplusplus />, name: 'C++', color: 'bg-gradient-to-r from-blue-500 to-cyan-500' },
-    { icon: <SiTypescript />, name: 'TypeScript', color: 'bg-gradient-to-r from-blue-600 to-indigo-600' },
-    { icon: <FaReact />, name: 'React', color: 'bg-gradient-to-r from-cyan-500 to-blue-500' },
-    { icon: <FaNodeJs />, name: 'Node.js', color: 'bg-gradient-to-r from-green-500 to-emerald-500' },
-    { icon: <FaGitAlt />, name: 'Git', color: 'bg-gradient-to-r from-orange-600 to-red-600' },
-  ];
-
-  const stats = [
-    { number: '10,458+', label: 'Active Developers', icon: <FiUsers /> },
-    { number: '500+', label: 'Coding Problems', icon: <FiCode /> },
-    { number: '150+', label: 'Weekly Contests', icon: <FiTrendingUp /> },
-    { number: '98.7%', label: 'Success Rate', icon: <FiStar /> },
+    {
+      icon: <TbBrandPython />,
+      name: "Python",
+      color: "from-blue-500 to-blue-600",
+      lightColor: "from-blue-400 to-blue-500",
+    },
+    {
+      icon: <SiJavascript />,
+      name: "JavaScript",
+      color: "from-yellow-500 to-amber-500",
+      lightColor: "from-yellow-400 to-amber-400",
+    },
+    {
+      icon: <SiOpenjdk />,
+      name: "Java",
+      color: "from-red-500 to-red-600",
+      lightColor: "from-red-400 to-red-500",
+    },
+    {
+      icon: <SiCplusplus />,
+      name: "C++",
+      color: "from-blue-600 to-indigo-600",
+      lightColor: "from-blue-500 to-indigo-500",
+    },
+    {
+      icon: <SiTypescript />,
+      name: "TypeScript",
+      color: "from-blue-500 to-cyan-500",
+      lightColor: "from-blue-400 to-cyan-400",
+    },
+    {
+      icon: <FaReact />,
+      name: "React",
+      color: "from-cyan-400 to-blue-400",
+      lightColor: "from-cyan-300 to-blue-300",
+    },
+    {
+      icon: <FaNodeJs />,
+      name: "Node.js",
+      color: "from-green-500 to-emerald-500",
+      lightColor: "from-green-400 to-emerald-400",
+    },
+    {
+      icon: <FaGitAlt />,
+      name: "Git",
+      color: "from-orange-500 to-red-500",
+      lightColor: "from-orange-400 to-red-400",
+    },
   ];
 
   const formatTime = () => {
-    return time.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true
+    return time.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
     });
   };
 
   const formatDate = () => {
-    return time.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric'
+    return time.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
     });
   };
 
+  // Theme-specific classes
+  const bgClass = isDark ? "bg-gray-950" : "bg-gray-50";
+  const textClass = isDark ? "text-white" : "text-gray-900";
+  const subTextClass = isDark ? "text-gray-300" : "text-gray-600";
+  const cardBgClass = isDark
+    ? "bg-gray-900/40 backdrop-blur-sm border-gray-700/50"
+    : "bg-white/80 backdrop-blur-sm border-gray-200/50";
+  const cardHoverClass = isDark
+    ? "hover:border-rose-500/30"
+    : "hover:border-rose-400/50";
+  const statBgClass = isDark
+    ? "bg-gray-900/40 border-gray-700/50"
+    : "bg-white/60 border-gray-200/50";
+
   return (
-    <div className="min-h-screen bg-gray-950 text-white overflow-hidden">
-      {/* Binary Background with red tint */}
+    <div className={`min-h-screen ${bgClass} ${textClass} overflow-hidden`}>
+      {/* Binary Background with theme-aware tint */}
       <div className="relative">
         <BinaryBackground />
-        <div className="absolute inset-0 bg-gradient-to-b from-gray-950/40 via-gray-950/70 to-gray-950"></div>
+        <div
+          className={`absolute inset-0 ${
+            isDark
+              ? "bg-gradient-to-b from-gray-950/40 via-gray-950/70 to-gray-950"
+              : "bg-gradient-to-b from-gray-50/40 via-gray-50/70 to-gray-50"
+          }`}
+        ></div>
       </div>
-      
+
+      {/* Theme Toggle Button */}
+      <button
+        onClick={toggleTheme}
+        className={`fixed top-24 right-4 z-50 p-3 rounded-full ${
+          isDark
+            ? "bg-gray-800 text-yellow-400 hover:bg-gray-700"
+            : "bg-white text-gray-700 hover:bg-gray-100 shadow-lg"
+        } transition-all duration-300`}
+        aria-label="Toggle theme"
+      >
+        {isDark ? (
+          <FiSun className="w-5 h-5" />
+        ) : (
+          <FiMoon className="w-5 h-5" />
+        )}
+      </button>
+
       {/* Main Content */}
       <div className="relative z-10">
-        
         {/* Hero Section */}
         <section className="min-h-screen flex items-center pt-20 pb-20">
           <div className="w-full px-4 sm:px-6 lg:px-8">
             <div className="max-w-7xl mx-auto">
-              <div className="grid lg:grid-cols-2 gap-12 items-center">
-                
+              <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
                 {/* Left Content */}
                 <div>
-                  <div className="mb-6">
-                    <div className="inline-flex items-center space-x-2 px-4 py-2 rounded-full bg-gradient-to-r from-rose-500/10 to-red-500/10 border border-rose-500/20">
-                      <TbBinary className="text-rose-400" />
-                      <span className="text-sm font-medium text-rose-400">
+                  <div className="mb-4">
+                    <div
+                      className={`inline-flex items-center space-x-2 px-3 py-1.5 rounded-full ${
+                        isDark
+                          ? "bg-rose-500/10 border-rose-500/20"
+                          : "bg-rose-100 border-rose-200"
+                      } border`}
+                    >
+                      <TbBinary
+                        className={isDark ? "text-rose-400" : "text-rose-600"}
+                      />
+                      <span
+                        className={`text-xs font-medium ${
+                          isDark ? "text-rose-400" : "text-rose-600"
+                        }`}
+                      >
                         The Ultimate Coding Platform
                       </span>
                     </div>
                   </div>
-
-                  <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-                    <span className="text-white">Code. </span>
-                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 via-red-400 to-orange-400">
+                  <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4 leading-tight">
+                    <span className={textClass}>Code. </span>
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-500 to-red-500">
                       Compete.
                     </span>
-                    <span className="block text-white mt-2">Excel.</span>
+                    <span className={`block mt-1 ${textClass}`}>Excel.</span>
                   </h1>
-                  
-                  <p className="text-lg lg:text-xl text-gray-300 mb-8 leading-relaxed">
-                    Join <span className="text-rose-400 font-semibold">10,000+ developers</span> mastering 
-                    algorithms, data structures, and system design. Transform your coding skills through 
-                    practice, competition, and real-world challenges.
+                  <p
+                    className={`text-base lg:text-lg ${subTextClass} mb-6 leading-relaxed max-w-lg`}
+                  >
+                    Join{" "}
+                    <span className="text-rose-500 font-semibold">
+                      10,000+ developers
+                    </span>{" "}
+                    mastering algorithms, data structures, and system design.
                   </p>
-                  
-                  <div className="flex flex-col sm:flex-row gap-4 mb-12">
+                  <div className="flex flex-col sm:flex-row gap-3 mb-8">
                     <Button
-                      size="large"
-                      onClick={() => navigate('/register')}
-                      className="px-8 py-4 text-lg font-semibold bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 border-0"
+                      size="medium"
+                      onClick={() => navigate("/register")}
+                      className="px-6 py-2.5 text-base font-semibold bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-600 hover:to-red-600 border-0"
                     >
-                      <FiCode className="mr-3" />
+                      <FiCode className="mr-2" />
                       Start Free Today
-                      <FiArrowRight className="ml-3" />
+                      <FiArrowRight className="ml-2" />
                     </Button>
-                    
+
                     <Button
                       variant="outline"
-                      size="large"
-                      onClick={() => navigate('/problems')}
-                      className="px-8 py-4 text-lg border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                      size="medium"
+                      onClick={() => navigate("/problems")}
+                      className={`px-6 py-2.5 text-base border ${
+                        isDark
+                          ? "border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                          : "border-rose-400 text-rose-600 hover:bg-rose-50"
+                      }`}
                     >
-                      <FiBookOpen className="mr-3" />
+                      <FiBookOpen className="mr-2" />
                       Explore Problems
                     </Button>
                   </div>
-
-                  {/* Stats */}
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    {stats.map((stat, index) => (
-                      <div 
-                        key={index}
-                        className="bg-gray-900/40 backdrop-blur-sm border border-gray-700/50 rounded-xl p-4 hover:border-rose-500/30 transition-all"
-                      >
-                        <div className="text-2xl font-bold mb-1 bg-gradient-to-r from-rose-400 to-orange-400 bg-clip-text text-transparent">
-                          {stat.number}
-                        </div>
-                        <div className="text-sm text-gray-400 flex items-center">
-                          <span className="mr-2 text-rose-400/80">{stat.icon}</span>
-                          {stat.label}
-                        </div>
+                  {/* Highlights */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div
+                      className={`${statBgClass} border rounded-lg p-3 ${cardHoverClass}`}
+                    >
+                      <div className="flex items-center mb-1 text-rose-500">
+                        <FiTarget className="mr-2" />
+                        <span className="text-sm font-semibold">Practice</span>
                       </div>
-                    ))}
-                  </div>
+                      <p className={`text-xs ${subTextClass}`}>
+                        Solve curated DSA problems designed for interviews.
+                      </p>
+                    </div>
+
+                    <div
+                      className={`${statBgClass} border rounded-lg p-3 ${cardHoverClass}`}
+                    >
+                      <div className="flex items-center mb-1 text-orange-500">
+                        <FiZap className="mr-2" />
+                        <span className="text-sm font-semibold">Compete</span>
+                      </div>
+                      <p className={`text-xs ${subTextClass}`}>
+                        Participate in coding contests and climb the
+                        leaderboard.
+                      </p>
+                    </div>
+
+                    <div
+                      className={`${statBgClass} border rounded-lg p-3 ${cardHoverClass}`}
+                    >
+                      <div className="flex items-center mb-1 text-pink-500">
+                        <FiBarChart2 className="mr-2" />
+                        <span className="text-sm font-semibold">Analyze</span>
+                      </div>
+                      <p className={`text-xs ${subTextClass}`}>
+                        Get AI insights on code quality and complexity.
+                      </p>
+                    </div>
+
+                    <div
+                      className={`${statBgClass} border rounded-lg p-3 ${cardHoverClass}`}
+                    >
+                      <div className="flex items-center mb-1 text-purple-500">
+                        <FiAward className="mr-2" />
+                        <span className="text-sm font-semibold">Achieve</span>
+                      </div>
+                      <p className={`text-xs ${subTextClass}`}>
+                        Track progress and unlock achievements.
+                      </p>
+                    </div>
+                  </div>{" "}
                 </div>
 
                 {/* Right Content - Time & Date */}
                 <div className="flex justify-center lg:justify-end">
                   <div className="relative">
                     {/* Time Display */}
-                    <div className="bg-gradient-to-br from-gray-900/80 to-gray-800/80 backdrop-blur-lg border border-gray-700/50 rounded-2xl p-8 lg:p-10 max-w-md">
-                      <div className="text-center mb-8">
-                        <div className="inline-flex p-4 rounded-xl bg-gradient-to-r from-rose-500/20 to-red-500/20 mb-6">
-                          <FiClock className="h-8 w-8 text-rose-400" />
+                    <div
+                      className={`${cardBgClass} border rounded-xl p-6 lg:p-8 max-w-sm`}
+                    >
+                      <div className="text-center mb-6">
+                        <div
+                          className={`inline-flex p-3 rounded-lg ${
+                            isDark ? "bg-rose-500/20" : "bg-rose-100"
+                          } mb-4`}
+                        >
+                          <FiClock
+                            className={`h-6 w-6 ${isDark ? "text-rose-400" : "text-rose-600"}`}
+                          />
                         </div>
-                        
-                        <div className="text-5xl lg:text-6xl font-bold font-mono text-white mb-2">
+
+                        <div
+                          className={`text-4xl lg:text-5xl font-bold font-mono ${textClass} mb-1`}
+                        >
                           {formatTime()}
                         </div>
-                        <div className="text-lg text-gray-300 mb-6">
+                        <div className={`text-sm ${subTextClass} mb-4`}>
                           {formatDate()}
                         </div>
-                        
-                        <div className="flex items-center justify-center space-x-6 text-sm text-gray-400">
+
+                        <div
+                          className={`flex items-center justify-center space-x-4 text-xs ${
+                            isDark ? "text-gray-400" : "text-gray-500"
+                          }`}
+                        >
                           <div className="flex items-center">
-                            <div className="h-2 w-2 rounded-full bg-green-400 mr-2 animate-pulse"></div>
+                            <div className="h-1.5 w-1.5 rounded-full bg-green-400 mr-1.5 animate-pulse"></div>
                             <span>Platform Active</span>
                           </div>
                           <div className="flex items-center">
-                            <FiUsers className="mr-2 text-rose-400" />
+                            <FiUsers
+                              className={`mr-1.5 ${isDark ? "text-rose-400" : "text-rose-600"}`}
+                            />
                             <span>Live Developers</span>
                           </div>
                         </div>
                       </div>
-                      
+
                       {/* Global Stats */}
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-gray-800/50 rounded-lg p-4 text-center">
-                          <div className="text-2xl font-bold text-rose-400">24/7</div>
-                          <div className="text-xs text-gray-400">Online Support</div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div
+                          className={`${isDark ? "bg-gray-800/50" : "bg-gray-100/80"} rounded-lg p-3 text-center`}
+                        >
+                          <div
+                            className={`text-lg font-bold ${isDark ? "text-rose-400" : "text-rose-600"}`}
+                          >
+                            24/7
+                          </div>
+                          <div
+                            className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}
+                          >
+                            Online Support
+                          </div>
                         </div>
-                        <div className="bg-gray-800/50 rounded-lg p-4 text-center">
-                          <div className="text-2xl font-bold text-orange-400">99.9%</div>
-                          <div className="text-xs text-gray-400">Uptime</div>
-                        </div>
-                        <div className="bg-gray-800/50 rounded-lg p-4 text-center">
-                          <div className="text-2xl font-bold text-amber-400">50+</div>
-                          <div className="text-xs text-gray-400">Countries</div>
-                        </div>
-                        <div className="bg-gray-800/50 rounded-lg p-4 text-center">
-                          <div className="text-2xl font-bold text-red-400">100+</div>
-                          <div className="text-xs text-gray-400">Partners</div>
+                        <div
+                          className={`${isDark ? "bg-gray-800/50" : "bg-gray-100/80"} rounded-lg p-3 text-center`}
+                        >
+                          <div
+                            className={`text-lg font-bold ${isDark ? "text-orange-400" : "text-orange-600"}`}
+                          >
+                            99.9%
+                          </div>
+                          <div
+                            className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}
+                          >
+                            Uptime
+                          </div>
                         </div>
                       </div>
                     </div>
-                    
+
                     {/* Decorative Elements */}
-                    <div className="absolute -top-4 -right-4 h-32 w-32 bg-gradient-to-r from-rose-500/10 to-red-500/10 rounded-full blur-xl"></div>
-                    <div className="absolute -bottom-4 -left-4 h-24 w-24 bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-full blur-xl"></div>
+                    <div
+                      className={`absolute -top-3 -right-3 h-24 w-24 ${
+                        isDark ? "bg-rose-500/10" : "bg-rose-200/50"
+                      } rounded-full blur-xl`}
+                    ></div>
                   </div>
                 </div>
               </div>
@@ -256,37 +438,58 @@ const Home = () => {
         </section>
 
         {/* Features Section */}
-        <section className="py-20 bg-gradient-to-b from-gray-950 to-gray-900/50">
+        <section
+          className={`py-16 ${
+            isDark
+              ? "bg-gradient-to-b from-gray-950 to-gray-900/50"
+              : "bg-gradient-to-b from-gray-50 to-gray-100/50"
+          }`}
+        >
           <div className="w-full px-4 sm:px-6 lg:px-8">
             <div className="max-w-7xl mx-auto">
-              <div className="text-center mb-16">
-                <h2 className="text-4xl font-bold mb-6">
-                  <span className="text-white">Powerful </span>
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-red-400">
+              <div className="text-center mb-12">
+                <h2 className="text-3xl font-bold mb-3">
+                  <span className={textClass}>Powerful </span>
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-500 to-red-500">
                     Features
                   </span>
                 </h2>
-                <p className="text-xl text-gray-400 max-w-3xl mx-auto">
-                  Everything you need to master coding, from beginner to expert level.
+                <p className={`text-base ${subTextClass} max-w-2xl mx-auto`}>
+                  Everything you need to master coding, from beginner to expert
+                  level.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {features.map((feature, index) => (
                   <div
                     key={index}
-                    className="group bg-gray-900/40 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 hover:border-rose-500/30 transition-all duration-300 hover:-translate-y-2"
+                    className={`group ${cardBgClass} border rounded-xl p-6 ${cardHoverClass} transition-all duration-300 hover:-translate-y-1`}
                   >
-                    <div className={`inline-flex p-4 rounded-xl bg-gradient-to-br ${feature.color} ${feature.iconColor} mb-6`}>
+                    <div
+                      className={`inline-flex p-3 rounded-lg bg-gradient-to-br ${isDark ? feature.color : feature.lightColor} ${feature.iconColor} mb-4`}
+                    >
                       {feature.icon}
                     </div>
-                    
-                    <h3 className="text-2xl font-bold mb-4 text-white">{feature.title}</h3>
-                    <p className="text-gray-400 mb-6 leading-relaxed">{feature.description}</p>
-                    
+
+                    <h3 className={`text-lg font-bold mb-2 ${textClass}`}>
+                      {feature.title}
+                    </h3>
+                    <p
+                      className={`text-sm ${subTextClass} mb-4 leading-relaxed`}
+                    >
+                      {feature.description}
+                    </p>
+
                     <div className="flex items-center justify-between">
-                      <span className="text-rose-400 text-sm font-medium">Learn More</span>
-                      <FiArrowRight className={`${feature.iconColor} opacity-0 group-hover:opacity-100 group-hover:translate-x-2 transition-all duration-300`} />
+                      <span
+                        className={`text-xs font-medium ${isDark ? "text-rose-400" : "text-rose-600"}`}
+                      >
+                        Learn More
+                      </span>
+                      <FiArrowRight
+                        className={`${feature.iconColor} opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-300`}
+                      />
                     </div>
                   </div>
                 ))}
@@ -296,31 +499,37 @@ const Home = () => {
         </section>
 
         {/* Languages Section */}
-        <section className="py-20">
+        <section className="py-16">
           <div className="w-full px-4 sm:px-6 lg:px-8">
             <div className="max-w-7xl mx-auto">
-              <div className="text-center mb-16">
-                <h2 className="text-4xl font-bold mb-6 text-white">
-                  Master <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-amber-400">Technologies</span>
+              <div className="text-center mb-12">
+                <h2 className="text-3xl font-bold mb-3">
+                  <span className={textClass}>Master </span>
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-amber-500">
+                    Technologies
+                  </span>
                 </h2>
-                <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-                  Build expertise in the most in-demand programming languages and frameworks.
+                <p className={`text-base ${subTextClass} max-w-xl mx-auto`}>
+                  Build expertise in the most in-demand programming languages.
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                 {languages.map((lang, index) => (
                   <div
                     key={index}
-                    className="group relative bg-gray-900/40 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 hover:border-rose-500/30 transition-all duration-300 hover:-translate-y-2"
+                    className={`group relative ${cardBgClass} border rounded-xl p-6 ${cardHoverClass} transition-all duration-300 hover:-translate-y-1`}
                   >
-                    <div className={`h-16 w-16 rounded-xl ${lang.color} flex items-center justify-center mb-6 mx-auto`}>
-                      <div className="text-2xl text-white">
-                        {lang.icon}
-                      </div>
+                    <div
+                      className={`h-12 w-12 rounded-lg bg-gradient-to-r ${isDark ? lang.color : lang.lightColor} flex items-center justify-center mb-4 mx-auto`}
+                    >
+                      <div className="text-lg text-white">{lang.icon}</div>
                     </div>
-                    <h4 className="text-xl font-bold text-white text-center">{lang.name}</h4>
-                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-rose-500/0 to-red-500/0 group-hover:from-rose-500/5 group-hover:to-red-500/5 transition-all duration-300"></div>
+                    <h4
+                      className={`text-base font-bold ${textClass} text-center`}
+                    >
+                      {lang.name}
+                    </h4>
                   </div>
                 ))}
               </div>
@@ -329,56 +538,81 @@ const Home = () => {
         </section>
 
         {/* CTA Section */}
-        <section className="py-20">
+        <section className="py-16">
           <div className="w-full px-4 sm:px-6 lg:px-8">
-            <div className="max-w-6xl mx-auto">
-              <div className="relative rounded-3xl overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-r from-rose-900/20 via-gray-900/40 to-red-900/20"></div>
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(244,63,94,0.15),transparent_50%)]"></div>
-                
-                <div className="relative z-10 py-16 px-8 text-center">
-                  <h2 className="text-4xl sm:text-5xl font-bold mb-8">
-                    Ready to <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-red-400">Transform</span> Your Skills?
+            <div className="max-w-4xl mx-auto">
+              <div
+                className={`relative rounded-2xl overflow-hidden ${
+                  isDark
+                    ? "bg-gradient-to-r from-rose-900/20 via-gray-900/40 to-red-900/20"
+                    : "bg-gradient-to-r from-rose-100 via-white to-red-100"
+                }`}
+              >
+                <div
+                  className={`absolute inset-0 ${
+                    isDark
+                      ? "bg-[radial-gradient(circle_at_30%_20%,rgba(244,63,94,0.15),transparent_50%)]"
+                      : "bg-[radial-gradient(circle_at_30%_20%,rgba(244,63,94,0.1),transparent_50%)]"
+                  }`}
+                ></div>
+
+                <div className="relative z-10 py-12 px-6 text-center">
+                  <h2 className={`text-3xl font-bold mb-4 ${textClass}`}>
+                    Ready to{" "}
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-500 to-red-500">
+                      Transform
+                    </span>{" "}
+                    Your Skills?
                   </h2>
-                  
-                  <p className="text-xl text-gray-300 mb-12 max-w-2xl mx-auto leading-relaxed">
-                    Join thousands of developers who are accelerating their careers. 
-                    Start your journey today with our comprehensive learning platform.
+
+                  <p
+                    className={`text-sm ${subTextClass} mb-6 max-w-md mx-auto`}
+                  >
+                    Join thousands of developers accelerating their careers.
                   </p>
-                  
-                  <div className="flex flex-col sm:flex-row gap-4 justify-center mb-10">
+
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center mb-6">
                     <Button
-                      size="large"
-                      onClick={() => navigate('/register')}
-                      className="px-12 py-4 text-lg font-semibold bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 border-0 transform hover:scale-105 transition-transform"
+                      size="medium"
+                      onClick={() => navigate("/register")}
+                      className="px-8 py-2.5 text-base font-semibold bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-600 hover:to-red-600 border-0"
                     >
-                      <FiCode className="mr-3" />
+                      <FiCode className="mr-2" />
                       Start Free Today
-                      <FiArrowRight className="ml-3" />
                     </Button>
-                    
+
                     <Button
                       variant="outline"
-                      size="large"
-                      onClick={() => navigate('/contact')}
-                      className="px-12 py-4 text-lg border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                      size="medium"
+                      onClick={() => navigate("/contact")}
+                      className={`px-8 py-2.5 text-base border ${
+                        isDark
+                          ? "border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                          : "border-rose-400 text-rose-600 hover:bg-rose-50"
+                      }`}
                     >
-                      <FiMessageSquare className="mr-3" />
+                      <FiMessageSquare className="mr-2" />
                       Schedule a Demo
                     </Button>
                   </div>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-2xl mx-auto text-sm text-gray-400">
-                    <div className="flex items-center justify-center space-x-2">
-                      <FiCheckCircle className="text-green-400" />
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-xl mx-auto text-xs">
+                    <div
+                      className={`flex items-center justify-center space-x-1.5 ${subTextClass}`}
+                    >
+                      <FiCheckCircle className="text-green-500" />
                       <span>No credit card required</span>
                     </div>
-                    <div className="flex items-center justify-center space-x-2">
-                      <FiCheckCircle className="text-green-400" />
+                    <div
+                      className={`flex items-center justify-center space-x-1.5 ${subTextClass}`}
+                    >
+                      <FiCheckCircle className="text-green-500" />
                       <span>Free forever plan</span>
                     </div>
-                    <div className="flex items-center justify-center space-x-2">
-                      <FiCheckCircle className="text-green-400" />
+                    <div
+                      className={`flex items-center justify-center space-x-1.5 ${subTextClass}`}
+                    >
+                      <FiCheckCircle className="text-green-500" />
                       <span>24/7 community support</span>
                     </div>
                   </div>
