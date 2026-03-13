@@ -12,8 +12,11 @@ const connectMongoDB = async () => {
     
     // For MongoDB Atlas SRV connection, use simpler options
     const conn = await mongoose.connect(uri, {
-      // Remove deprecated options for newer mongoose versions
-      serverSelectionTimeoutMS: 10000, // 10 seconds
+      serverSelectionTimeoutMS: 30000, // 30 seconds
+      connectTimeoutMS: 30000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10,
+      retryWrites: true,
     });
     
     // Check if models are registered

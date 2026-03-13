@@ -68,6 +68,7 @@ export const submissionsApi = {
   getById:           (id)          => api.get(`/submissions/${id}`),
   getForProblem:     (problemId)   => api.get(`/submissions/problem/${problemId}`),
   getRecent:         ()            => api.get('/submissions/recent'),
+  getUserSolved:     ()            => api.get('/submissions/user/solved'),
 };
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -76,6 +77,8 @@ export const usersApi = {
   updateProfile:(id, d) => api.patch(`/users/${id}`, d),
   getStats:     (id)    => api.get(`/users/${id}/stats`),
   uploadAvatar: (formData) => api.post('/users/avatar', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  getBookmarks:  ()      => api.get('/users/me/bookmarks'),
+  toggleBookmark:(problemId) => api.post(`/users/bookmarks/${problemId}`),
 };
 
 // ── Leaderboard ──────────────────────────────────────────────────────────────

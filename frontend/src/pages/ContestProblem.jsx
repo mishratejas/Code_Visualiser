@@ -264,7 +264,7 @@ const ContestProblem = () => {
       });
 
       const isAccepted = verdict === 'Accepted' || verdict === 'accepted';
-      const pointsEarned = contestRes?.data?.data?.pointsEarned ?? 0;
+      const pointsEarned = contestRes?.data?.pointsEarned ?? contestRes?.pointsEarned ?? 0;
 
       setTestResults([{
         verdict,
@@ -403,7 +403,7 @@ const ContestProblem = () => {
               {/* Tabs */}
               <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl rounded-2xl border border-gray-700/50 overflow-hidden">
                 <div className="flex border-b border-gray-700">
-                  {['statement', 'examples', 'hints'].map(tab => (
+                  {['statement', 'hints'].map(tab => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
@@ -418,118 +418,108 @@ const ContestProblem = () => {
                   ))}
                 </div>
 
-                <div className="p-6 max-h-[600px] overflow-y-auto">
+                <div className="p-6 max-h-[600px] overflow-y-auto space-y-6">
                   {activeTab === 'statement' && (
-                    <div className="space-y-6">
-                      <div>
-                        <h3 className="text-xl font-bold mb-3">Problem Description</h3>
-                        <div className="text-gray-300 leading-relaxed whitespace-pre-line">
-                          {problem.description || 'No description available.'}
-                        </div>
+                    <div className="space-y-6 text-sm">
+                      {/* Difficulty + Points + Tags row */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getDifficultyColor(problem.difficulty)}`}>
+                          {problem.difficulty?.toUpperCase()}
+                        </span>
+                        {problem.points && (
+                          <span className="px-3 py-1 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-full text-xs font-semibold">
+                            {problem.points} pts
+                          </span>
+                        )}
+                        {problem.tags?.map((tag, i) => (
+                          <span key={i} className="px-2 py-0.5 bg-gray-700/60 text-gray-300 text-xs rounded-full">{tag}</span>
+                        ))}
                       </div>
 
-                      {problem.inputFormat && (
-                        <div>
-                          <h3 className="text-xl font-bold mb-3">Input Format</h3>
-                          <div className="text-gray-300 leading-relaxed whitespace-pre-line">
-                            {problem.inputFormat}
-                          </div>
-                        </div>
-                      )}
+                      {/* Description */}
+                      <div>
+                        <h3 className="text-base font-bold text-white mb-2">Problem Description</h3>
+                        <p className="text-gray-300 leading-relaxed whitespace-pre-line">
+                          {problem.description || 'No description available.'}
+                        </p>
+                      </div>
 
-                      {problem.outputFormat && (
-                        <div>
-                          <h3 className="text-xl font-bold mb-3">Output Format</h3>
-                          <div className="text-gray-300 leading-relaxed whitespace-pre-line">
-                            {problem.outputFormat}
-                          </div>
-                        </div>
-                      )}
-
-                      {(problem.constraints?.timeLimit || problem.timeLimit || problem.constraints?.memoryLimit || problem.memoryLimit) && (
-                        <div>
-                          <h3 className="text-xl font-bold mb-3">Constraints</h3>
-                          <div className="space-y-2 text-gray-300">
-                            <div className="flex items-center gap-2">
-                              <FiClock className="text-blue-400" />
-                              <span>Time Limit: {problem.constraints?.timeLimit || problem.timeLimit || 2000}ms</span>
+                      {/* Input / Output Format side by side */}
+                      {(problem.inputFormat || problem.outputFormat) && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {problem.inputFormat && (
+                            <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700">
+                              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Input Format</h4>
+                              <p className="text-gray-300 text-sm whitespace-pre-line leading-relaxed">{problem.inputFormat}</p>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <FiBarChart2 className="text-purple-400" />
-                              <span>Memory Limit: {problem.constraints?.memoryLimit || problem.memoryLimit || 256}MB</span>
-                            </div>
-                            {problem.constraints?.inputConstraints && (
-                              <div className="mt-2 text-gray-400 whitespace-pre-line">
-                                {problem.constraints.inputConstraints}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {activeTab === 'examples' && (
-                    <div className="space-y-6">
-                      <h3 className="text-xl font-bold mb-4">Test Cases</h3>
-                      {problem.testCases?.filter(tc => !tc.isHidden).map((testCase, index) => (
-                        <div key={index} className="border border-gray-700 rounded-xl overflow-hidden">
-                          <button
-                            onClick={() => toggleTestCase(index)}
-                            className="w-full flex items-center justify-between px-6 py-4 bg-gray-800/50 hover:bg-gray-700/50 transition-colors"
-                          >
-                            <span className="font-semibold">Example {index + 1}</span>
-                            {expandedTestCases.includes(index) ? 
-                              <FiChevronUp className="text-gray-400" /> : 
-                              <FiChevronDown className="text-gray-400" />
-                            }
-                          </button>
-                          {expandedTestCases.includes(index) && (
-                            <div className="p-6 space-y-4 bg-gray-800/30">
-                              <div>
-                                <div className="flex items-center justify-between mb-2">
-                                  <label className="text-sm font-semibold text-gray-300">Input</label>
-                                  <button
-                                    onClick={() => copyToClipboard(testCase.input)}
-                                    className="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                                  >
-                                    <FiCopy size={14} />
-                                    Copy
-                                  </button>
-                                </div>
-                                <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-sm overflow-x-auto">
-                                  {formatText(testCase.input)}
-                                </pre>
-                              </div>
-                              <div>
-                                <div className="flex items-center justify-between mb-2">
-                                  <label className="text-sm font-semibold text-gray-300">Expected Output</label>
-                                  <button
-                                    onClick={() => copyToClipboard(testCase.expectedOutput)}
-                                    className="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                                  >
-                                    <FiCopy size={14} />
-                                    Copy
-                                  </button>
-                                </div>
-                                <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-sm overflow-x-auto">
-                                  {formatText(testCase.expectedOutput)}
-                                </pre>
-                              </div>
-                              {testCase.explanation && (
-                                <div>
-                                  <label className="text-sm font-semibold text-gray-300 mb-2 block">
-                                    Explanation
-                                  </label>
-                                  <div className="text-gray-300 text-sm">
-                                    {testCase.explanation}
-                                  </div>
-                                </div>
-                              )}
+                          )}
+                          {problem.outputFormat && (
+                            <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700">
+                              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Output Format</h4>
+                              <p className="text-gray-300 text-sm whitespace-pre-line leading-relaxed">{problem.outputFormat}</p>
                             </div>
                           )}
                         </div>
-                      ))}
+                      )}
+
+                      {/* Constraints */}
+                      <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700">
+                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Constraints</h4>
+                        <div className="flex flex-wrap gap-4 text-sm text-gray-300">
+                          <div className="flex items-center gap-2">
+                            <FiClock className="text-blue-400 flex-shrink-0" />
+                            <span>Time Limit: <span className="text-white font-medium">{problem.constraints?.timeLimit || problem.timeLimit || 2000} ms</span></span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <FiBarChart2 className="text-purple-400 flex-shrink-0" />
+                            <span>Memory: <span className="text-white font-medium">{problem.constraints?.memoryLimit || problem.memoryLimit || 256} MB</span></span>
+                          </div>
+                        </div>
+                        {problem.constraints?.inputConstraints && (
+                          <p className="text-gray-400 text-sm mt-3 whitespace-pre-line">{problem.constraints.inputConstraints}</p>
+                        )}
+                      </div>
+
+                      {/* Sample test cases inline */}
+                      {problem.testCases?.length > 0 && (
+                        <div>
+                          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Examples</h4>
+                          <div className="space-y-4">
+                            {problem.testCases.slice(0, 3).map((tc, i) => (
+                              <div key={i} className="bg-gray-800/60 rounded-xl border border-gray-700 overflow-hidden">
+                                <div className="px-4 py-2 bg-gray-700/40 text-xs font-semibold text-gray-300 border-b border-gray-700">
+                                  Example {i + 1}
+                                </div>
+                                <div className="grid grid-cols-2 divide-x divide-gray-700">
+                                  <div className="p-4">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <span className="text-xs text-gray-500 font-medium">Input</span>
+                                      <button onClick={() => copyToClipboard(tc.input)} className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                                        <FiCopy size={11} /> Copy
+                                      </button>
+                                    </div>
+                                    <pre className="text-xs font-mono text-gray-200 whitespace-pre-wrap break-all leading-relaxed">{formatText(tc.input)}</pre>
+                                  </div>
+                                  <div className="p-4">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <span className="text-xs text-gray-500 font-medium">Output</span>
+                                      <button onClick={() => copyToClipboard(tc.expectedOutput)} className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                                        <FiCopy size={11} /> Copy
+                                      </button>
+                                    </div>
+                                    <pre className="text-xs font-mono text-gray-200 whitespace-pre-wrap break-all leading-relaxed">{formatText(tc.expectedOutput)}</pre>
+                                  </div>
+                                </div>
+                                {tc.explanation && (
+                                  <div className="px-4 py-3 bg-blue-500/5 border-t border-gray-700 text-xs text-gray-400">
+                                    <span className="font-semibold text-gray-300">Explanation: </span>{tc.explanation}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -777,35 +767,44 @@ const ContestProblem = () => {
                 <div className="p-6">
                   {testResults.map((result, index) => (
                     <div key={index} className="space-y-4">
-                      <div className={`px-6 py-4 rounded-2xl ${
-                        result.verdict === 'Accepted'
-                          ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                          : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                      }`}>
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            {result.verdict === 'Accepted' ? (
-                              <BsCheckCircle size={24} />
-                            ) : (
-                              <BsXCircle size={24} />
+                      {(() => {
+                        const isAcc = (result.verdict || '').toLowerCase() === 'accepted';
+                        const displayVerdict = result.verdict?.replace(/_/g, ' ')
+                          ?.replace(/\b\w/g, c => c.toUpperCase()) || 'Unknown';
+                        return (
+                        <div className={`px-6 py-4 rounded-2xl ${
+                          isAcc
+                            ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                        }`}>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              {isAcc ? (
+                                <BsCheckCircle size={24} />
+                              ) : (
+                                <BsXCircle size={24} />
+                              )}
+                              <span className="font-bold text-lg">{displayVerdict}</span>
+                            </div>
+                            <div className="text-sm font-semibold">
+                              {result.testCasesPassed}/{result.totalTestCases} tests passed
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-6 text-sm font-medium">
+                            <div className="flex items-center gap-2">
+                              <FiClock />
+                              <span>Runtime: {result.runtime || 0} ms</span>
+                            </div>
+                            {isAcc && (
+                              <div className="flex items-center gap-2">
+                                <FiAward />
+                                <span>Score: +{result.score || 0} points</span>
+                              </div>
                             )}
-                            <span className="font-bold text-lg">{result.verdict}</span>
-                          </div>
-                          <div className="text-sm font-semibold">
-                            {result.testCasesPassed}/{result.totalTestCases} tests passed
                           </div>
                         </div>
-                        <div className="flex items-center gap-6 text-sm font-medium">
-                          <div className="flex items-center gap-2">
-                            <FiClock />
-                            <span>Runtime: {result.runtime || 0} ms</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <FiAward />
-                            <span>Score: +{result.score || 0} points</span>
-                          </div>
-                        </div>
-                      </div>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>

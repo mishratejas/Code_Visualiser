@@ -38,6 +38,18 @@ const connectPostgreSQL = async () => {
     await Group.sync({ alter: true });
     await GroupMember.sync({ alter: true });
 
+    // Sync Contest with alter:true to add any missing columns (e.g. is_rated)
+    await Contest.sync({ alter: true });
+    console.log('✅ Contest table synced (missing columns added)');
+
+    // Sync ContestParticipant to add missing penalty column
+    await ContestParticipant.sync({ alter: true });
+    console.log('✅ ContestParticipant table synced (problem_stats, rating fields ensured)');
+
+    // Sync ContestSubmission to add missing time_from_start column
+    await ContestSubmission.sync({ alter: true });
+    console.log('✅ ContestSubmission table synced (time_from_start column ensured)');
+
     // Also ensure the group_id column exists on contests
     try {
       await sequelize.query(`

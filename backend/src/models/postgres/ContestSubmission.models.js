@@ -82,6 +82,13 @@ const ContestSubmission = sequelize.define('ContestSubmission', {
       min: 0
     }
   },
+
+  time_from_start: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: 0,
+    comment: 'Minutes elapsed since contest start when submitted'
+  },
   
   memory_used: {
     type: DataTypes.INTEGER,

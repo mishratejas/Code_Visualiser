@@ -1,11 +1,86 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { FiFilter, FiChevronDown, FiChevronUp, FiCode, FiClock, FiCpu } from 'react-icons/fi';
+import { FiFilter, FiChevronDown, FiChevronUp, FiCode, FiClock, FiCpu, FiX, FiCopy, FiEye } from 'react-icons/fi';
 import { BsCheckCircleFill, BsXCircleFill, BsClock } from 'react-icons/bs';
 import { TbAlertCircle } from 'react-icons/tb';
 import api from '../services/api';
 import Loader from '../components/common/Loader';
 import { toast } from 'react-hot-toast';
+
+// ── Code Viewer Modal ─────────────────────────────────────────────────────────
+const CodeModal = ({ submission, onClose }) => {
+  if (!submission) return null;
+  const copyCode = () => {
+    navigator.clipboard.writeText(submission.code || '');
+    toast.success('Code copied!');
+  };
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-gray-700"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700">
+          <div>
+            <h2 className="text-white font-semibold text-lg">
+              {submission.problem?.title || 'Submission Code'}
+            </h2>
+            <div className="flex items-center gap-3 mt-1">
+              <span className="text-xs text-gray-400">{submission.language}</span>
+              <span className={`text-xs font-medium ${
+                (submission.verdict || submission.status) === 'accepted' ? 'text-green-400' : 'text-red-400'
+              }`}>
+                {(submission.verdict || submission.status || '').replace(/_/g, ' ').toUpperCase()}
+              </span>
+              <span className="text-xs text-gray-500">
+                {new Date(submission.submittedAt || submission.createdAt).toLocaleString()}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={copyCode}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition"
+            >
+              <FiCopy size={14} /> Copy
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded-lg transition"
+            >
+              <FiX size={18} />
+            </button>
+          </div>
+        </div>
+        {/* Code */}
+        <div className="flex-1 overflow-auto p-5">
+          {submission.code ? (
+            <pre className="text-sm text-gray-200 font-mono leading-relaxed whitespace-pre-wrap break-words">
+              {submission.code}
+            </pre>
+          ) : (
+            <div className="text-center py-16 text-gray-500">
+              <FiCode size={40} className="mx-auto mb-3 opacity-40" />
+              <p>Code not available for this submission</p>
+            </div>
+          )}
+        </div>
+        {/* Stats Footer */}
+        <div className="flex items-center gap-6 px-5 py-3 bg-gray-800/60 border-t border-gray-700 text-xs text-gray-400">
+          <span>Runtime: <span className="text-white">{submission.executionTime || submission.runtime || 0} ms</span></span>
+          <span>Memory: <span className="text-white">{submission.memoryUsed || submission.memory || 0} KB</span></span>
+          {submission.passedTestCases != null && (
+            <span>Tests: <span className="text-white">{submission.passedTestCases}/{submission.totalTestCases}</span></span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const Submissions = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -21,6 +96,26 @@ const Submissions = () => {
   const [sortBy, setSortBy] = useState(searchParams.get('sort') || 'newest');
   const [page, setPage] = useState(parseInt(searchParams.get('page')) || 1);
   const [limit] = useState(15);
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const [codeLoading, setCodeLoading] = useState(false);
+
+  const handleViewCode = useCallback(async (submission) => {
+    // If code already loaded, just show it
+    if (submission.code !== undefined) {
+      setSelectedSubmission(submission);
+      return;
+    }
+    try {
+      setCodeLoading(true);
+      const res = await api.get(`/submissions/${submission._id}`);
+      const full = res.data || res;
+      setSelectedSubmission({ ...submission, ...full });
+    } catch {
+      toast.error('Failed to load submission code');
+    } finally {
+      setCodeLoading(false);
+    }
+  }, []);
 
   const statusOptions = [
     { value: 'accepted', label: 'Accepted', icon: BsCheckCircleFill, color: 'text-green-500' },
@@ -128,6 +223,10 @@ const getVerdictInfo = (verdictValue) => {
 
   return (
     <div className="space-y-6">
+      {/* Code viewer modal */}
+      {selectedSubmission && (
+        <CodeModal submission={selectedSubmission} onClose={() => setSelectedSubmission(null)} />
+      )}
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -273,7 +372,9 @@ const getVerdictInfo = (verdictValue) => {
   return (
     <div
       key={submission._id}
-      className="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition"
+      className="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition cursor-pointer"
+      onClick={() => handleViewCode(submission)}
+      title="Click to view code"
     >
       <div className="col-span-2 flex items-center">
         <Icon className={`${verdictInfo.color} mr-2`} />
@@ -308,7 +409,7 @@ const getVerdictInfo = (verdictValue) => {
           </span>
         </div>
       </div>
-      <div className="col-span-2">
+      <div className="col-span-2 flex items-center justify-between">
         <div className="flex items-center">
           <div className="mr-2">
             <div className="h-2 w-2 rounded-full bg-gray-400"></div>
@@ -317,6 +418,13 @@ const getVerdictInfo = (verdictValue) => {
             {formatBytes(submission.memoryUsed || submission.memory || 0)}
           </span>
         </div>
+        <button
+          onClick={e => { e.stopPropagation(); handleViewCode(submission); }}
+          className="p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition"
+          title="View Code"
+        >
+          <FiEye size={15} />
+        </button>
       </div>
     </div>
   );

@@ -64,7 +64,7 @@ const Settings = () => {
     e.preventDefault();
     try {
       setLoading(true);
-      const response = await api.patch('/users/profile', {
+      const response = await api.put('/users/me/profile', {
         username: profile.username,
         name: profile.name,
         bio: profile.bio,

@@ -198,8 +198,8 @@ const Profile = () => {
   const TOTAL_PROBS = 300; // approximate — update to real total if you have it
 
   return (
-    <div className={`min-h-screen ${bg} overflow-x-hidden`}>
-      <div className="max-w-6xl mx-auto px-4 py-6 grid lg:grid-cols-[300px_1fr] gap-6 min-w-0">
+    <div className={`min-h-screen ${bg}`}>
+      <div className="w-full max-w-6xl mx-auto px-4 py-6 grid lg:grid-cols-[280px_1fr] gap-6 min-w-0 items-start">
 
         {/* ══ LEFT SIDEBAR ══════════════════════════════════════════════════ */}
         <div className="space-y-4">
@@ -301,7 +301,7 @@ const Profile = () => {
         </div>
 
         {/* ══ MAIN CONTENT ══════════════════════════════════════════════════ */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0 overflow-hidden">
 
           {/* Tabs */}
           <div className={`flex border-b ${bdrClr}`}>
@@ -355,7 +355,7 @@ const Profile = () => {
                 </div>
 
                 {/* Stats row */}
-                <div className={`grid grid-cols-4 gap-0 mt-6 border-t ${bdrClr} pt-4 divide-x ${divClr}`}>
+                <div className={`grid grid-cols-2 sm:grid-cols-4 gap-0 mt-6 border-t ${bdrClr} pt-4 divide-x ${divClr}`}>
                   {[
                     { label:'Submissions', value: stats?.totalSubs||0 },
                     { label:'Accepted',    value: stats?.accepted||0 },

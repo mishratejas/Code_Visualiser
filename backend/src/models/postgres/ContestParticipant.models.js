@@ -61,6 +61,13 @@ const ContestParticipant = sequelize.define('ContestParticipant', {
     allowNull: false,
     comment: 'Penalty time for wrong submissions in minutes'
   },
+
+  penalty: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    allowNull: false,
+    comment: 'Computed total penalty for leaderboard ordering (solve_time + wrong answer penalties)'
+  },
   
   joined_at: {
     type: DataTypes.DATE,
@@ -72,7 +79,35 @@ const ContestParticipant = sequelize.define('ContestParticipant', {
     type: DataTypes.DATE,
     allowNull: true
   },
-  
+
+  // Per-problem tracking: { [problemId]: { attempts, solved, solve_time, penalty } }
+  problem_stats: {
+    type: DataTypes.JSONB,
+    defaultValue: {},
+    allowNull: true,
+    comment: 'Per-problem attempt/solve tracking'
+  },
+
+  rating_before: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: 1500,
+    comment: 'Rating before contest'
+  },
+
+  rating_after: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Rating after contest'
+  },
+
+  rating_change: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: 0,
+    comment: 'Rating delta from this contest'
+  },
+
   rank: {
     type: DataTypes.INTEGER,
     allowNull: true,

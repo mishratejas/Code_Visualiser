@@ -211,7 +211,12 @@ export const getContest = async (req, res) => {
               inputFormat: p.inputFormat,
               outputFormat: p.outputFormat,
               constraints: p.constraints,
-              testCases: (p.testCases || []).filter(tc => !tc.isHidden),
+              testCases: (() => {
+                const all = p.testCases || [];
+                const visible = all.filter(tc => !tc.isHidden);
+                // Always show at least 2 sample test cases so users can test locally
+                return visible.length ? visible : all.slice(0, 2);
+              })(),
             });
           }
           return base;
@@ -439,7 +444,7 @@ export const submitContestSolution = async (req, res) => {
       const sub = await Submission.findById(submissionId);
       if (sub) {
         verdict = sub.verdict; runtime = sub.runtime || 0; memory = sub.memoryUsed || 0;
-        passed = sub.passedTestCases || 0; total = sub.totalTestCases || 0;
+        passed = sub.testCasesPassed || 0; total = sub.totalTestCases || 0;
       }
     }
 

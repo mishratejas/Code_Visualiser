@@ -208,6 +208,7 @@ const runBasic = ({ execCmd, execArgs, inputData, timeoutMs }) => {
 const executeCode = async (code, language, testCases, timeLimit, memoryLimit) => {
   const results = [];
   let maxRuntime = 0;  // wall-clock: parallel tests, max = actual slowest
+  let totalRuntime = 0; // sum of all test case runtimes
   let testCasesPassed = 0;
 
   // Create temp directory
@@ -421,9 +422,8 @@ const executeCode = async (code, language, testCases, timeLimit, memoryLimit) =>
     for (const result of executedResults) {
       results.push(result);
       totalRuntime += result.runtime;
+      if (result.runtime > maxRuntime) maxRuntime = result.runtime;
       if (result.passed) testCasesPassed++;
-      // Check for TLE (Removed: manual runtime check is inaccurate due to spawn overhead.
-      // The setTimeout SIGKILL inside the spawn block is sufficient to catch real TLEs.)
     }
 
     // Clean up compiled files
