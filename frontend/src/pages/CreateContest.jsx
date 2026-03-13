@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTheme } from '../context/ThemeContext';
 import { 
   FiCalendar, FiClock, FiLock, FiUnlock, FiUsers, FiTag, FiAlertCircle,
   FiAward, FiInfo, FiCheck, FiX, FiPlus, FiChevronRight
@@ -11,14 +12,23 @@ import { useAuth } from '../context/AuthContext';
 
 const CreateContest = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const { isDark } = useTheme();
+  const groupId = searchParams.get('groupId') || null;
   const [loading, setLoading] = useState(false);
   const [activeStep, setActiveStep] = useState(1);
 
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    contestType: 'practice',
+    contestType: 'rated',
+    isRated: true,
+    scoringType: 'icpc',
+    allowTeams: false,
+    maxTeamSize: 2,
+    ratingFloor: 0,
+    ratingCeiling: 9999,
     difficulty: 'medium',
     startTime: '',
     endTime: '',
@@ -35,11 +45,13 @@ const CreateContest = () => {
   const [errors, setErrors] = useState({});
 
   const contestTypes = [
-    { value: 'practice', label: 'Practice Contest', icon: '🎯', description: 'For skill development' },
-    { value: 'weekly', label: 'Weekly Challenge', icon: '📅', description: 'Regular weekly competition' },
-    { value: 'monthly', label: 'Monthly Contest', icon: '🏆', description: 'Major monthly event' },
-    { value: 'rated', label: 'Rated Contest', icon: '📊', description: 'Affects user rating' },
-    { value: 'unrated', label: 'Unrated Contest', icon: '🎮', description: 'Just for fun' }
+    { value: 'rated',       label: 'Rated',       icon: '⭐', description: 'Affects Elo rating — official competition' },
+    { value: 'unrated',     label: 'Unrated',     icon: '🎮', description: 'No rating change — just for fun' },
+    { value: 'practice',    label: 'Practice',    icon: '🎯', description: 'For skill development, open-ended' },
+    { value: 'educational', label: 'Educational', icon: '🎓', description: 'Explanations visible during contest' },
+    { value: 'weekly',      label: 'Weekly',      icon: '📅', description: 'Regular weekly ranked competition' },
+    { value: 'challenge',   label: 'Challenge',   icon: '🔥', description: 'Hard problems, longer duration' },
+    { value: 'team',        label: 'Team',        icon: '👥', description: 'Teams compete together' },
   ];
 
   const difficulties = [
@@ -249,7 +261,16 @@ const handleSubmit = async (e) => {
       banner_url: formData.banner || null,
       tags: formData.tags,
       rules: formData.rules || null,
-      prizes: formData.prizes ? formData.prizes.split(',').map(p => p.trim()).filter(Boolean) : []
+      prizes: formData.prizes ? formData.prizes.split(',').map(p => p.trim()).filter(Boolean) : [],
+      // ── Rating & scoring (real backend fields) ───────────────────────
+      is_rated: formData.isRated,
+      scoring_type: formData.scoringType,     // 'icpc' | 'ioi' | 'atcoder'
+      allow_teams: formData.allowTeams,
+      max_team_size: formData.allowTeams ? parseInt(formData.maxTeamSize) || 2 : 1,
+      min_team_size: formData.allowTeams ? 2 : 1,
+      rating_floor:   parseInt(formData.ratingFloor)   || 0,
+      rating_ceiling: parseInt(formData.ratingCeiling) || 9999,
+      group_id: groupId ? parseInt(groupId) : null,
     };
 
     console.log('Submitting contest:', contestData);
@@ -259,8 +280,8 @@ const handleSubmit = async (e) => {
     console.log('Response:', response);
 
     // Check for successful response
-    if (response.data?.success || response.status === 201 || response?.success) {
-      const contestId = response.data?.data?.id || response.data?.data?._id || response?.data?.id || response.data?.contest?.id;
+    if (response?.success || response?.data?.id) {
+      const contestId = response?.data?.id || response?.data?._id;
       
       toast.success('Contest created successfully! Redirecting to add problems...', { 
         duration: 2000,
@@ -305,6 +326,13 @@ const handleSubmit = async (e) => {
   }
 };
 
+
+  const GroupBanner = () => groupId ? (
+    <div className="mb-6 px-4 py-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-sm text-rose-400 flex items-center gap-2">
+      <span>🏢</span>
+      <span>Creating a private contest for <strong>Group #{groupId}</strong> — only group members can participate.</span>
+    </div>
+  ) : null;
 
   const renderStepContent = () => {
     switch (activeStep) {
@@ -655,6 +683,86 @@ const handleSubmit = async (e) => {
                 <span>Separate multiple prizes with commas</span>
               </div>
             </div>
+
+            {/* ── Scoring & Rating ─────────────────────────────── */}
+            <div className="border border-gray-700/50 rounded-xl p-5 space-y-5">
+              <h3 className="text-sm font-bold text-gray-200">Scoring & Rating Settings</h3>
+
+              {/* Is Rated toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-200">Rated Contest</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Elo rating changes after this contest ends</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" className="sr-only peer"
+                    checked={formData.isRated}
+                    onChange={e => setFormData(prev => ({ ...prev, isRated: e.target.checked }))} />
+                  <div className="w-11 h-6 bg-gray-700 peer-checked:bg-rose-500 rounded-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
+                </label>
+              </div>
+
+              {/* Scoring type */}
+              <div>
+                <p className="text-sm font-medium text-gray-200 mb-2">Scoring System</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { v:'icpc',    l:'ICPC',    d:'Binary — solved/not' },
+                    { v:'ioi',     l:'IOI',     d:'Partial score per test' },
+                    { v:'atcoder', l:'AtCoder', d:'Time-based penalty' },
+                  ].map(s => (
+                    <button key={s.v} type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, scoringType: s.v }))}
+                      className={`p-3 rounded-xl border text-left transition-all ${formData.scoringType === s.v ? 'border-rose-500 bg-rose-500/10' : 'border-gray-700 hover:border-gray-600'}`}>
+                      <p className={`text-xs font-bold ${formData.scoringType === s.v ? 'text-rose-400' : 'text-gray-300'}`}>{s.l}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{s.d}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Rating floor/ceiling */}
+              {formData.isRated && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs text-gray-400 mb-1 block">Rating Floor</label>
+                    <input type="number" value={formData.ratingFloor} min={0} max={3000}
+                      onChange={e => setFormData(prev => ({ ...prev, ratingFloor: e.target.value }))}
+                      className="w-full px-3 py-2 bg-gray-700/50 border border-gray-600 rounded-xl text-white text-sm focus:ring-1 focus:ring-rose-500 focus:border-rose-500" />
+                    <p className="text-xs text-gray-600 mt-1">Min rating to participate (0 = everyone)</p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 mb-1 block">Rating Ceiling</label>
+                    <input type="number" value={formData.ratingCeiling} min={0} max={9999}
+                      onChange={e => setFormData(prev => ({ ...prev, ratingCeiling: e.target.value }))}
+                      className="w-full px-3 py-2 bg-gray-700/50 border border-gray-600 rounded-xl text-white text-sm focus:ring-1 focus:ring-rose-500 focus:border-rose-500" />
+                    <p className="text-xs text-gray-600 mt-1">Max rating allowed (9999 = everyone)</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Teams toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-200">Team Contest</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Allow participants to form teams</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" className="sr-only peer"
+                    checked={formData.allowTeams}
+                    onChange={e => setFormData(prev => ({ ...prev, allowTeams: e.target.checked }))} />
+                  <div className="w-11 h-6 bg-gray-700 peer-checked:bg-rose-500 rounded-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
+                </label>
+              </div>
+              {formData.allowTeams && (
+                <div>
+                  <label className="text-xs text-gray-400 mb-1 block">Max Team Size</label>
+                  <input type="number" value={formData.maxTeamSize} min={2} max={5}
+                    onChange={e => setFormData(prev => ({ ...prev, maxTeamSize: e.target.value }))}
+                    className="w-32 px-3 py-2 bg-gray-700/50 border border-gray-600 rounded-xl text-white text-sm focus:ring-1 focus:ring-rose-500 focus:border-rose-500" />
+                </div>
+              )}
+            </div>
           </div>
         );
 
@@ -741,6 +849,7 @@ const handleSubmit = async (e) => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
+      <GroupBanner />
       {/* Header */}
       <div className="relative overflow-hidden rounded-3xl">
         <div className="absolute inset-0 bg-gradient-to-r from-rose-600 via-red-600 to-pink-600 opacity-90"></div>

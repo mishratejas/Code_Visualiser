@@ -42,6 +42,10 @@ const Leaderboard = lazy(() => import("./pages/Leaderboard"));
 const Achievements = lazy(() => import("./pages/Achievements"));
 const Help = lazy(() => import("./pages/Help"));
 const Notifications = lazy(() => import("./pages/Notifications"));
+const Interview = lazy(() => import("./pages/Interview"));
+const Discuss = lazy(() => import("./pages/Discuss"));
+const Groups = lazy(() => import("./pages/Groups"));
+const GroupDetail = lazy(() => import("./pages/GroupDetail"));
 
 // Layout wrapper
 const Layout = ({ children, showSidebar = false }) => {
@@ -207,6 +211,32 @@ const App = () => {
                     <Route path="/settings" element={
                       <PrivateRoute>
                         <Layout showSidebar={true}><Settings /></Layout>
+                      </PrivateRoute>
+                    } />
+
+                    {/* Discuss */}
+                    <Route path="/discuss" element={
+                      <PrivateRoute>
+                        <Layout showSidebar={true}><Discuss /></Layout>
+                      </PrivateRoute>
+                    } />
+
+                    {/* Interview */}
+                    <Route path="/interview" element={
+                      <PrivateRoute>
+                        <Layout showSidebar={false}><Interview /></Layout>
+                      </PrivateRoute>
+                    } />
+
+                    {/* Groups & Organizations */}
+                    <Route path="/groups" element={
+                      <PrivateRoute>
+                        <Layout showSidebar={true}><Groups /></Layout>
+                      </PrivateRoute>
+                    } />
+                    <Route path="/groups/:id" element={
+                      <PrivateRoute>
+                        <Layout showSidebar={true}><GroupDetail /></Layout>
                       </PrivateRoute>
                     } />
 

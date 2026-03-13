@@ -12,22 +12,27 @@ from src.cache import get_cache, set_cache
 logger = logging.getLogger(__name__)
 
 # Lazy import Gemini only if available
-_model = None
+_client = None
 if GEMINI_READY:
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=Config.GEMINI_API_KEY)
-        _model = genai.GenerativeModel(Config.GEMINI_MODEL)
+        from google import genai as _genai_sdk
+        _client = _genai_sdk.Client(api_key=Config.GEMINI_API_KEY)
+        logger.info(f"Gemini client initialized for interview service")
     except Exception as e:
         logger.error(f"Failed to init Gemini: {e}")
-        _model = None
+        _client = None
 
 
 async def _gemini(prompt: str, fallback: dict) -> dict:
-    if _model is None:
+    if _client is None:
         return fallback
     try:
-        resp = await _model.generate_content_async(prompt)
+        import asyncio
+        loop = asyncio.get_event_loop()
+        resp = await loop.run_in_executor(
+            None,
+            lambda: _client.models.generate_content(model=Config.GEMINI_MODEL, contents=prompt)
+        )
         text = resp.text.strip()
         text = re.sub(r'^```(?:json)?\s*', '', text)
         text = re.sub(r'\s*```$', '', text)

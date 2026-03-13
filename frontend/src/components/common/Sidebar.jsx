@@ -6,7 +6,7 @@ import {
   FiHome, FiCode, FiBarChart2, FiCalendar,
   FiUser, FiSettings, FiBell, FiAward,
   FiFileText, FiHelpCircle, FiLogOut,
-  FiChevronLeft, FiChevronRight, FiChevronDown, FiZap,
+  FiChevronLeft, FiChevronRight, FiChevronDown, FiZap, FiUsers,
 } from 'react-icons/fi';
 
 const Sidebar = ({ mobileOpen, onMobileClose }) => {
@@ -31,6 +31,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }) => {
     { title: 'Contests',      icon: <FiCalendar  className="w-5 h-5" />, path: '/contests' },
     { title: 'Submissions',   icon: <FiFileText  className="w-5 h-5" />, path: '/submissions' },
     { title: 'Leaderboard',   icon: <FiBarChart2 className="w-5 h-5" />, path: '/leaderboard' },
+    { title: 'Groups',        icon: <FiUsers     className="w-5 h-5" />, path: '/groups' },
     { title: 'Achievements',  icon: <FiAward     className="w-5 h-5" />, path: '/achievements' },
     { title: 'Notifications', icon: <FiBell      className="w-5 h-5" />, path: '/notifications' },
   ];

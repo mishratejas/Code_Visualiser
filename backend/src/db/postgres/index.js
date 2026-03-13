@@ -2,9 +2,8 @@ import { Sequelize } from 'sequelize';
 import pg from 'pg';
 import { defineAssociations } from '../../models/postgres/associations.js';
 
-// Create sequelize instance
 const sequelize = new Sequelize(
-  process.env.POSTGRES_URI || 
+  process.env.POSTGRES_URI ||
   `postgresql://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || 'password'}@${process.env.POSTGRES_HOST || 'localhost'}:${process.env.POSTGRES_PORT || 5432}/${process.env.POSTGRES_DB || 'coding_judge'}`,
   {
     logging: false,
@@ -13,41 +12,49 @@ const sequelize = new Sequelize(
     define: {
       underscored: true,
       timestamps: true,
-      freezeTableName: true  // ✅ Prevent table name pluralization
+      freezeTableName: true
     },
-    pool: {
-      max: 10,
-      min: 0,
-      acquire: 30000,
-      idle: 10000
-    }
+    pool: { max: 10, min: 0, acquire: 30000, idle: 10000 }
   }
 );
 
-// Connect function
 const connectPostgreSQL = async () => {
   try {
-    // Test connection
     await sequelize.authenticate();
     console.log('✅ PostgreSQL connected successfully');
-    
-    // Import models AFTER connection (to ensure sequelize is ready)
+
+    // Import all models (order matters for FK constraints)
     const Contest = (await import('../../models/postgres/Contest.models.js')).default;
     const User = (await import('../../models/postgres/User.models.js')).default;
     const ContestParticipant = (await import('../../models/postgres/ContestParticipant.models.js')).default;
     const ContestSubmission = (await import('../../models/postgres/ContestSubmission.models.js')).default;
-    
-    // Define associations
+    const Group = (await import('../../models/postgres/Group.models.js')).default;
+    const GroupMember = (await import('../../models/postgres/GroupMember.models.js')).default;
+
     await defineAssociations();
-    
-    // ✅ REMOVED: await sequelize.sync({ alter: true });
-    // We manage schema manually with SQL migrations
-    console.log('ℹ️  Using manual SQL migrations (sync disabled)');
-    
+
+    // Auto-create new tables only (alter:false = safe for production)
+    // groups and group_members are new — sync them with alter so columns are added
+    await Group.sync({ alter: true });
+    await GroupMember.sync({ alter: true });
+
+    // Also ensure the group_id column exists on contests
+    try {
+      await sequelize.query(`
+        ALTER TABLE contests ADD COLUMN IF NOT EXISTS group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL;
+      `);
+      console.log('✅ contests.group_id column ensured');
+    } catch (e) {
+      // Column may already exist — that's fine
+      if (!e.message.includes('already exists')) console.warn('group_id migration note:', e.message);
+    }
+
+    console.log('✅ Group & GroupMember tables synced');
+    console.log('ℹ️  Using manual SQL migrations for all other tables');
+
     return sequelize;
   } catch (error) {
     console.error('❌ PostgreSQL Connection Failed:', error.message);
-    
     if (process.env.NODE_ENV === 'development') {
       console.log('⚠️ Continuing without PostgreSQL');
       return null;
@@ -56,7 +63,6 @@ const connectPostgreSQL = async () => {
   }
 };
 
-// Close connection
 const disconnectPostgreSQL = async () => {
   try {
     await sequelize.close();
@@ -66,6 +72,5 @@ const disconnectPostgreSQL = async () => {
   }
 };
 
-// Export
 export { sequelize, connectPostgreSQL, disconnectPostgreSQL };
 export default sequelize;

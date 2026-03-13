@@ -82,24 +82,26 @@ const Contests = () => {
   const fetchContests = async () => {
     try {
       setLoading(true);
-      const params = {};
-      if (filter !== "all") params.status = filter;
 
-      const response = await api.get("/contests", { params });
       let contestsData = [];
 
-      if (response && response.data) {
-        if (response.data.contests && Array.isArray(response.data.contests)) {
-          contestsData = response.data.contests;
-        } else if (response.data.data && Array.isArray(response.data.data)) {
-          contestsData = response.data.data;
-        } else if (Array.isArray(response.data)) {
-          contestsData = response.data;
-        } else if (Array.isArray(response)) {
-          contestsData = response;
+      if (filter === "my") {
+        // Hit the dedicated /contests/my endpoint that returns registered + created contests
+        const response = await api.get("/contests/my");
+        contestsData = response?.data || response || [];
+      } else {
+        const params = {};
+        if (filter !== "all") params.status = filter;
+        const response = await api.get("/contests", { params });
+        // api interceptor already unwraps response.data
+        // Backend returns { success, data: [...], total }
+        contestsData = response?.data || response || [];
+        if (!Array.isArray(contestsData)) {
+          contestsData = response?.contests || [];
         }
       }
 
+      if (!Array.isArray(contestsData)) contestsData = [];
       setContests(contestsData);
 
       const now = new Date();
@@ -222,9 +224,8 @@ const Contests = () => {
 
     let matchesFilter = true;
     if (filter === "my") {
-      // Show contests the user has REGISTERED for (not just created)
-      matchesFilter = contest.isRegistered === true ||
-        contest.created_by === user?._id || contest.created_by === user?.id;
+      // /contests/my already returns only user's contests — just show them all
+      matchesFilter = true;
     } else {
       matchesFilter = filter === "all" || getContestStatus(contest) === filter;
     }

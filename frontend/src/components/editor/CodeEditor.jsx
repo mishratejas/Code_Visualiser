@@ -19,7 +19,8 @@ const CodeEditor = ({ problemId, initialCode = '', onCodeChange, onSubmit, readO
     { value: 'python', label: 'Python' },
     { value: 'java', label: 'Java' },
     { value: 'cpp', label: 'C++' },
-    { value: 'c', label: 'C' },
+    { value: 'go', label: 'Go' },
+    { value: 'rust', label: 'Rust' },
   ];
 
   const themes = [

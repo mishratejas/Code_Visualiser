@@ -243,6 +243,15 @@ const LiveContest = () => {
         setLeaderboard(contestData.leaderboard || []);
         setRetryCount(0);
 
+        // Fetch user's contest submissions
+        try {
+          const subsRes = await api.get(`/contests/${id}/submissions`);
+          const subsData = subsRes.data?.submissions || subsRes.submissions || subsRes.data || [];
+          setSubmissions(Array.isArray(subsData) ? subsData : []);
+        } catch (e) {
+          console.warn('Could not load contest submissions', e);
+        }
+
         console.log("✅ Contest data loaded:", {
           title: contestData.title,
           problems: contestData.problems?.length || 0,
@@ -553,128 +562,147 @@ const LiveContest = () => {
               <div className="p-6">
                 {activeTab === "problems" && (
                   <div className="space-y-4">
-                    {problems.length > 0 ? (
-                      problems.map((problem, index) => (
-                        <div
-                          key={problem._id}
-                          className="group bg-gray-800/30 border border-gray-700/50 rounded-xl p-6 hover:border-blue-500/50 hover:shadow-lg transition-all cursor-pointer"
-                          onClick={() => handleProblemClick(problem._id)}
-                        >
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-lg">
-                                {String.fromCharCode(65 + index)}
+                    {/* ── Contest not started yet ── */}
+                    {contest && new Date() < new Date(contest.startTime || contest.start_time) && (
+                      <div className="text-center py-16">
+                        <div className="w-20 h-20 mx-auto mb-4 bg-gray-800/50 rounded-2xl flex items-center justify-center">
+                          <FiAlertTriangle className="h-10 w-10 text-yellow-400" />
+                        </div>
+                        <p className="text-white text-xl font-bold mb-2">Contest hasn't started yet</p>
+                        <p className="text-gray-400 text-sm mb-6">Problems will be revealed when the contest begins</p>
+                        <div className="inline-block px-6 py-4 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl">
+                          <p className="text-xs text-yellow-400 mb-2 font-medium">STARTS IN</p>
+                          <ContestTimer endTime={new Date(contest.startTime || contest.start_time)} />
+                        </div>
+                        {/* Show locked problem slots so participants know how many problems there are */}
+                        {problems.length > 0 && (
+                          <div className="mt-8 space-y-3 max-w-md mx-auto">
+                            <p className="text-gray-500 text-xs mb-3">This contest has {problems.length} problem{problems.length !== 1 ? 's' : ''}</p>
+                            {problems.map((problem, index) => (
+                              <div key={index} className="flex items-center gap-4 bg-gray-800/30 border border-gray-700/50 rounded-xl p-4 opacity-60">
+                                <div className="w-10 h-10 rounded-xl bg-gray-700 flex items-center justify-center text-gray-400 font-bold">
+                                  {String.fromCharCode(65 + index)}
+                                </div>
+                                <div className="flex-1 text-left">
+                                  <div className="h-3 bg-gray-700 rounded w-32 mb-2" />
+                                  <div className="h-2 bg-gray-800 rounded w-16" />
+                                </div>
+                                <FiAlertTriangle className="h-4 w-4 text-gray-600" />
                               </div>
-                              <div>
-                                <h3 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">
-                                  {problem.title}
-                                </h3>
-                                <div className="flex items-center gap-3 mt-2">
-                                  <span
-                                    className={`px-3 py-1 rounded-lg text-xs font-medium ${
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Contest live or ended — show real problems ── */}
+                    {(!contest || new Date() >= new Date(contest.startTime || contest.start_time)) && (
+                      problems.length > 0 ? (
+                        problems.map((problem, index) => (
+                          <div
+                            key={problem._id}
+                            className="group bg-gray-800/30 border border-gray-700/50 rounded-xl p-6 hover:border-blue-500/50 hover:shadow-lg transition-all cursor-pointer"
+                            onClick={() => handleProblemClick(problem._id)}
+                          >
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-lg">
+                                  {String.fromCharCode(65 + index)}
+                                </div>
+                                <div>
+                                  <h3 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">
+                                    {problem.title}
+                                  </h3>
+                                  <div className="flex items-center gap-3 mt-2">
+                                    <span className={`px-3 py-1 rounded-lg text-xs font-medium ${
                                       problem.difficulty === "easy"
                                         ? "bg-green-500/20 text-green-400 border border-green-500/30"
                                         : problem.difficulty === "medium"
                                           ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
                                           : "bg-red-500/20 text-red-400 border border-red-500/30"
-                                    }`}
-                                  >
-                                    {problem.difficulty?.toUpperCase()}
-                                  </span>
-                                  <span className="text-sm text-blue-400 font-medium">
-                                    {problem.points} points
-                                  </span>
-                                  {problem.metadata?.acceptanceRate && (
-                                    <span className="text-sm text-gray-400">
-                                      {problem.metadata.acceptanceRate}%
-                                      acceptance
+                                    }`}>
+                                      {problem.difficulty?.toUpperCase()}
                                     </span>
-                                  )}
+                                    <span className="text-sm text-blue-400 font-medium">
+                                      {problem.points} points
+                                    </span>
+                                    {problem.metadata?.acceptanceRate && (
+                                      <span className="text-sm text-gray-400">
+                                        {problem.metadata.acceptanceRate}% acceptance
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleSubmit(problem._id); }}
+                                className="px-6 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:shadow-lg transition-all font-medium flex items-center gap-2"
+                              >
+                                <FiCode className="h-4 w-4" /> Solve
+                              </button>
                             </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSubmit(problem._id);
-                              }}
-                              className="px-6 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:shadow-lg transition-all font-medium flex items-center gap-2"
-                            >
-                              <FiCode className="h-4 w-4" />
-                              Submit
-                            </button>
+                            {problem.tags && problem.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                {problem.tags.slice(0, 4).map((tag, i) => (
+                                  <span key={i} className="px-2 py-1 bg-gray-700/50 text-gray-300 text-xs rounded-md">{tag}</span>
+                                ))}
+                                {problem.tags.length > 4 && (
+                                  <span className="px-2 py-1 bg-gray-700/50 text-gray-400 text-xs rounded-md">+{problem.tags.length - 4} more</span>
+                                )}
+                              </div>
+                            )}
+                            <p className="text-gray-400 line-clamp-2 text-sm">
+                              {problem.description || 'Click to view the full problem statement'}
+                            </p>
                           </div>
-                          {problem.tags && problem.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mb-3">
-                              {problem.tags.slice(0, 4).map((tag, i) => (
-                                <span
-                                  key={i}
-                                  className="px-2 py-1 bg-gray-700/50 text-gray-300 text-xs rounded-md"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                              {problem.tags.length > 4 && (
-                                <span className="px-2 py-1 bg-gray-700/50 text-gray-400 text-xs rounded-md">
-                                  +{problem.tags.length - 4} more
-                                </span>
-                              )}
-                            </div>
-                          )}
-                          <p className="text-gray-400 line-clamp-2">
-                            {problem.description || "No description available"}
-                          </p>
+                        ))
+                      ) : (
+                        <div className="text-center py-16">
+                          <div className="w-20 h-20 mx-auto mb-4 bg-gray-800/50 rounded-2xl flex items-center justify-center">
+                            <FiCode className="h-10 w-10 text-gray-500" />
+                          </div>
+                          <p className="text-gray-400 text-lg">No problems added yet.</p>
+                          <p className="text-gray-500 text-sm mt-2">Contact the contest organizer.</p>
                         </div>
-                      ))
-                    ) : (
-                      <div className="text-center py-16">
-                        <div className="w-20 h-20 mx-auto mb-4 bg-gray-800/50 rounded-2xl flex items-center justify-center">
-                          <FiCode className="h-10 w-10 text-gray-500" />
-                        </div>
-                        <p className="text-gray-400 text-lg">
-                          No problems available yet.
-                        </p>
-                        <p className="text-gray-500 text-sm mt-2">
-                          Check back soon or contact the contest organizer.
-                        </p>
-                      </div>
+                      )
                     )}
+
                   </div>
                 )}
 
                 {activeTab === "submissions" && (
                   <div className="space-y-4">
                     {submissions.length > 0 ? (
-                      submissions.map((submission) => (
-                        <div
-                          key={submission._id}
-                          className="bg-gray-800/30 border border-gray-700/50 rounded-xl p-4 hover:border-gray-600/50 transition-colors"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-medium text-white text-lg">
-                                {submission.problemTitle}
+                      submissions.map((submission) => {
+                        const verdict = submission.verdict || submission.status || 'pending';
+                        const isAccepted = verdict === 'accepted';
+                        return (
+                          <div key={submission._id} className="bg-gray-800/30 border border-gray-700/50 rounded-xl p-4 hover:border-gray-600/50 transition-colors">
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-white text-base truncate">
+                                  {submission.problem?.title || submission.problemTitle || 'Unknown Problem'}
+                                </div>
+                                <div className="flex items-center gap-3 mt-1 text-xs text-gray-400 flex-wrap">
+                                  <span className="px-2 py-0.5 bg-gray-700/50 rounded">{submission.language}</span>
+                                  {submission.executionTime && <span>⚡ {submission.executionTime}ms</span>}
+                                  {submission.passedTestCases != null && (
+                                    <span>✓ {submission.passedTestCases}/{submission.totalTestCases} tests</span>
+                                  )}
+                                  <span>{new Date(submission.submittedAt || submission.createdAt).toLocaleTimeString()}</span>
+                                </div>
                               </div>
-                              <div className="flex items-center gap-3 mt-2 text-sm text-gray-400">
-                                <span className="px-2 py-1 bg-gray-700/50 rounded">
-                                  {submission.language}
-                                </span>
-                                <span>•</span>
-                                <span>{submission.time}</span>
-                              </div>
+                              <span className={`ml-3 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap ${
+                                isAccepted
+                                  ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                  : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                              }`}>
+                                {verdict.replace(/_/g,' ').toUpperCase()}
+                              </span>
                             </div>
-                            <span
-                              className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                                submission.status === "accepted"
-                                  ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                                  : "bg-red-500/20 text-red-400 border border-red-500/30"
-                              }`}
-                            >
-                              {submission.status.toUpperCase()}
-                            </span>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <div className="text-center py-16">
                         <div className="w-20 h-20 mx-auto mb-4 bg-gray-800/50 rounded-2xl flex items-center justify-center">

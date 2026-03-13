@@ -7,12 +7,12 @@ import {
   deleteNotification,
   clearReadNotifications
 } from '../controllers/notification.controller.js';
-import { protect } from '../middlewares/auth.middleware.js';
+import { authenticate } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
 // All routes require authentication
-router.use(protect);
+router.use(authenticate);
 
 // GET routes
 router.get('/', getNotifications);

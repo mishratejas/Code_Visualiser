@@ -20,6 +20,8 @@ const ContestDetail = () => {
   const [registering, setRegistering] = useState(false);
   const [password, setPassword] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
     fetchContest();
@@ -29,7 +31,15 @@ const ContestDetail = () => {
     try {
       setLoading(true);
       const response = await api.get(`/contests/${id}`);
-      setContest(response.data.data);
+      const contestData = response.data?.data || response.data;
+      setContest(contestData);
+      setLeaderboard(contestData?.leaderboard || []);
+      // Fetch live leaderboard separately
+      try {
+        const lb = await api.get(`/contests/${id}/leaderboard`);
+        const lbData = lb.data?.data || lb.data || [];
+        if (Array.isArray(lbData)) setLeaderboard(lbData);
+      } catch { /* optional */ }
     } catch (error) {
       console.error('Failed to fetch contest:', error);
       toast.error('Failed to load contest');

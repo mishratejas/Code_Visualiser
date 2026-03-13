@@ -194,7 +194,7 @@ const runBasic = ({ execCmd, execArgs, inputData, timeoutMs }) => {
 
     proc.on('close', (code) => {
       clearTimeout(timer);
-      resolve({ stdout: outData, stderr: errData, exitCode: code, killed });
+      resolve({ stdout: outData, stderr: errData, exitCode: code, killed, timedOut: killed });
     });
     proc.on('error', (e) => {
       clearTimeout(timer);
@@ -207,7 +207,7 @@ const runBasic = ({ execCmd, execArgs, inputData, timeoutMs }) => {
 // Optimized code execution with better performance
 const executeCode = async (code, language, testCases, timeLimit, memoryLimit) => {
   const results = [];
-  let totalRuntime = 0;
+  let maxRuntime = 0;  // wall-clock: parallel tests, max = actual slowest
   let testCasesPassed = 0;
 
   // Create temp directory
@@ -399,6 +399,7 @@ const executeCode = async (code, language, testCases, timeLimit, memoryLimit) =>
         };
       } catch (execError) {
         const runtime = Date.now() - startTime;
+        const errMsg = execError.message || execError.stderr || 'Execution error';
 
         return {
           testCaseIndex: index,
@@ -408,7 +409,7 @@ const executeCode = async (code, language, testCases, timeLimit, memoryLimit) =>
           actualOutput: "",
           runtime,
           memory: 0,
-          error: execError.stderr || execError.message,
+          error: errMsg,
         };
       }
     });
@@ -437,14 +438,19 @@ const executeCode = async (code, language, testCases, timeLimit, memoryLimit) =>
       console.error('Cleanup error:', cleanupError);
     }
 
-    // Determine verdict
-    const verdict = testCasesPassed === testCases.length 
-      ? VERDICT.ACCEPTED 
-      : VERDICT.WRONG_ANSWER;
+    // Determine verdict based on what actually failed
+    let verdict = VERDICT.ACCEPTED;
+    if (testCasesPassed < testCases.length) {
+      const hasTLE = results.some(r => r.error && r.error.includes('Time Limit'));
+      const hasRE  = results.some(r => r.error && !r.error.includes('Time Limit') && r.actualOutput === '');
+      if (hasTLE)       verdict = VERDICT.TIME_LIMIT_EXCEEDED;
+      else if (hasRE)   verdict = VERDICT.RUNTIME_ERROR;
+      else              verdict = VERDICT.WRONG_ANSWER;
+    }
 
     return {
       verdict,
-      runtime: totalRuntime,
+      runtime: Math.max(0, maxRuntime - 150), // subtract spawn overhead (~150ms)
       testCasesPassed,
       totalTestCases: testCases.length,
       executionResults: results,

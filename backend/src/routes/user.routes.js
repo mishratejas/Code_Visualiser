@@ -12,11 +12,14 @@ import {
   updateStreak,
   getLeaderboard,
   searchUsers,
-  deleteAccount
+  deleteAccount,
+  uploadAvatar,
+  deleteAvatar,
+  updatePreferences,
+  getStreak
 } from '../controllers/user.controller.js';
-import { protect, authorize } from '../middlewares/auth.middleware.js';
+import { authenticate, authorize } from '../middlewares/auth.middleware.js';
 import { UserValidation } from '../middlewares/validate.middleware.js';
-import { uploadAvatar, deleteAvatar, updatePreferences, getStreak } from '../controllers/user.controller.js';
 import { upload } from '../middlewares/upload.js';
 
 const router = express.Router();
@@ -25,18 +28,18 @@ const router = express.Router();
 router.get('/leaderboard', getLeaderboard);
 router.get('/search', searchUsers);
 
-// ============ protectD ROUTES ============
-router.use(protect);
+// ============ AUTHENTICATED ROUTES ============
+router.use(authenticate);
 
 // Current user endpoints (use /me)
 router.get('/me/profile', getUserProfile);
 router.put('/me/profile', UserValidation.updateProfile, updateUserProfile);
 router.put('/me/preferences', UserValidation.updatePreferences, updateUserPreferences);
 
-// ⭐ CRITICAL: These are what your Problems.jsx is calling
-router.get('/me/bookmarks', getBookmarks);           // GET /api/v1/users/me/bookmarks
-router.post('/bookmarks/:problemId', toggleBookmark); // POST /api/v1/users/bookmarks/:problemId
-router.get('/me/solved', getSolvedProblems);          // GET /api/v1/users/me/solved
+// Bookmarks
+router.get('/me/bookmarks', getBookmarks);
+router.post('/bookmarks/:problemId', toggleBookmark);
+router.get('/me/solved', getSolvedProblems);
 
 // Streak
 router.post('/streak/update', updateStreak);
@@ -47,21 +50,21 @@ router.get('/me/attempted', getAttemptedProblems);
 // Account management
 router.delete('/account', deleteAccount);
 
-// ============ PUBLIC USER PROFILES (Must come AFTER /me routes) ============
-router.get('/:identifier', getUserProfile);         // GET /api/v1/users/username
-router.get('/:userId/stats', getUserStats);         // GET /api/v1/users/:userId/stats
-router.get('/:userId/activity', getUserActivity);   // GET /api/v1/users/:userId/activity
+// Avatar
+router.post('/avatar', upload.single('avatar'), uploadAvatar);
+router.delete('/avatar', deleteAvatar);
+router.patch('/preferences', updatePreferences);
+router.get('/streak', getStreak);
 
-router.post('/avatar', protect, upload.single('avatar'), uploadAvatar);
-router.delete('/avatar', protect, deleteAvatar);
-router.patch('/preferences', protect, updatePreferences);
-router.get('/streak', protect, getStreak);
+// ============ PUBLIC USER PROFILES (Must come AFTER /me routes) ============
+router.get('/:identifier', getUserProfile);
+router.get('/:userId/stats', getUserStats);
+router.get('/:userId/activity', getUserActivity);
 
 // ============ ADMIN ROUTES ============
 router.get('/admin/all', authorize('admin'), async (req, res) => {
-  const User = (await import('../models/mongo/User.model.js')).default;
+  const User = (await import('../models/user.models.js')).default;
   const ApiResponse = (await import('../utils/ApiResponse.js')).default;
-  
   const users = await User.find({}).select('-password');
   res.json(ApiResponse.success({ users }, 'All users fetched'));
 });

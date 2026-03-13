@@ -28,6 +28,17 @@ export const AuthProvider = ({ children }) => {
         return;
       }
 
+      // Check if JWT is expired (decode payload without verifying signature)
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload.exp && payload.exp * 1000 < Date.now()) {
+          // Token expired — clear session
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          return;
+        }
+      } catch { /* ignore decode errors */ }
+
       const userData = JSON.parse(savedUser);
       if (userData && typeof userData === 'object' && (userData._id || userData.id)) {
         setUser(userData);

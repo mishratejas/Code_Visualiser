@@ -46,7 +46,7 @@ export const register = asyncHandler(async (req, res) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000
+    maxAge: 60 * 60 * 1000 // 1 hour
   });
 
   res.status(201).json(
@@ -92,7 +92,7 @@ export const registerOrganizer = asyncHandler(async (req, res) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000
+    maxAge: 60 * 60 * 1000 // 1 hour
   });
 
   res.status(201).json(
@@ -133,7 +133,7 @@ export const login = asyncHandler(async (req, res) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000
+    maxAge: 60 * 60 * 1000 // 1 hour
   });
 
   res.status(200).json(
@@ -162,7 +162,7 @@ export const googleAuthCallback = asyncHandler(async (req, res) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000
+    maxAge: 60 * 60 * 1000 // 1 hour
   });
 
   const userData = {

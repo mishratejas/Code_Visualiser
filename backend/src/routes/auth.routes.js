@@ -21,25 +21,31 @@ import '../config/passport.js';
 
 const router = express.Router();
 
-// Public routes with rate limiting
 router.post('/register', authLimiter, register);
 router.post('/register/organizer', authLimiter, registerOrganizer);
 router.post('/login', authLimiter, login);
 
-// Google OAuth
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-router.get('/google/callback', 
-  passport.authenticate('google', { session: false, failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:5173'}/login?error=google_auth_failed` }), 
+// Google OAuth — session:false because we use JWT not sessions
+router.get('/google',
+  passport.authenticate('google', {
+    scope: ['profile', 'email'],
+    session: false
+  })
+);
+
+router.get('/google/callback',
+  passport.authenticate('google', {
+    session: false,
+    failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:5173'}/login?error=google_auth_failed`
+  }),
   googleAuthCallback
 );
 
-// Password reset
 router.post('/forgot-password', authLimiter, forgotPassword);
 router.post('/reset-password/:token', authLimiter, resetPassword);
 router.post('/verify-email/:token', verifyEmail);
 router.post('/resend-verification', authLimiter, resendVerification);
 
-// Protected routes
 router.post('/logout', authenticate, logout);
 router.get('/me', authenticate, getMe);
 router.put('/profile', authenticate, updateProfile);

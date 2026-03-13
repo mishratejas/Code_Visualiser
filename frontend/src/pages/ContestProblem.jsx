@@ -78,6 +78,12 @@ const ContestProblem = () => {
       
       setContest(contestData);
       setLeaderboard(contestData.leaderboard || []);
+      // Also fetch live leaderboard separately
+      try {
+        const lbRes = await api.get(`/contests/${contestId}/leaderboard`);
+        const lbData = lbRes.data?.data || lbRes.data || [];
+        if (Array.isArray(lbData) && lbData.length > 0) setLeaderboard(lbData);
+      } catch { /* leaderboard optional */ }
       updateUserRank(contestData.leaderboard || []);
       
       // Find the problem from contest problems
@@ -114,7 +120,7 @@ const ContestProblem = () => {
   const updateUserRank = (leaderboardData) => {
     if (!user?.id || !leaderboardData) return;
     
-    const myEntry = leaderboardData.find(entry => entry.userId === user.id);
+    const myEntry = leaderboardData.find(entry => entry.userId === (user._id || user.id));
     if (myEntry) {
       setUserRank(myEntry.rank);
       setUserScore(myEntry.score || 0);
@@ -123,10 +129,12 @@ const ContestProblem = () => {
 
   const getDefaultCode = (title, lang) => {
     const templates = {
-      cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // Your code here\n    \n    return 0;\n}`,
-      python: `def solve():\n    # Your code here\n    pass\n\nif __name__ == "__main__":\n    solve()`,
-      java: `import java.util.*;\n\nclass Solution {\n    public static void main(String[] args) {\n        // Your code here\n    }\n}`,
-      javascript: `function solve() {\n    // Your code here\n}\n\nsolve();`
+      cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    ios_base::sync_with_stdio(false);\n    cin.tie(NULL);\n    // ---- your solution below ----\n\n    return 0;\n}`,
+      python: `import sys\ninput = sys.stdin.readline\n\ndef solve():\n    # ---- your solution below ----\n    pass\n\nsolve()`,
+      java: `import java.util.*;\nimport java.io.*;\n\npublic class Solution {\n    static BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n    static PrintWriter out = new PrintWriter(new BufferedOutputStream(System.out));\n\n    public static void main(String[] args) throws IOException {\n        // ---- your solution below ----\n        out.flush();\n    }\n}`,
+      javascript: `process.stdin.resume();\nprocess.stdin.setEncoding('utf8');\nlet _input = '';\nprocess.stdin.on('data', d => _input += d);\nprocess.stdin.on('end', () => {\n    const lines = _input.trim().split('\\n');\n    let idx = 0;\n    const rl = () => lines[idx++];\n    // ---- your solution below ----\n    function solve() {\n        const n = parseInt(rl());\n        console.log(n);\n    }\n    solve();\n});`,
+      go: `package main\nimport "fmt"\n\nfunc main() {\n    // ---- your solution below ----\n    fmt.Println()\n}`,
+      rust: `use std::io::{self, Read};\nfn main() {\n    let mut input = String::new();\n    io::stdin().read_to_string(&mut input).unwrap();\n    // ---- your solution below ----\n}`
     };
     
     return templates[lang] || templates.cpp;
@@ -214,57 +222,72 @@ const ContestProblem = () => {
 
     // Check if contest is still running
     const now = new Date();
-    const endTime = new Date(contest.endTime);
-    
+    const endTime = new Date(contest.endTime || contest.end_time);
     if (now > endTime) {
       toast.error('Contest has ended. Submissions are closed.');
       return;
     }
 
+    const startTime = new Date(contest.startTime || contest.start_time);
+    if (now < startTime) {
+      toast.error('Contest has not started yet.');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      // ✅ Submit to CONTEST endpoint (not regular submissions)
-      const response = await api.post(`/contests/${contestId}/submit`, {
+      // ── Step 1: Execute code via normal submission endpoint to get verdict ──
+      toast.loading('Judging your code...', { id: 'judge' });
+      const subRes = await api.post('/submissions', {
         problemId,
         code,
-        language
+        language,
       });
-      
-      if (response.data.success) {
-        const submission = response.data.data?.submission;
-        
-        toast.success('Solution submitted to contest! 🎉');
-        
-        // Show results
-        if (submission) {
-          setTestResults([{
-            verdict: submission.verdict,
-            runtime: submission.runtime,
-            testCasesPassed: submission.testCasesPassed,
-            totalTestCases: submission.totalTestCases,
-            score: submission.score
-          }]);
-          
-          if (submission.verdict === 'Accepted') {
-            toast.success(`✅ Accepted! +${submission.score} points`, {
-              duration: 5000,
-              icon: '🏆'
-            });
-          } else {
-            toast.error(`${submission.verdict}`, {
-              duration: 5000
-            });
-          }
-        }
-        
-        // Refresh leaderboard
-        setTimeout(() => {
-          fetchContestAndProblem();
-        }, 1000);
+
+      const sub = subRes?.data?.submission || subRes?.submission || subRes?.data?.data?.submission;
+      toast.dismiss('judge');
+
+      if (!sub) throw new Error('Submission execution failed — no result returned');
+
+      const submissionId = sub._id;
+      const verdict      = sub.verdict;
+      const runtime      = sub.runtime || 0;
+      const passed       = sub.testCasesPassed || 0;
+      const total        = sub.totalTestCases  || 0;
+
+      // ── Step 2: Record in contest with the real verdict ──
+      const contestRes = await api.post(`/contests/${contestId}/submit`, {
+        problemId,
+        code,
+        language,
+        submissionId,
+      });
+
+      const isAccepted = verdict === 'Accepted' || verdict === 'accepted';
+      const pointsEarned = contestRes?.data?.data?.pointsEarned ?? 0;
+
+      setTestResults([{
+        verdict,
+        runtime,
+        testCasesPassed: passed,
+        totalTestCases:  total,
+        score: pointsEarned,
+      }]);
+
+      if (isAccepted) {
+        toast.success(`✅ Accepted! +${pointsEarned} points`, { duration: 5000, icon: '🏆' });
+      } else {
+        toast.error(`${verdict} — ${passed}/${total} test cases passed`, { duration: 5000 });
       }
+
+      // Refresh leaderboard
+      setTimeout(() => fetchContestAndProblem(), 1500);
+
     } catch (err) {
+      toast.dismiss('judge');
       console.error('Submit error:', err);
-      toast.error(err.response?.data?.message || 'Submission failed');
+      const msg = err.response?.data?.message || err.message || 'Submission failed';
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -401,14 +424,14 @@ const ContestProblem = () => {
                       <div>
                         <h3 className="text-xl font-bold mb-3">Problem Description</h3>
                         <div className="text-gray-300 leading-relaxed whitespace-pre-line">
-                          {problem.description}
+                          {problem.description || 'No description available.'}
                         </div>
                       </div>
 
                       {problem.inputFormat && (
                         <div>
                           <h3 className="text-xl font-bold mb-3">Input Format</h3>
-                          <div className="text-gray-300 leading-relaxed">
+                          <div className="text-gray-300 leading-relaxed whitespace-pre-line">
                             {problem.inputFormat}
                           </div>
                         </div>
@@ -417,26 +440,26 @@ const ContestProblem = () => {
                       {problem.outputFormat && (
                         <div>
                           <h3 className="text-xl font-bold mb-3">Output Format</h3>
-                          <div className="text-gray-300 leading-relaxed">
+                          <div className="text-gray-300 leading-relaxed whitespace-pre-line">
                             {problem.outputFormat}
                           </div>
                         </div>
                       )}
 
-                      {problem.constraints && (
+                      {(problem.constraints?.timeLimit || problem.timeLimit || problem.constraints?.memoryLimit || problem.memoryLimit) && (
                         <div>
                           <h3 className="text-xl font-bold mb-3">Constraints</h3>
                           <div className="space-y-2 text-gray-300">
                             <div className="flex items-center gap-2">
                               <FiClock className="text-blue-400" />
-                              <span>Time Limit: {problem.constraints.timeLimit || 2000}ms</span>
+                              <span>Time Limit: {problem.constraints?.timeLimit || problem.timeLimit || 2000}ms</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <FiBarChart2 className="text-purple-400" />
-                              <span>Memory Limit: {problem.constraints.memoryLimit || 256}MB</span>
+                              <span>Memory Limit: {problem.constraints?.memoryLimit || problem.memoryLimit || 256}MB</span>
                             </div>
-                            {problem.constraints.inputConstraints && (
-                              <div className="mt-2 text-gray-400">
+                            {problem.constraints?.inputConstraints && (
+                              <div className="mt-2 text-gray-400 whitespace-pre-line">
                                 {problem.constraints.inputConstraints}
                               </div>
                             )}

@@ -8,14 +8,13 @@ passport.use(
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       callbackURL: process.env.GOOGLE_CALLBACK_URL,
+      proxy: true,   // ← ADD THIS — prevents redirect_uri mismatch behind Express proxy
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
-        // Check if user exists
         let user = await User.findOne({ email: profile.emails[0].value });
 
         if (user) {
-          // If user exists, update googleId if not present
           if (!user.googleId) {
             user.googleId = profile.id;
             await user.save();
@@ -23,9 +22,8 @@ passport.use(
           return done(null, user);
         }
 
-        // Create new user
         user = await User.create({
-          username: profile.displayName.replace(/\s+/g, '').toLowerCase() + 
+          username: profile.displayName.replace(/\s+/g, '').toLowerCase() +
                    Math.floor(Math.random() * 1000),
           email: profile.emails[0].value,
           googleId: profile.id,

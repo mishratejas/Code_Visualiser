@@ -32,9 +32,11 @@ const Notifications = () => {
       if (filter === 'read') params.read = true;
 
       const response = await api.get('/notifications', { params });
-      const resData = response.data?.data || response.data || {};
+      // api interceptor unwraps one level: response IS already response.data
+      // Backend returns: { success, data: { notifications, pagination, unreadCount } }
+      const resData = response?.data || {};
       
-      const notifs = resData.notifications || resData.data || [];
+      const notifs = resData.notifications || [];
       const pagination = resData.pagination || {};
 
       if (page === 1) {

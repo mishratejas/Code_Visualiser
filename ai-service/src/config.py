@@ -24,16 +24,18 @@ class Config:
         "http://localhost:3000,http://localhost:5173,http://localhost:8000"
     ).split(",")
 
-    # Multiple Gemini API keys — comma-separated
-    # e.g. GEMINI_API_KEYS=key1,key2,key3
+    # ── Multiple Gemini API keys ──────────────────────────────────────────
+    # OPTION A — single key:   GEMINI_API_KEY=AIzaSy...
+    # OPTION B — multi-key:    GEMINI_API_KEYS=AIzaSy...,AIzaSy...,AIzaSy...
+    # If one key fails/rate-limits, service automatically rotates to next.
     _raw_keys = os.getenv("GEMINI_API_KEYS", "")
     _single   = os.getenv("GEMINI_API_KEY", "")
 
-    GEMINI_API_KEYS = [
+    GEMINI_API_KEYS = list(dict.fromkeys([   # deduplicated, order-preserving
         k.strip()
         for k in (_raw_keys.split(",") if _raw_keys else [_single])
         if k.strip() and k.strip() not in ("", "your_gemini_api_key_here")
-    ]
+    ]))
     GEMINI_API_KEY  = GEMINI_API_KEYS[0] if GEMINI_API_KEYS else ""
     GEMINI_MODEL    = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
@@ -51,6 +53,6 @@ config = Config()
 GEMINI_READY = bool(config.GEMINI_API_KEYS)
 
 if GEMINI_READY:
-    logger.info(f"Gemini configured with {len(config.GEMINI_API_KEYS)} API key(s)")
+    logger.info(f"Gemini configured with {len(config.GEMINI_API_KEYS)} API key(s), model: {config.GEMINI_MODEL}")
 else:
     logger.warning("No Gemini API keys found — using rule-based fallback only")

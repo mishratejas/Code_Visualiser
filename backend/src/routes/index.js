@@ -8,6 +8,8 @@ import plagiarismRoutes from './plagiarism.routes.js';
 import leaderboardRoutes from './leaderboard.routes.js';
 import notificationRoutes from './notification.routes.js';
 import achievementRoutes from './achievement.routes.js';
+import discussRoutes from './discuss.routes.js';
+import groupRoutes from './group.routes.js';
 
 const router = express.Router();
 
@@ -17,7 +19,6 @@ router.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV,
-    ai_service: process.env.AI_SERVICE_URL || 'http://localhost:8001',
   });
 });
 
@@ -30,6 +31,8 @@ router.use('/plagiarism',    plagiarismRoutes);
 router.use('/leaderboard',   leaderboardRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/achievements',  achievementRoutes);
+router.use('/discuss',       discussRoutes);
+router.use('/groups',        groupRoutes);
 
 router.use('*', (req, res) => {
   res.status(404).json({ success: false, message: `Cannot ${req.method} ${req.originalUrl}` });

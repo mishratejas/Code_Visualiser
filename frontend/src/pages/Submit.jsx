@@ -12,6 +12,7 @@ import Button from '../components/common/Button';
 import CodeEditor from '../components/editor/CodeEditor';
 import { formatExecutionTime, formatMemory } from '../utils/formatters';
 import { LANGUAGE_CONFIG } from '../utils/constants';
+import AnalysisPanel from './analysisPanel';
 
 const Submit = () => {
   const { problemId } = useParams();
@@ -31,6 +32,8 @@ const Submit = () => {
   const [runningCustomTest, setRunningCustomTest] = useState(false);
   const [submissionHistory, setSubmissionHistory] = useState([]);
   const [codeStatus, setCodeStatus] = useState('idle');
+  const [lastSubmission, setLastSubmission] = useState(null);
+  const [showAnalysis, setShowAnalysis] = useState(false);
 
   useEffect(() => {
     fetchProblemDetails();
@@ -163,33 +166,20 @@ const Submit = () => {
   };
 
   const handleSubmit = async () => {
-    // Validate code first
     const validation = submissionService.validateCode(code, language);
-    if (!validation.valid) {
-      toast.error(validation.error);
-      return;
-    }
-
+    if (!validation.valid) { toast.error(validation.error); return; }
     setSubmitting(true);
     setCodeStatus('running');
     try {
-      const submission = {
-        problemId,
-        code,
-        language,
-      };
-
-      const response = await submissionService.submitSolution(submission);
-      
+      const response = await submissionService.submitSolution({ problemId, code, language });
       if (response.success) {
-        toast.success('Solution submitted successfully!');
-        
-        // Navigate to submission details
-        if (response.data?._id) {
-          navigate(`/submissions/${response.data._id}`);
-        } else {
-          navigate('/submissions');
-        }
+        const submissionData = response.data || {};
+        const verdict = submissionData.verdict || submissionData.status || 'pending';
+        toast.success('Solution submitted!');
+        // Show result inline — keep code visible
+        setLastSubmission({ ...submissionData, submittedCode: code });
+        setCodeStatus(verdict === 'accepted' ? 'success' : 'error');
+        fetchSubmissionHistory();
       } else {
         toast.error(response.message || 'Submission failed');
         setCodeStatus('error');
@@ -414,6 +404,74 @@ const Submit = () => {
             </div>
           </Card>
         </div>
+
+        {/* ── Submission Result Panel ────────────────────────────────── */}
+        {lastSubmission && (
+          <div className={`rounded-2xl border-2 p-6 ${
+            lastSubmission.verdict === 'accepted'
+              ? 'bg-green-900/20 border-green-500/40'
+              : 'bg-red-900/20 border-red-500/40'
+          }`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                {lastSubmission.verdict === 'accepted'
+                  ? <BsCheckCircle className="text-green-400 text-3xl" />
+                  : <BsXCircle className="text-red-400 text-3xl" />}
+                <div>
+                  <h3 className={`text-xl font-bold ${lastSubmission.verdict === 'accepted' ? 'text-green-300' : 'text-red-300'}`}>
+                    {(lastSubmission.verdict || 'Pending').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}
+                  </h3>
+                  <p className="text-gray-400 text-sm">
+                    {lastSubmission.passedTestCases ?? 0}/{lastSubmission.totalTestCases ?? 0} test cases passed
+                    {lastSubmission.executionTime ? ` · ${lastSubmission.executionTime}ms` : ''}
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {lastSubmission._id && (
+                  <Link to={`/submissions/${lastSubmission._id}`}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors">
+                    Full Report
+                  </Link>
+                )}
+                <button onClick={() => setShowAnalysis(s => !s)}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors">
+                  {showAnalysis ? 'Hide' : 'AI Analysis'}
+                </button>
+              </div>
+            </div>
+
+            {/* Submitted code — always visible */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-gray-400 font-mono uppercase tracking-wider">Your Submitted Code</span>
+                <button onClick={() => { navigator.clipboard.writeText(lastSubmission.submittedCode || ''); toast.success('Copied!'); }}
+                  className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
+                  <FiCopy size={12}/> Copy
+                </button>
+              </div>
+              <pre className="bg-gray-900 border border-gray-700 rounded-xl p-4 overflow-x-auto text-sm text-gray-200 max-h-80 font-mono">
+                {lastSubmission.submittedCode || code}
+              </pre>
+            </div>
+
+            {/* AI Analysis — expanded panel */}
+            {showAnalysis && (
+              <div className="border-t border-gray-700 pt-4">
+                <div className="bg-gray-900/60 rounded-xl border border-purple-500/20 overflow-y-auto max-h-[600px]">
+                  <AnalysisPanel
+                    code={lastSubmission.submittedCode || code}
+                    language={language}
+                    submissionId={lastSubmission._id}
+                    runtimeMs={lastSubmission.executionTime || 0}
+                    testCasesPassed={lastSubmission.passedTestCases || 0}
+                    totalTestCases={lastSubmission.totalTestCases || 0}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Sidebar */}
         <div className="space-y-6">

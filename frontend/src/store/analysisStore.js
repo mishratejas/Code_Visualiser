@@ -42,7 +42,8 @@ const useAnalysisStore = create((set, get) => ({
         test_cases_passed: testCasesPassed,
         total_test_cases: totalTestCases,
       });
-      const data = res.data?.data || res.data;
+      // Handle both wrapped and unwrapped response (axios interceptor already unwraps data)
+      const data = res?.data || res;
       set(s => ({
         analyses: { ...s.analyses, [key]: data },
         currentAnalysis: data,
@@ -50,7 +51,15 @@ const useAnalysisStore = create((set, get) => ({
       }));
       return data;
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Analysis failed';
+      const status = err.response?.status;
+      let msg = 'Analysis failed';
+      if (status === 503 || err.code === 'ECONNREFUSED') {
+        msg = 'AI service is offline — start it with: cd ai-service && uvicorn src.main:app --port 8001';
+      } else if (status === 401) {
+        msg = 'Authentication required';
+      } else {
+        msg = err.response?.data?.message || err.response?.data?.detail || 'Analysis failed';
+      }
       set(s => ({ loading: { ...s.loading, [key]: false }, error: { ...s.error, [key]: msg } }));
       return null;
     }

@@ -4,6 +4,8 @@ import helmet from "helmet";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import compression from "compression";
+import passport from "passport";
+import "./config/passport.js";
 
 import config from "./config/index.js";
 import logger, { morganStream, requestLogger } from "./config/logger.js";
@@ -20,6 +22,7 @@ import contestRoutes from "./routes/contest.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import achievementRoutes from "./routes/achievement.routes.js";
 import aiRoutes from "./routes/ai.routes.js";
+import discussRoutes from "./routes/discuss.routes.js";
 
 class App {
   constructor() {
@@ -72,6 +75,9 @@ class App {
     this.app.use(express.json({ limit: "10mb" }));
     this.app.use(express.urlencoded({ extended: true, limit: "10mb" }));
     this.app.use(cookieParser());
+
+    // Passport (OAuth)
+    this.app.use(passport.initialize());
 
     // Compression
     this.app.use(compression());
@@ -237,6 +243,7 @@ class App {
     this.app.use(`${apiPrefix}/notifications`, notificationRoutes);
     this.app.use(`${apiPrefix}/achievements`, achievementRoutes);
     this.app.use(`${apiPrefix}/ai`,           aiRoutes);
+    this.app.use(`${apiPrefix}/discuss`,       discussRoutes);
 
     // Test endpoint to verify all routes
     this.app.get(`${apiPrefix}/routes`, (req, res) => {

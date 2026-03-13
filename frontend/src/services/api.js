@@ -57,6 +57,7 @@ export const problemsApi = {
   getFavorites: ()       => api.get('/problems/favorites'),
   toggleFav:   (id)      => api.post(`/problems/${id}/favorite`),
   create:      (data)    => api.post('/problems', data),
+  getTagStats: ()         => api.get('/problems/tags/stats'),
 };
 
 // ── Submissions ───────────────────────────────────────────────────────────────
@@ -94,7 +95,21 @@ export const notificationsApi = {
 // ── Achievements ─────────────────────────────────────────────────────────────
 export const achievementsApi = {
   getAll:   ()   => api.get('/achievements'),
-  getMine:  ()   => api.get('/achievements/me'),
+  getMine:  ()   => api.get('/achievements/user'),
+  getStats: ()   => api.get('/achievements/stats'),
+};
+
+// ── Discuss ───────────────────────────────────────────────────────────────────
+export const discussApi = {
+  getAll:      (params)  => api.get('/discuss', { params }),
+  getById:     (id)      => api.get(`/discuss/${id}`),
+  create:      (data)    => api.post('/discuss', data),
+  update:      (id,data) => api.put(`/discuss/${id}`, data),
+  delete:      (id)      => api.delete(`/discuss/${id}`),
+  vote:        (id)      => api.post(`/discuss/${id}/vote`),
+  addComment:  (id,data) => api.post(`/discuss/${id}/comments`, data),
+  voteComment: (id,cid)  => api.post(`/discuss/${id}/comments/${cid}/vote`),
+  getStats:    ()        => api.get('/discuss/stats'),
 };
 
 // ── Contests ─────────────────────────────────────────────────────────────────

@@ -17,14 +17,14 @@ import {
   getSimilarProblems,
   getProblemEditorial
 } from '../controllers/problem.controller.js';
-import { authenticate, authorize } from '../middlewares/auth.middleware.js';
+import { authenticate, authorize, optionalAuth } from '../middlewares/auth.middleware.js';
 import { ProblemValidation } from '../middlewares/validate.middleware.js';
 import { submissionLimiter } from '../middlewares/rateLimiter.middleware.js';
 
 const router = express.Router();
 
 // Public routes
-router.get('/', getAllProblems);
+router.get('/', optionalAuth, getAllProblems);
 router.get('/search', searchProblems);
 router.get('/tags/stats', getTagStats);
 router.get('/difficulty/:level', getProblemsByDifficulty);

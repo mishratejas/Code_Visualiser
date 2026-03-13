@@ -5,7 +5,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { 
   FiPlay, FiSend, FiCode, FiArrowLeft,
-  FiMaximize2, FiMinimize2
+  FiMaximize2, FiMinimize2, FiMessageSquare, FiList, FiCheckCircle, FiXCircle, FiClock
 } from 'react-icons/fi';
 import { toast } from 'react-hot-toast';
 import Editor from '@monaco-editor/react';
@@ -34,6 +34,9 @@ const Problem = () => {
   const [showCustomTest, setShowCustomTest] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [activeLeftTab, setActiveLeftTab] = useState('problem'); // 'problem' | 'submissions' | 'discuss'
+  const [mySubmissions, setMySubmissions] = useState([]);
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
 
   useEffect(() => {
     fetchProblem();
@@ -58,22 +61,56 @@ const Problem = () => {
     }
   };
 
+  const viewSubmissionCode = async (submission) => {
+    // If code already loaded in list, use it; otherwise fetch by ID
+    if (submission.code) {
+      setViewingCode({ code: submission.code, language: submission.language, verdict: submission.verdict });
+      return;
+    }
+    try {
+      const res = await api.get(`/submissions/${submission._id}`);
+      const s = res?.data?.submission || res?.data || res;
+      setViewingCode({ code: s.code || '// Code not available', language: s.language || submission.language, verdict: s.verdict || submission.verdict });
+    } catch {
+      toast.error('Failed to load code');
+    }
+  };
+
+  const fetchMySubmissions = async () => {
+    if (!user) return;
+    setLoadingSubmissions(true);
+    try {
+      const res = await api.get('/submissions', { params: { problemId: id, limit: 20 } });
+      const list = res?.submissions || res?.data?.submissions || res?.data || [];
+      setMySubmissions(Array.isArray(list) ? list : []);
+    } catch (e) {
+      console.error('Failed to fetch submissions:', e);
+    } finally {
+      setLoadingSubmissions(false);
+    }
+  };
+
   const getDefaultCode = (title, lang) => {
     // All templates use stdin/stdout — C++ and Java MUST have main()
     const templates = {
-      javascript: `const lines = require('fs').readFileSync('/dev/stdin','utf8').trim().split('\\n');
-let idx = 0;
-const rl = () => lines[idx++];
+      javascript: `process.stdin.resume();
+process.stdin.setEncoding('utf8');
+let _input = '';
+process.stdin.on('data', d => _input += d);
+process.stdin.on('end', () => {
+    const lines = _input.trim().split('\\n');
+    let idx = 0;
+    const rl = () => lines[idx++];
 
-// ---- your solution below ----
+    // ---- your solution below ----
 
-function solve() {
-    // Example: read first line
-    const n = rl().trim();
-    console.log(n);
-}
+    function solve() {
+        const n = parseInt(rl());
+        console.log(n);
+    }
 
-solve();`,
+    solve();
+});`,
 
       python: `import sys
 input = sys.stdin.readline
@@ -184,6 +221,7 @@ int main() {
 
       if (submission.isAccepted || submission.verdict === 'accepted') {
         toast.success('🎉 Solution accepted! All test cases passed!');
+        fetchMySubmissions();
         // Refresh problem stats with a slight delay because backend updates it asynchronously
         setTimeout(() => fetchProblem(), 1000);
       } else {

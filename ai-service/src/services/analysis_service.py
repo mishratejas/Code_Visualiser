@@ -15,26 +15,25 @@ from src.cache import get_cache, set_cache
 
 logger = logging.getLogger(__name__)
 
-# Multi-key Gemini pool — rotates keys on quota/rate errors
-_gemini_models: list = []
-_gemini_key_idx = 0
+# Multi-key Gemini pool with automatic failover
+_gemini_models = []
+_current_key_index = 0
 
 if GEMINI_READY:
     try:
-        import google.generativeai as genai
-        for _key in Config.GEMINI_API_KEYS:
+        from google import genai as _genai_sdk
+        for key in Config.GEMINI_API_KEYS:
             try:
-                _client = genai.GenerativeModel.__new__(genai.GenerativeModel)
-                genai.configure(api_key=_key)
-                _model = genai.GenerativeModel(Config.GEMINI_MODEL)
-                _gemini_models.append((_key, _model))
-                logger.info(f"Gemini key loaded: ...{_key[-6:]}")
-            except Exception as _ke:
-                logger.error(f"Gemini key failed: {_ke}")
-        logger.info(f"Gemini pool ready: {len(_gemini_models)} key(s)")
+                client = _genai_sdk.Client(api_key=key)
+                _gemini_models.append((key, client))
+                logger.info(f"Gemini key loaded: ...{key[-6:]}")
+            except Exception as e:
+                logger.warning(f"Failed to init Gemini key ...{key[-6:]}: {e}")
+        logger.info(f"Gemini initialized with {len(_gemini_models)} key(s)")
     except Exception as e:
-        logger.error(f"Failed to init Gemini: {e}")
+        logger.error(f"Gemini init failed: {e}")
 
+# Keep backward compat
 _gemini_model = _gemini_models[0][1] if _gemini_models else None
 
 
@@ -130,45 +129,81 @@ def _regex_metrics(code: str, language: str, m: StructuralMetrics, lines: list) 
     m.uses_binary_search= bool(re.search(r'binarySearch|binary_search|mid\s*=', code_lower))
     m.uses_dp           = bool(re.search(r'\bdp\[|\bmemo\[', code_lower))
     m.uses_recursion    = len(re.findall(r'\b(\w+)\s*\(', code)) > len(set(re.findall(r'\b(\w+)\s*\(', code)))
+    m.nested_loop_depth = m.max_nesting_depth  # _calc_nesting now tracks loop depth
     return m
 
 
 def _calc_nesting(code: str) -> int:
-    max_d, cur = 0, 0
-    for ch in code:
-        if ch == '{': cur += 1; max_d = max(max_d, cur)
-        elif ch == '}': cur = max(0, cur - 1)
-    if max_d == 0:  # Python — use indentation
+    """Calculate max nesting depth of LOOPS specifically (not all braces)."""
+    import re
+    # Count brace depth only at loop keywords
+    lines = code.split('\n')
+    max_loop_depth = 0
+    loop_depth = 0
+    brace_depth = 0
+    loop_brace_starts = []  # brace depth when each loop started
+
+    for line in lines:
+        stripped = line.strip()
+        # Detect loop start
+        is_loop = bool(re.search(r'\b(for|while)\b', stripped))
+        # Count braces
+        opens = stripped.count('{')
+        closes = stripped.count('}')
+
+        if is_loop:
+            loop_depth += 1
+            max_loop_depth = max(max_loop_depth, loop_depth)
+            loop_brace_starts.append(brace_depth)
+
+        brace_depth += opens - closes
+
+        # Pop loop depth when braces close past loop start
+        while loop_brace_starts and brace_depth <= loop_brace_starts[-1]:
+            loop_brace_starts.pop()
+            loop_depth = max(0, loop_depth - 1)
+
+    if max_loop_depth == 0:  # Python — use indentation
         for line in code.split('\n'):
-            indent = len(line) - len(line.lstrip())
-            max_d = max(max_d, indent // 4)
-    return max_d
+            if re.search(r'\bfor\b|\bwhile\b', line):
+                indent = len(line) - len(line.lstrip())
+                max_loop_depth = max(max_loop_depth, indent // 4 + 1)
+    return max_loop_depth
 
 
 async def _call_gemini(prompt: str, fallback: dict) -> dict:
-    global _gemini_key_idx
+    """Try each Gemini key in round-robin; fall back to rule-based on all failures."""
+    global _current_key_index
     if not _gemini_models:
         return fallback
-    # Try each key in round-robin order
-    attempts = len(_gemini_models)
-    for _ in range(attempts):
-        idx = _gemini_key_idx % len(_gemini_models)
-        key_label, model = _gemini_models[idx]
+
+    import asyncio
+    from google import genai as _genai_sdk
+
+    num_keys = len(_gemini_models)
+    for attempt in range(num_keys):
+        idx = (_current_key_index + attempt) % num_keys
+        key, client = _gemini_models[idx]
         try:
-            response = await model.generate_content_async(prompt)
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: client.models.generate_content(
+                    model=Config.GEMINI_MODEL,
+                    contents=prompt,
+                )
+            )
             text = response.text.strip()
             text = re.sub(r'^```(?:json)?\s*', '', text)
             text = re.sub(r'\s*```$', '', text)
-            return json.loads(text)
+            result = json.loads(text)
+            _current_key_index = idx
+            return result
         except Exception as e:
-            err = str(e).lower()
-            if 'quota' in err or 'rate' in err or '429' in err:
-                logger.warning(f"Gemini key ...{key_label[-6:]} quota hit, rotating")
-                _gemini_key_idx += 1
-            else:
-                logger.error(f"Gemini analysis failed: {e}")
-                return fallback
-    logger.error("All Gemini keys exhausted — returning fallback")
+            logger.warning(f"Gemini key ...{key[-6:]} failed (attempt {attempt+1}/{num_keys}): {e}")
+            _current_key_index = (idx + 1) % num_keys
+
+    logger.error("All Gemini keys exhausted — using rule-based fallback")
     return fallback
 
 
@@ -261,12 +296,13 @@ Return this exact JSON structure:
         return result
 
     def _complexity_fallback(self, m: StructuralMetrics) -> str:
-        if m.uses_dp:            return "O(n²)"
+        # Use NESTING DEPTH not raw loop count — 2 sequential loops is O(n), not O(n²)
         if m.uses_binary_search: return "O(log n)"
-        if m.loop_count >= 3:    return "O(n³)"
-        if m.loop_count >= 2:    return "O(n²)"
-        if m.loop_count == 1:    return "O(n)"
-        if m.uses_recursion:     return "O(n)"
+        if m.nested_loop_depth >= 3 or m.loop_count >= 3: return "O(n³)"
+        if m.nested_loop_depth >= 2:  return "O(n²)"   # only nested loops → O(n²)
+        if m.uses_dp:                 return "O(n²)"   # DP usually O(n²)
+        if m.loop_count >= 1:         return "O(n)"    # sequential loops → O(n)
+        if m.uses_recursion:          return "O(n)"
         return "O(1)"
 
     def _quality_score(self, m: StructuralMetrics, passed: int, total: int) -> float:
