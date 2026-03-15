@@ -37,6 +37,8 @@ const Problem = () => {
   const [activeLeftTab, setActiveLeftTab] = useState('problem'); // 'problem' | 'submissions' | 'discuss'
   const [mySubmissions, setMySubmissions] = useState([]);
   const [loadingSubmissions, setLoadingSubmissions] = useState(false);
+  // viewingCode: { code, language, verdict } — for the "View Code" modal in Submissions tab
+  const [viewingCode, setViewingCode] = useState(null);
 
   useEffect(() => {
     fetchProblem();
@@ -81,14 +83,23 @@ const Problem = () => {
     setLoadingSubmissions(true);
     try {
       const res = await api.get('/submissions', { params: { problemId: id, limit: 20 } });
-      const list = res?.submissions || res?.data?.submissions || res?.data || [];
+      // api interceptor returns response.data, which is { success, data: { submissions: [...] }, ... }
+      const list = res?.data?.submissions || res?.submissions || res?.data || [];
       setMySubmissions(Array.isArray(list) ? list : []);
     } catch (e) {
       console.error('Failed to fetch submissions:', e);
+      setMySubmissions([]);
     } finally {
       setLoadingSubmissions(false);
     }
   };
+
+  // Fetch submissions when tab is opened
+  useEffect(() => {
+    if (activeLeftTab === 'submissions') {
+      fetchMySubmissions();
+    }
+  }, [activeLeftTab]);
 
   const getDefaultCode = (title, lang) => {
     // All templates use stdin/stdout — C++ and Java MUST have main()
@@ -308,10 +319,119 @@ int main() {
 
         {/* Main Grid */}
         <div className={`grid ${isFullscreen ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'} gap-6`}>
-          {/* Left Panel - Problem Description */}
+          {/* Left Panel - Problem Description / My Submissions */}
           {!isFullscreen && (
             <div className="space-y-4">
-              <ProblemDetail problem={problem} />
+              {/* Tab Bar */}
+              <div className={`flex gap-1 p-1 rounded-xl border ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
+                {[
+                  { id: 'problem', label: 'Problem' },
+                  { id: 'submissions', label: 'My Submissions' },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveLeftTab(tab.id)}
+                    className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
+                      activeLeftTab === tab.id
+                        ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow'
+                        : isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Problem Tab */}
+              {activeLeftTab === 'problem' && <ProblemDetail problem={problem} />}
+
+              {/* Submissions Tab */}
+              {activeLeftTab === 'submissions' && (
+                <div className={`${cardClass} rounded-xl border p-4`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className={`font-bold ${textClass}`}>My Submissions</h3>
+                    <button
+                      onClick={fetchMySubmissions}
+                      className={`text-xs px-3 py-1.5 rounded-lg ${isDark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                    >
+                      Refresh
+                    </button>
+                  </div>
+
+                  {!user ? (
+                    <p className={`text-sm ${subTextClass} text-center py-8`}>Please login to view your submissions.</p>
+                  ) : loadingSubmissions ? (
+                    <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" /></div>
+                  ) : mySubmissions.length === 0 ? (
+                    <p className={`text-sm ${subTextClass} text-center py-8`}>No submissions yet for this problem.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {mySubmissions.map((sub, i) => {
+                        const verdictLabel = {
+                          accepted: 'Accepted', wrong_answer: 'Wrong Answer',
+                          time_limit_exceeded: 'TLE', runtime_error: 'Runtime Error',
+                          compilation_error: 'Compile Error', pending: 'Pending',
+                        };
+                        const verdictColor = sub.verdict === 'accepted'
+                          ? 'text-green-400' : sub.verdict === 'pending' ? 'text-yellow-400' : 'text-red-400';
+                        return (
+                          <div key={sub._id || i} className={`flex items-center justify-between p-3 rounded-lg border ${isDark ? 'border-gray-700 bg-gray-800/60' : 'border-gray-200 bg-gray-50'}`}>
+                            <div className="flex flex-col gap-0.5">
+                              <span className={`text-sm font-semibold ${verdictColor}`}>
+                                {sub.verdict === 'accepted' ? '✅' : '❌'} {verdictLabel[sub.verdict] || sub.verdict}
+                              </span>
+                              <span className={`text-xs ${subTextClass}`}>
+                                {sub.language?.toUpperCase()} · {sub.runtime > 0 ? `${sub.runtime}ms` : '—'} · {sub.testCasesPassed ?? '?'}/{sub.totalTestCases ?? '?'} cases
+                              </span>
+                              <span className={`text-xs ${subTextClass}`}>
+                                {sub.createdAt ? new Date(sub.createdAt).toLocaleString() : ''}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => viewSubmissionCode(sub)}
+                              className={`text-xs px-3 py-1.5 rounded-lg ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}
+                            >
+                              View Code
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* View Code Modal */}
+              {viewingCode && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                  <div className={`w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl border shadow-2xl ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
+                    <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-sm font-bold ${viewingCode.verdict === 'accepted' ? 'text-green-400' : 'text-red-400'}`}>
+                          {viewingCode.verdict === 'accepted' ? '✅ Accepted' : '❌ ' + (viewingCode.verdict?.replace(/_/g, ' ') || 'Failed')}
+                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'}`}>
+                          {viewingCode.language?.toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => { setCode(viewingCode.code); setLanguage(viewingCode.language); setViewingCode(null); toast.success('Code loaded into editor'); }}
+                          className="text-xs px-3 py-1.5 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-lg hover:opacity-90"
+                        >
+                          Load in Editor
+                        </button>
+                        <button onClick={() => setViewingCode(null)} className={`p-1.5 rounded-lg ${isDark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-600'}`}>✕</button>
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-auto p-4">
+                      <pre className={`text-sm font-mono whitespace-pre-wrap break-all ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>
+                        {viewingCode.code}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

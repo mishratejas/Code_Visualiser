@@ -39,6 +39,7 @@ const LiveContest = () => {
   const [contest, setContest] = useState(null);
   const [problems, setProblems] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
+  const [solvedProblemIds, setSolvedProblemIds] = useState(new Set());
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -52,6 +53,7 @@ const LiveContest = () => {
   const socketInitialized = useRef(false);
   const contestJoined = useRef(false);
   const timerRef = useRef(null);
+  const leaderboardPollRef = useRef(null);
 
   // ✅ Fetch contest data (separate from socket)
   useEffect(() => {
@@ -206,6 +208,9 @@ const LiveContest = () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+      if (leaderboardPollRef.current) {
+        clearInterval(leaderboardPollRef.current);
+      }
     };
   }, [contest, id, navigate]);
 
@@ -247,10 +252,29 @@ const LiveContest = () => {
         try {
           const subsRes = await api.get(`/contests/${id}/submissions`);
           const subsData = subsRes.data?.submissions || subsRes.submissions || subsRes.data || [];
-          setSubmissions(Array.isArray(subsData) ? subsData : []);
+          const subsList = Array.isArray(subsData) ? subsData : [];
+          setSubmissions(subsList);
+          // Track which problems the current user has solved (accepted)
+          const solved = new Set(
+            subsList
+              .filter(s => s.verdict === 'accepted' || s.status === 'accepted')
+              .map(s => s.problem?._id || s.problemId || s.problem_id)
+              .filter(Boolean)
+          );
+          setSolvedProblemIds(solved);
         } catch (e) {
           console.warn('Could not load contest submissions', e);
         }
+
+        // Live leaderboard polling every 15s (fallback when socket is not connected)
+        if (leaderboardPollRef.current) clearInterval(leaderboardPollRef.current);
+        leaderboardPollRef.current = setInterval(async () => {
+          try {
+            const lb = await api.get(`/contests/${id}/leaderboard`);
+            const lbData = lb.data?.data || lb.data || [];
+            if (Array.isArray(lbData) && lbData.length > 0) setLeaderboard(lbData);
+          } catch { /* silent */ }
+        }, 15000);
 
         console.log("✅ Contest data loaded:", {
           title: contestData.title,
@@ -598,21 +622,38 @@ const LiveContest = () => {
                     {/* ── Contest live or ended — show real problems ── */}
                     {(!contest || new Date() >= new Date(contest.startTime || contest.start_time)) && (
                       problems.length > 0 ? (
-                        problems.map((problem, index) => (
+                        problems.map((problem, index) => {
+                          const isSolved = solvedProblemIds.has(problem._id);
+                          return (
                           <div
                             key={problem._id}
-                            className="group bg-gray-800/30 border border-gray-700/50 rounded-xl p-6 hover:border-blue-500/50 hover:shadow-lg transition-all cursor-pointer"
+                            className={`group border rounded-xl p-6 hover:shadow-lg transition-all cursor-pointer ${
+                              isSolved
+                                ? "bg-green-900/20 border-green-500/40 hover:border-green-400/60"
+                                : "bg-gray-800/30 border-gray-700/50 hover:border-blue-500/50"
+                            }`}
                             onClick={() => handleProblemClick(problem._id)}
                           >
                             <div className="flex items-center justify-between mb-4">
                               <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-lg">
-                                  {String.fromCharCode(65 + index)}
+                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg ${
+                                  isSolved
+                                    ? "bg-gradient-to-r from-green-500 to-emerald-500"
+                                    : "bg-gradient-to-r from-blue-600 to-purple-600"
+                                }`}>
+                                  {isSolved ? <FiCheckCircle className="h-6 w-6" /> : String.fromCharCode(65 + index)}
                                 </div>
                                 <div>
-                                  <h3 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">
-                                    {problem.title}
-                                  </h3>
+                                  <div className="flex items-center gap-2">
+                                    <h3 className={`text-xl font-bold transition-colors ${isSolved ? "text-green-300" : "text-white group-hover:text-blue-400"}`}>
+                                      {problem.title}
+                                    </h3>
+                                    {isSolved && (
+                                      <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded-full font-bold">
+                                        ✓ Solved
+                                      </span>
+                                    )}
+                                  </div>
                                   <div className="flex items-center gap-3 mt-2">
                                     <span className={`px-3 py-1 rounded-lg text-xs font-medium ${
                                       problem.difficulty === "easy"
@@ -636,9 +677,13 @@ const LiveContest = () => {
                               </div>
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleSubmit(problem._id); }}
-                                className="px-6 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:shadow-lg transition-all font-medium flex items-center gap-2"
+                                className={`px-6 py-2.5 rounded-xl hover:shadow-lg transition-all font-medium flex items-center gap-2 ${
+                                  isSolved
+                                    ? "bg-gray-700/50 text-gray-300 border border-gray-600/50 hover:bg-gray-700"
+                                    : "bg-gradient-to-r from-green-600 to-emerald-600 text-white"
+                                }`}
                               >
-                                <FiCode className="h-4 w-4" /> Solve
+                                <FiCode className="h-4 w-4" /> {isSolved ? "Re-solve" : "Solve"}
                               </button>
                             </div>
                             {problem.tags && problem.tags.length > 0 && (
@@ -655,7 +700,8 @@ const LiveContest = () => {
                               {problem.description || 'Click to view the full problem statement'}
                             </p>
                           </div>
-                        ))
+                          );
+                        })
                       ) : (
                         <div className="text-center py-16">
                           <div className="w-20 h-20 mx-auto mb-4 bg-gray-800/50 rounded-2xl flex items-center justify-center">
@@ -803,11 +849,14 @@ const LiveContest = () => {
 
               <div className="space-y-3 max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-800/30 pr-2">
                 {leaderboard.length > 0 ? (
-                  leaderboard.slice(0, 20).map((entry, index) => (
+                  leaderboard.slice(0, 20).map((entry, index) => {
+                    // Match by either id or _id — backend uses PostgreSQL user_id (MongoDB ObjectId string)
+                    const isMe = entry.userId === user?.id || entry.userId === user?._id?.toString();
+                    return (
                     <div
                       key={entry.userId}
                       className={`p-3 rounded-xl transition-all ${
-                        entry.userId === user?.id
+                        isMe
                           ? "bg-gradient-to-r from-blue-600/20 to-purple-600/20 border-2 border-blue-500/30 shadow-lg"
                           : index < 3
                             ? "bg-gradient-to-r from-yellow-500/10 to-amber-500/10 border border-yellow-500/20"
@@ -826,45 +875,34 @@ const LiveContest = () => {
                             {index < 3 ? (
                               <TbTrophy
                                 className={`h-5 w-5 ${
-                                  index === 0
-                                    ? "text-yellow-200"
-                                    : index === 1
-                                      ? "text-gray-200"
-                                      : "text-amber-700"
+                                  index === 0 ? "text-yellow-200" : index === 1 ? "text-gray-200" : "text-amber-700"
                                 }`}
                               />
                             ) : (
-                              <span className="text-sm text-gray-300">
-                                #{index + 1}
-                              </span>
+                              <span className="text-sm text-gray-300">#{index + 1}</span>
                             )}
                           </div>
                           <div>
                             <div className="font-medium text-white text-sm">
-                              {entry.username ||
-                                `User ${entry.userId.slice(0, 8)}`}
-                              {entry.userId === user?.id && (
-                                <span className="ml-2 text-xs text-blue-400 font-semibold">
-                                  (You)
-                                </span>
+                              {entry.username || `User ${(entry.userId||'').slice(0, 8)}`}
+                              {isMe && (
+                                <span className="ml-2 text-xs text-blue-400 font-semibold">(You)</span>
                               )}
                             </div>
                             <div className="text-xs text-gray-400 mt-1">
                               {entry.solved || 0} solved
-                              {entry.totalTime > 0 &&
-                                ` • ${Math.floor(entry.totalTime / 60)}m`}
+                              {entry.totalTime > 0 && ` • ${Math.floor(entry.totalTime / 60)}m`}
                             </div>
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="font-bold text-white text-lg">
-                            {entry.score || 0}
-                          </div>
+                          <div className="font-bold text-white text-lg">{entry.score || 0}</div>
                           <div className="text-xs text-gray-400">points</div>
                         </div>
                       </div>
                     </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="text-center py-12">
                     <div className="w-16 h-16 mx-auto mb-4 bg-gray-800/50 rounded-xl flex items-center justify-center">

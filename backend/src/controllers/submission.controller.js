@@ -14,6 +14,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { VERDICT } from "../constants.js";
 import { v4 as uuidv4 } from "uuid";
+import achievementService from "../services/achievement.service.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -451,6 +452,9 @@ const executeCode = async (code, language, testCases, timeLimit, memoryLimit) =>
     return {
       verdict,
       runtime: Math.max(0, maxRuntime - 150), // subtract spawn overhead (~150ms)
+      displayRuntime: Math.max(0, maxRuntime - 150), // reported to user (algorithm time only)
+      rawMaxRuntime: maxRuntime,               // wall-clock max (for debugging)
+      avgRuntime: testCases.length > 0 ? Math.round(totalRuntime / testCases.length) : 0,
       testCasesPassed,
       totalTestCases: testCases.length,
       executionResults: results,
@@ -535,7 +539,7 @@ export const submitCode = asyncHandler(async (req, res) => {
 
   // Update submission with results
   submission.verdict = executionResult.verdict;
-  submission.runtime = executionResult.runtime;
+  submission.runtime = executionResult.displayRuntime ?? executionResult.runtime;
   submission.testCasesPassed = executionResult.testCasesPassed;
   submission.executionResults = executionResult.executionResults;
   submission.errorMessage = executionResult.errorMessage;
@@ -546,6 +550,12 @@ export const submitCode = asyncHandler(async (req, res) => {
   // Update user stats (run in background, don't await)
   updateUserStats(userId, problem, executionResult.verdict, problemId, isResubmit)
     .catch(err => console.error("Error updating user stats:", err));
+
+  // Check & unlock achievements (background, non-blocking)
+  achievementService.checkSubmissionAchievements(userId, {
+    verdict: executionResult.verdict,
+    executionTime: Date.now() - submission.createdAt,
+  }).catch(err => console.error("Achievement check error:", err));
 
   // Update problem stats (run in background, don't await)
   updateProblemStats(problemId, executionResult.verdict)

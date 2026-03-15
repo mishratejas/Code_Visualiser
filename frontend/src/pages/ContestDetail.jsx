@@ -211,11 +211,19 @@ const ContestDetail = () => {
                     <FiArrowRight className="h-5 w-5" />
                   </button>
                 )}
-                {isUpcoming && (
-                  <span className="text-gray-400">
-                    Contest starts in {Math.round((start - now) / (1000 * 60 * 60))} hours
-                  </span>
-                )}
+                {isUpcoming && (() => {
+                    const diffMs = start - now;
+                    const hrs    = Math.floor(diffMs / (1000 * 60 * 60));
+                    const mins   = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                    return (
+                      <div className="flex items-center gap-2 text-blue-300">
+                        <FiClock className="h-4 w-4" />
+                        <span className="font-medium">
+                          {hrs > 0 ? `Starts in ${hrs}h ${mins}m` : `Starts in ${mins} minute${mins !== 1 ? 's' : ''}`}
+                        </span>
+                      </div>
+                    );
+                  })()}
               </>
             ) : canRegister ? (
               <>

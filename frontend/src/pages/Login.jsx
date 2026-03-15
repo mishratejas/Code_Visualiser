@@ -18,7 +18,11 @@ const Login = () => {
   const { toggleTheme, isDark }         = useTheme();
   const navigate                        = useNavigate();
   const location                        = useLocation();
-  const from = location.state?.from?.pathname || '/dashboard';
+  // Only restore `from` if it's a generic route (not a user-specific profile page),
+  // so a different user logging in doesn't land on the previous user's profile.
+  const rawFrom = location.state?.from?.pathname || '/dashboard';
+  const userSpecificRoutes = ['/profile/', '/settings'];
+  const from = userSpecificRoutes.some(r => rawFrom.startsWith(r)) ? '/dashboard' : rawFrom;
 
   const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });

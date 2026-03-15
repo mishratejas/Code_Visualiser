@@ -1,7 +1,8 @@
 import express from 'express';
 import {
   getGroups, getGroup, createGroup, updateGroup, deleteGroup,
-  joinGroup, leaveGroup, inviteMember, updateMemberRole, removeMember
+  joinGroup, leaveGroup, inviteMember, updateMemberRole, removeMember,
+  approveMember, rejectMember, getPendingMembers
 } from '../controllers/group.controller.js';
 import { authenticate, optionalAuth } from '../middlewares/auth.middleware.js';
 
@@ -19,5 +20,10 @@ router.post('/:id/leave', authenticate, leaveGroup);
 router.post('/:id/invite', authenticate, inviteMember);
 router.put('/:id/members/:userId/role', authenticate, updateMemberRole);
 router.delete('/:id/members/:userId', authenticate, removeMember);
+
+// Join request approval flow
+router.get('/:id/pending', authenticate, getPendingMembers);
+router.post('/:id/approve/:userId', authenticate, approveMember);
+router.post('/:id/reject/:userId', authenticate, rejectMember);
 
 export default router;

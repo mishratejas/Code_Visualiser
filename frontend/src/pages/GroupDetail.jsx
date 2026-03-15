@@ -17,6 +17,72 @@ import ContestTimer from '../components/contests/ContestTimer';
 
 const getRatingColor = r => r >= 2000 ? 'text-yellow-400' : r >= 1700 ? 'text-blue-400' : r >= 1400 ? 'text-green-400' : 'text-gray-400';
 
+// ── Pending Members Panel (admin view) ────────────────────────────────────────
+function PendingMembersPanel({ groupId, isDark, card, txt, sub, onApprove }) {
+  const [pending, setPending] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/groups/${groupId}/pending`);
+      setPending(res?.data || res?.data?.data || []);
+    } catch { setPending([]); }
+    finally { setLoading(false); }
+  }, [groupId]);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  const approve = async (userId) => {
+    try {
+      await api.post(`/groups/${groupId}/approve/${userId}`);
+      toast.success('Member approved!');
+      load();
+      onApprove();
+    } catch (e) { toast.error(e.response?.data?.message || 'Failed'); }
+  };
+
+  const reject = async (userId) => {
+    try {
+      await api.post(`/groups/${groupId}/reject/${userId}`);
+      toast.success('Request rejected');
+      load();
+    } catch (e) { toast.error(e.response?.data?.message || 'Failed'); }
+  };
+
+  if (loading) return <div className="py-8 text-center text-gray-500 text-sm">Loading...</div>;
+
+  return (
+    <div className={`${card} border rounded-2xl p-5`}>
+      <h3 className={`font-bold text-sm ${txt} mb-4`}>Join Requests ({pending.length})</h3>
+      {pending.length === 0 ? (
+        <p className={`text-sm ${sub} text-center py-8`}>No pending requests</p>
+      ) : (
+        <div className="space-y-3">
+          {pending.map(m => (
+            <div key={m.userId} className={`flex items-center justify-between p-3 rounded-xl border ${isDark ? 'border-gray-700 bg-gray-800/40' : 'border-gray-200 bg-gray-50'}`}>
+              <div>
+                <span className={`text-sm font-semibold ${txt}`}>{m.username}</span>
+                <p className={`text-xs ${sub} mt-0.5`}>Requested {new Date(m.requestedAt).toLocaleDateString()}</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => approve(m.userId)}
+                  className="px-3 py-1.5 text-xs bg-green-500/20 text-green-400 border border-green-500/30 rounded-lg hover:bg-green-500/30 font-bold">
+                  ✓ Approve
+                </button>
+                <button onClick={() => reject(m.userId)}
+                  className="px-3 py-1.5 text-xs bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/30 font-bold">
+                  ✕ Reject
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function GroupDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -31,6 +97,7 @@ export default function GroupDetail() {
   const [inviteUsername, setInviteUsername] = useState('');
   const [inviting, setInviting] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [joinPending, setJoinPending] = useState(false);
   const [leaveConfirm, setLeaveConfirm] = useState(false);
 
   const bg   = isDark ? 'bg-gray-950' : 'bg-gray-50';
@@ -64,13 +131,20 @@ export default function GroupDetail() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleJoin = async () => {
+  const handleJoin = async (password = null) => {
     if (!user) { navigate('/login'); return; }
     setJoining(true);
     try {
-      await api.post(`/groups/${id}/join`);
-      toast.success('Joined! 🎉');
-      load();
+      const payload = password ? { password } : {};
+      const res = await api.post(`/groups/${id}/join`, payload);
+      const data = res?.data || res;
+      if (data?.pending) {
+        setJoinPending(true);
+        toast.success('Join request sent! Waiting for admin approval. 📬');
+      } else {
+        toast.success('Joined! 🎉');
+        load();
+      }
     } catch (e) { toast.error(e.response?.data?.message || 'Failed to join'); }
     finally { setJoining(false); }
   };
@@ -167,10 +241,16 @@ export default function GroupDetail() {
                         </button>
                       </>
                     ) : group.visibility !== 'secret' ? (
-                      <button onClick={handleJoin} disabled={joining}
-                        className="px-4 py-2 bg-gradient-to-r from-rose-500 to-red-500 text-white text-sm rounded-xl font-bold disabled:opacity-50">
-                        {joining ? 'Joining...' : 'Join Group'}
-                      </button>
+                      joinPending ? (
+                        <span className="px-4 py-2 bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 text-sm rounded-xl font-bold flex items-center gap-2">
+                          ⏳ Request Pending
+                        </span>
+                      ) : (
+                        <button onClick={() => handleJoin()} disabled={joining}
+                          className="px-4 py-2 bg-gradient-to-r from-rose-500 to-red-500 text-white text-sm rounded-xl font-bold disabled:opacity-50">
+                          {joining ? 'Joining...' : group.visibility === 'private' ? '🔒 Join (Password Required)' : 'Join Group'}
+                        </button>
+                      )
                     ) : (
                       <span className={`px-3 py-2 text-xs ${sub} ${isDark ? 'bg-gray-800' : 'bg-gray-100'} rounded-xl`}>Invite only</span>
                     )}
@@ -194,11 +274,12 @@ export default function GroupDetail() {
 
         {/* Tabs */}
         <div className={`flex border-b ${bdr} mb-6`}>
-          {['overview', 'members', 'contests'].map(t => (
+          {['overview', 'members', 'contests', ...(isAdmin ? ['pending'] : [])].map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-5 py-3 text-sm font-semibold capitalize border-b-2 -mb-px transition-colors
+              className={`px-5 py-3 text-sm font-semibold capitalize border-b-2 -mb-px transition-colors flex items-center gap-1.5
                 ${tab === t ? 'border-rose-500 text-rose-400' : `border-transparent ${sub} hover:text-gray-200`}`}>
               {t}
+              {t === 'pending' && <span className="text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-full px-1.5 py-0.5">!</span>}
             </button>
           ))}
         </div>
@@ -325,6 +406,11 @@ export default function GroupDetail() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* ── PENDING REQUESTS (admin only) ── */}
+        {tab === 'pending' && isAdmin && (
+          <PendingMembersPanel groupId={id} isDark={isDark} card={card} txt={txt} sub={sub} onApprove={load} />
         )}
 
         {/* ── CONTESTS ── */}

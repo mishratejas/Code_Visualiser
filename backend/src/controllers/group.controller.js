@@ -212,13 +212,15 @@ export const joinGroup = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = resolveId(req);
-    const { password } = req.body;
+    // Guard: req.body may be undefined if Content-Type header is missing
+    const { password } = req.body || {};
 
     const group = await Group.findByPk(id);
     if (!group || !group.is_active) return res.status(404).json({ success: false, message: 'Group not found' });
 
-    if (group.visibility === 'secret') return res.status(403).json({ success: false, message: 'Cannot join secret groups directly' });
+    if (group.visibility === 'secret') return res.status(403).json({ success: false, message: 'Cannot join secret groups directly — ask a member to invite you' });
 
+    // For private groups: verify password, then create as pending (owner must approve)
     if (group.visibility === 'private') {
       if (!password || group.join_password !== password)
         return res.status(400).json({ success: false, message: 'Incorrect password' });
@@ -226,21 +228,98 @@ export const joinGroup = async (req, res) => {
 
     const existing = await GroupMember.findOne({ where: { group_id: id, user_id: userId } });
     if (existing) {
-      if (existing.status === 'active') return res.status(400).json({ success: false, message: 'Already a member' });
-      if (existing.status === 'banned') return res.status(403).json({ success: false, message: 'You are banned from this group' });
+      if (existing.status === 'active')  return res.status(400).json({ success: false, message: 'Already a member' });
+      if (existing.status === 'banned')  return res.status(403).json({ success: false, message: 'You are banned from this group' });
+      if (existing.status === 'pending') return res.status(400).json({ success: false, message: 'Your join request is already pending approval' });
+      // Re-activate if somehow in another state
       await existing.update({ status: 'active' });
     } else {
-      await GroupMember.create({ group_id: id, user_id: userId, role: 'member', status: 'active', joined_at: new Date() });
+      // Public groups: join immediately. Private groups: create pending request (admin must approve).
+      const joinStatus = group.visibility === 'private' ? 'pending' : 'active';
+      await GroupMember.create({ group_id: id, user_id: userId, role: 'member', status: joinStatus, joined_at: new Date() });
+      if (joinStatus === 'active') await group.increment('member_count');
+
+      if (joinStatus === 'pending') {
+        return res.json({ success: true, pending: true, message: 'Join request sent! Waiting for admin approval.' });
+      }
     }
 
-    await group.increment('member_count');
     res.json({ success: true, message: 'Joined group successfully!' });
+  } catch (e) {
+    console.error('joinGroup error:', e);
+    res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+// ── POST /api/v1/groups/:id/approve/:userId ───────────────────────────────────
+export const approveMember = async (req, res) => {
+  try {
+    const { id, userId: targetUserId } = req.params;
+    const adminId = resolveId(req);
+
+    const admin = await GroupMember.findOne({ where: { group_id: id, user_id: adminId, status: 'active' } });
+    if (!admin || !['owner', 'admin'].includes(admin.role))
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+
+    const pending = await GroupMember.findOne({ where: { group_id: id, user_id: targetUserId, status: 'pending' } });
+    if (!pending) return res.status(404).json({ success: false, message: 'No pending request found' });
+
+    await pending.update({ status: 'active', joined_at: new Date() });
+    await Group.increment('member_count', { where: { id } });
+
+    res.json({ success: true, message: 'Member approved!' });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
   }
 };
 
-// ── POST /api/v1/groups/:id/leave ─────────────────────────────────────────────
+// ── POST /api/v1/groups/:id/reject/:userId ────────────────────────────────────
+export const rejectMember = async (req, res) => {
+  try {
+    const { id, userId: targetUserId } = req.params;
+    const adminId = resolveId(req);
+
+    const admin = await GroupMember.findOne({ where: { group_id: id, user_id: adminId, status: 'active' } });
+    if (!admin || !['owner', 'admin'].includes(admin.role))
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+
+    await GroupMember.destroy({ where: { group_id: id, user_id: targetUserId, status: 'pending' } });
+    res.json({ success: true, message: 'Request rejected' });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+// ── GET /api/v1/groups/:id/pending ────────────────────────────────────────────
+export const getPendingMembers = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminId = resolveId(req);
+
+    const admin = await GroupMember.findOne({ where: { group_id: id, user_id: adminId, status: 'active' } });
+    if (!admin || !['owner', 'admin'].includes(admin.role))
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+
+    const pending = await GroupMember.findAll({ where: { group_id: id, status: 'pending' } });
+
+    const validIds = pending.map(m => m.user_id).filter(uid => uid && uid.length === 24);
+    let userMap = {};
+    if (validIds.length) {
+      const users = await User.find({ _id: { $in: validIds } }).select('username profile.name profile.avatar').lean();
+      users.forEach(u => { userMap[u._id.toString()] = u; });
+    }
+
+    const result = pending.map(m => {
+      const u = userMap[m.user_id] || null;
+      return { userId: m.user_id, username: u?.username || `User_${m.user_id.slice(-6)}`, avatar: u?.profile?.avatar || null, requestedAt: m.joined_at };
+    });
+
+    res.json({ success: true, data: result });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+};
+
 export const leaveGroup = async (req, res) => {
   try {
     const { id } = req.params;

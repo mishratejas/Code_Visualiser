@@ -456,23 +456,29 @@ const Contests = () => {
                     </div>
 
                     {/* Actions */}
-                    <div className="col-span-2 flex items-center gap-2">
+                    <div className="col-span-2 flex items-center gap-2 flex-wrap">
                       <Link
                         to={`/contests/${contestId}`}
                         className={`px-3 py-1.5 text-xs rounded-lg transition-opacity hover:opacity-80 ${
-                          isDark
-                            ? "bg-gray-800 text-gray-300"
-                            : "bg-gray-100 text-gray-700"
+                          isDark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-700"
                         }`}
                       >
                         Details
                       </Link>
-                      {status === "upcoming" && filter !== "my" && (
+                      {/* ✅ Show registered badge when already signed up */}
+                      {contest.isRegistered && status !== "past" && (
+                        <span className="px-3 py-1.5 text-xs bg-green-500/15 text-green-400 border border-green-500/30 rounded-lg font-medium flex items-center gap-1">
+                          ✅ Registered
+                        </span>
+                      )}
+                      {/* Register button — only when NOT yet registered */}
+                      {status === "upcoming" && !contest.isRegistered && filter !== "my" && (
                         <button
                           onClick={() => handleRegisterClick(contest)}
-                          className="px-3 py-1.5 text-xs bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-lg hover:opacity-90 transition-opacity"
+                          disabled={registering}
+                          className="px-3 py-1.5 text-xs bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
                         >
-                          Register
+                          {registering && selectedContest?.id === contestId ? "…" : "Register"}
                         </button>
                       )}
                       {status === "ongoing" && (

@@ -111,6 +111,7 @@ const Profile = () => {
 
       const [sRes, subRes, actRes] = await Promise.allSettled([
         api.get(`/users/${uid}/stats`),
+        // Always filter submissions by the viewed user's problemId list — or fetch globally for own profile
         api.get('/submissions', { params: { limit: 20 } }),
         api.get(`/users/${uid}/activity`).catch(() => ({ data: [] })),
       ]);
@@ -139,7 +140,9 @@ const Profile = () => {
 
       if (subRes.status === 'fulfilled') {
         const d = subRes.value;
-        const list = d?.submissions || d?.data?.submissions || d?.data || [];
+        // API interceptor unwraps axios response.data → d is the ApiResponse body
+        // Shape: { success, data: { submissions: [...], pagination, stats } }
+        const list = d?.data?.submissions || d?.submissions || d?.data || [];
         setSubmissions(Array.isArray(list) ? list.slice(0, 20) : []);
       }
 
@@ -426,7 +429,16 @@ const Profile = () => {
             <div className={`${card} border rounded-2xl overflow-hidden`}>
               <div className={`px-5 py-3 border-b ${bdrClr} flex items-center justify-between`}>
                 <span className={`text-sm font-bold ${txt}`}>Recent Submissions</span>
-                <Link to="/submissions" className="text-xs text-rose-400 hover:text-rose-300">All →</Link>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={load}
+                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-colors ${isDark ? 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-900'}`}
+                    title="Refresh submissions"
+                  >
+                    <FiRefreshCw className="h-3 w-3" /> Refresh
+                  </button>
+                  <Link to="/submissions" className="text-xs text-rose-400 hover:text-rose-300">All →</Link>
+                </div>
               </div>
               {submissions.length === 0 ? (
                 <div className={`py-16 text-center ${sub}`}>
@@ -450,7 +462,16 @@ const Profile = () => {
                         </div>
                       </div>
                       <span className={`text-xs ${sub} whitespace-nowrap`}>
-                        {new Date(s.submittedAt||s.createdAt).toLocaleDateString()}
+                        {(() => {
+                          const d = new Date(s.createdAt || s.executedAt);
+                          if (isNaN(d)) return '—';
+                          const now = new Date();
+                          const diff = now - d;
+                          if (diff < 60000) return 'just now';
+                          if (diff < 3600000) return `${Math.floor(diff/60000)}m ago`;
+                          if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`;
+                          return d.toLocaleDateString();
+                        })()}
                       </span>
                     </div>
                   ))}
