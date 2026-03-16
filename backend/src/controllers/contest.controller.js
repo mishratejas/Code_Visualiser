@@ -40,10 +40,25 @@ async function computeAndApplyRatings(contestId) {
       const delta = Math.round(K * (expRank - actualRank) / n * 10);
       const newRating = Math.max(100, p.rating_before + delta);
       await p.update({ rating_after: newRating, rating_change: delta, rank: actualRank });
-      await User.findByIdAndUpdate(p.user_id, {
-        $inc: { 'stats.score': delta > 0 ? delta : 0 },
-        $set: { 'stats.rating': newRating }
-      });
+
+      // Update MongoDB user stats atomically
+      const updateOp = {
+        $inc: {
+          'stats.score': delta > 0 ? delta : 0,
+          'stats.contestsParticipated': 1,
+          ...(actualRank === 1 ? { 'stats.contestsWon': 1 } : {}),
+        },
+        $set: { 'stats.rating': newRating },
+      };
+
+      // Update bestContestRank only if this rank is better (lower number)
+      const user = await User.findById(p.user_id).select('stats.bestContestRank').lean();
+      const currentBest = user?.stats?.bestContestRank ?? Infinity;
+      if (actualRank < currentBest) {
+        updateOp.$set['stats.bestContestRank'] = actualRank;
+      }
+
+      await User.findByIdAndUpdate(p.user_id, updateOp);
     }
   } catch (e) {
     console.error('Rating computation error:', e.message);

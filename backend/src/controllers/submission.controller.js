@@ -165,6 +165,17 @@ const runWithUlimit = ({ execCmd, execArgs, inputData, timeoutMs }) => {
 };
 
 
+// ─── Safe kill helper (Windows-compatible) ───────────────────────────────────
+const killProc = (proc) => {
+  try {
+    if (process.platform === 'win32') {
+      proc.kill(); // Windows does not support signal names like SIGKILL
+    } else {
+      proc.kill('SIGKILL');
+    }
+  } catch (_) {}
+};
+
 // ─── Basic sandbox (Windows / dev only) ──────────────────────────────────────
 const runBasic = ({ execCmd, execArgs, inputData, timeoutMs }) => {
   return new Promise((resolve) => {
@@ -177,20 +188,22 @@ const runBasic = ({ execCmd, execArgs, inputData, timeoutMs }) => {
       windowsHide: true,
     });
 
-    if (inputData) { proc.stdin.write(inputData); proc.stdin.end(); }
+    // Always close stdin after writing — critical for fs.readFileSync(0) in JS submissions
+    try { if (inputData) proc.stdin.write(inputData); } catch (_) {}
+    try { proc.stdin.end(); } catch (_) {}
 
     proc.stdout.on('data', (chunk) => {
       outData += chunk.toString();
       if (Buffer.byteLength(outData) > MAX_OUTPUT_BYTES) {
         killed = true;
-        proc.kill('SIGKILL');
+        killProc(proc);
       }
     });
     proc.stderr.on('data', (chunk) => { errData += chunk.toString(); });
 
     const timer = setTimeout(() => {
       killed = true;
-      proc.kill('SIGKILL');
+      killProc(proc);
     }, timeoutMs);
 
     proc.on('close', (code) => {
@@ -229,10 +242,18 @@ const executeCode = async (code, language, testCases, timeLimit, memoryLimit) =>
         filePath = path.join(tempDir, `${fileName}.py`);
         fs.writeFileSync(filePath, code);
         break;
-      case "javascript":
+      case "javascript": {
         filePath = path.join(tempDir, `${fileName}.cjs`);
-        fs.writeFileSync(filePath, code);
+        // Add global error handlers so unhandled exceptions appear as RuntimeError
+        // verdict instead of crashing the child Node process (which caused nodemon restarts)
+        const jsWrapper = [
+          "process.on('uncaughtException', (e) => { process.stderr.write(String(e.message || e) + '\\n'); process.exit(1); });",
+          "process.on('unhandledRejection', (e) => { process.stderr.write(String(e) + '\\n'); process.exit(1); });",
+          code
+        ].join('\n');
+        fs.writeFileSync(filePath, jsWrapper);
         break;
+      }
       case "cpp":
         filePath = path.join(tempDir, `${fileName}.cpp`);
         fs.writeFileSync(filePath, code);
@@ -347,7 +368,8 @@ const executeCode = async (code, language, testCases, timeLimit, memoryLimit) =>
             break;
           case "javascript":
             execCmd = "node";
-            execArgs = [filePath];
+            // --stack-size prevents infinite recursion from crashing the host process
+            execArgs = ["--stack-size=65536", filePath];
             break;
           case "cpp":
             execCmd = executablePath;

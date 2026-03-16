@@ -18,50 +18,78 @@ const sequelize = new Sequelize(
   }
 );
 
+/**
+ * Safely drop a constraint OR index by name before alter:true sync.
+ * Sequelize's alter:true fails when it tries to re-add a UNIQUE that already
+ * exists as a named constraint — dropping the constraint first lets it recreate cleanly.
+ */
+const safeDropConstraint = async (table, name) => {
+  // Try DROP CONSTRAINT first (covers unique constraints created by Sequelize)
+  await sequelize.query(
+    `ALTER TABLE "${table}" DROP CONSTRAINT IF EXISTS "${name}";`
+  ).catch(() => {});
+  // Also try DROP INDEX in case it was created as a plain index (not constraint-backed)
+  await sequelize.query(
+    `DROP INDEX IF EXISTS "${name}";`
+  ).catch(() => {});
+};
+
+/**
+ * Safe column-add helper — adds a column only if it doesn't exist yet.
+ * Avoids the UNIQUE constraint crash entirely for simple column additions.
+ */
+const addColumnIfMissing = async (table, column, definition) => {
+  await sequelize.query(
+    `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS ${column} ${definition};`
+  ).catch(() => {});
+};
+
 const connectPostgreSQL = async () => {
   try {
     await sequelize.authenticate();
     console.log('✅ PostgreSQL connected successfully');
 
     // Import all models (order matters for FK constraints)
-    const Contest = (await import('../../models/postgres/Contest.models.js')).default;
-    const User = (await import('../../models/postgres/User.models.js')).default;
+    const Contest          = (await import('../../models/postgres/Contest.models.js')).default;
+    const User             = (await import('../../models/postgres/User.models.js')).default;
     const ContestParticipant = (await import('../../models/postgres/ContestParticipant.models.js')).default;
-    const ContestSubmission = (await import('../../models/postgres/ContestSubmission.models.js')).default;
-    const Group = (await import('../../models/postgres/Group.models.js')).default;
-    const GroupMember = (await import('../../models/postgres/GroupMember.models.js')).default;
+    const ContestSubmission  = (await import('../../models/postgres/ContestSubmission.models.js')).default;
+    const Group            = (await import('../../models/postgres/Group.models.js')).default;
+    const GroupMember      = (await import('../../models/postgres/GroupMember.models.js')).default;
 
     await defineAssociations();
 
-    // Auto-create new tables only (alter:false = safe for production)
-    // groups and group_members are new — sync them with alter so columns are added
+    // ── Group & GroupMember ────────────────────────────────────────────────
     await Group.sync({ alter: true });
     await GroupMember.sync({ alter: true });
+    console.log('✅ Group & GroupMember tables synced');
 
-    // Sync Contest with alter:true to add any missing columns (e.g. is_rated)
+    // ── Contest ────────────────────────────────────────────────────────────
     await Contest.sync({ alter: true });
     console.log('✅ Contest table synced (missing columns added)');
 
-    // Sync ContestParticipant to add missing penalty column
+    // ── ContestParticipant ─────────────────────────────────────────────────
+    // Drop the unique CONSTRAINT (not just the index) so alter:true can recreate it.
+    // Sequelize names the constraint the same as the index: 'unique_contest_participant'
+    await safeDropConstraint('contest_participants', 'unique_contest_participant');
     await ContestParticipant.sync({ alter: true });
     console.log('✅ ContestParticipant table synced (problem_stats, rating fields ensured)');
 
-    // Sync ContestSubmission to add missing time_from_start column
+    // ── ContestSubmission ──────────────────────────────────────────────────
+    // Has a unique index on submission_id — drop both possible names Sequelize uses
+    await safeDropConstraint('contest_submissions', 'idx_contest_submissions_submission_id');
+    await safeDropConstraint('contest_submissions', 'contest_submissions_submission_id_key');
     await ContestSubmission.sync({ alter: true });
     console.log('✅ ContestSubmission table synced (time_from_start column ensured)');
 
-    // Also ensure the group_id column exists on contests
-    try {
-      await sequelize.query(`
-        ALTER TABLE contests ADD COLUMN IF NOT EXISTS group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL;
-      `);
-      console.log('✅ contests.group_id column ensured');
-    } catch (e) {
-      // Column may already exist — that's fine
-      if (!e.message.includes('already exists')) console.warn('group_id migration note:', e.message);
-    }
+    // ── group_id column on contests ────────────────────────────────────────
+    await addColumnIfMissing(
+      'contests',
+      'group_id',
+      'INTEGER REFERENCES groups(id) ON DELETE SET NULL'
+    );
+    console.log('✅ contests.group_id column ensured');
 
-    console.log('✅ Group & GroupMember tables synced');
     console.log('ℹ️  Using manual SQL migrations for all other tables');
 
     return sequelize;

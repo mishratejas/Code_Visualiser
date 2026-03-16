@@ -60,122 +60,67 @@ const LiveContest = () => {
     fetchContest();
   }, [id]);
 
-  // ✅ Socket connection and contest join (only once)
-  useEffect(() => {
-    if (socketInitialized.current || !user?.id) {
-      return;
-    }
 
-    console.log("🚀 Initializing socket connection...");
+  // ✅ Socket connection — uses stable ref so React StrictMode double-invoke is harmless
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // Guard: if already truly initialized (not just the StrictMode first-pass), skip
+    if (socketInitialized.current) return;
     socketInitialized.current = true;
 
-    try {
-      // Connect to socket
-      const socket = socketService.connect();
+    const userId = user?.id || user?._id?.toString();
 
-      if (!socket) {
-        console.error("❌ Failed to create socket");
-        setIsConnected(false);
-        return;
+    const socket = socketService.connect();
+    if (!socket) { setIsConnected(false); return; }
+
+    const handleConnect = () => {
+      setIsConnected(true);
+      if (!contestJoined.current && id) {
+        socketService.joinContest(id, userId);
+        contestJoined.current = true;
       }
-
-      // Handle connection events
-      const handleConnect = () => {
-        console.log("✅ Socket connected successfully");
-        setIsConnected(true);
-
-        // Join contest after connection
-        if (!contestJoined.current && id) {
-          console.log("🎯 Joining contest:", id);
-          socketService.joinContest(id, user.id);
-          contestJoined.current = true;
-        }
-      };
-
-      const handleDisconnect = (reason) => {
-        console.log("❌ Socket disconnected:", reason);
-        setIsConnected(false);
-        contestJoined.current = false;
-
-        // Show user-friendly message
-        if (reason === "io server disconnect") {
-          toast.error("Server disconnected. Reconnecting...", {
-            duration: 3000,
-          });
-        }
-      };
-
-      const handleConnectError = (error) => {
-        console.error("❌ Connection error:", error.message);
-        setIsConnected(false);
-        toast.error("Connection lost. Check your internet connection.", {
-          duration: 4000,
-        });
-      };
-
-      // Set up connection listeners
-      socket.on("connect", handleConnect);
-      socket.on("disconnect", handleDisconnect);
-      socket.on("connect_error", handleConnectError);
-
-      // If already connected, join immediately
-      if (socket.connected) {
-        handleConnect();
-      }
-
-      // Set up contest event listeners
-      socketService.onLeaderboardUpdate((newLeaderboard) => {
-        console.log("📊 Leaderboard updated:", newLeaderboard);
-        setLeaderboard(newLeaderboard);
-      });
-
-      socketService.onContestStatus((data) => {
-        console.log("📢 Contest status:", data);
-        if (data.status === "ended") {
-          toast.success("Contest has ended!");
-          navigate(`/contests/${id}/results`);
-        }
-      });
-
-      socketService.onNewSubmission((submission) => {
-        console.log("🎯 New submission:", submission);
-        setLiveUpdates((prev) => [submission, ...prev.slice(0, 9)]);
-
-        if (submission.userId !== user?.id) {
-          toast(`${submission.username} solved ${submission.problem}!`, {
-            icon: "🎯",
-          });
-        }
-      });
-
-      // Cleanup function
-      return () => {
-        console.log("🧹 Cleaning up socket...");
-
-        // Remove connection listeners
-        socket.off("connect", handleConnect);
-        socket.off("disconnect", handleDisconnect);
-        socket.off("connect_error", handleConnectError);
-
-        // Leave contest
-        if (contestJoined.current && socketService.isConnected()) {
-          console.log("👋 Leaving contest:", id);
-          socketService.leaveContest(id);
-        }
-
-        // Clean up contest listeners
-        socketService.cleanupContestListeners();
-
-        // Reset flags
-        socketInitialized.current = false;
-        contestJoined.current = false;
-      };
-    } catch (error) {
-      console.error("❌ Socket initialization failed:", error);
+    };
+    const handleDisconnect = (reason) => {
       setIsConnected(false);
-      toast.error("Failed to connect to live updates");
-    }
-  }, [id, user?.id]);
+      contestJoined.current = false;
+      if (reason === 'io server disconnect') toast.error('Disconnected — reconnecting…', { duration: 3000 });
+    };
+    const handleConnectError = () => { setIsConnected(false); };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
+    if (socket.connected) handleConnect();
+
+    socketService.onLeaderboardUpdate((lb) => {
+      if (Array.isArray(lb) && lb.length > 0) setLeaderboard(lb);
+    });
+    socketService.onContestStatus((data) => {
+      if (data.status === 'ended') { toast.success('Contest has ended!'); navigate(`/contests/${id}/results`); }
+    });
+    socketService.onNewSubmission((sub) => {
+      setLiveUpdates(prev => [sub, ...prev.slice(0, 9)]);
+      if (sub.userId !== userId) toast(`${sub.username} solved ${sub.problem}!`, { icon: '🎯' });
+    });
+
+    // Also subscribe to real-time notifications for this user
+    socket.on(`notification`, (notif) => {
+      toast(notif.message || notif.title, { icon: notif.icon || '🔔', duration: 4000 });
+    });
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
+      socket.off('notification');
+      if (contestJoined.current && socketService.isConnected()) socketService.leaveContest(id);
+      socketService.cleanupContestListeners();
+      // Don't reset socketInitialized here — StrictMode calls cleanup + re-run,
+      // resetting it would cause double-connect. Reset only on true unmount via contestJoined.
+      contestJoined.current = false;
+    };
+  }, [id, user?.id, user?._id]);
 
   // ✅ Timer (separate effect)
   useEffect(() => {

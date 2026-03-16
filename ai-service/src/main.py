@@ -63,18 +63,81 @@ app.include_router(recommendations_router,prefix="/api/v1/recommendations",   ta
 
 @app.get("/health")
 async def health():
-    from src.config import GEMINI_READY
+    from src.config import GEMINI_READY, Config
+    from src.services.analysis_service import _gemini_models
     return {
         "status": "healthy",
         "service": Config.APP_NAME,
         "port": Config.PORT,
         "gemini_configured": GEMINI_READY,
+        "gemini_model": Config.GEMINI_MODEL,
+        "gemini_keys_loaded": len(_gemini_models),
+        "gemini_status": "✅ Ready" if _gemini_models else "❌ No keys — using rule-based fallback",
     }
+
+
+@app.get("/api/v1/gemini-test")
+async def gemini_test():
+    """
+    Live Gemini API key test — sends a tiny prompt and returns the response.
+    Use this to verify your GEMINI_API_KEY is valid and the model works.
+    """
+    from src.config import GEMINI_READY, Config
+    from src.services.analysis_service import _gemini_models, _call_gemini
+    import time
+
+    if not GEMINI_READY or not _gemini_models:
+        return {
+            "success": False,
+            "gemini_configured": False,
+            "error": "No Gemini API keys found. Set GEMINI_API_KEY in your .env file.",
+            "model": Config.GEMINI_MODEL,
+            "how_to_fix": "Add GEMINI_API_KEY=your_key_here to Ai-service/.env",
+        }
+
+    start = time.time()
+    try:
+        result = await _call_gemini(
+            'Reply with ONLY this exact JSON and nothing else: {"ok": true, "message": "Gemini is working!"}',
+            {"ok": False, "message": "fallback"}
+        )
+        elapsed = round((time.time() - start) * 1000)
+        if result.get("ok"):
+            return {
+                "success": True,
+                "gemini_configured": True,
+                "model": Config.GEMINI_MODEL,
+                "response_time_ms": elapsed,
+                "message": "✅ Gemini API key is valid and working!",
+                "keys_available": len(_gemini_models),
+            }
+        else:
+            return {
+                "success": False,
+                "gemini_configured": True,
+                "model": Config.GEMINI_MODEL,
+                "error": "Gemini responded but returned unexpected format",
+                "raw": result,
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "gemini_configured": True,
+            "model": Config.GEMINI_MODEL,
+            "error": str(e),
+            "tip": "Check that your API key is valid at https://aistudio.google.com/app/apikey",
+        }
 
 
 @app.get("/")
 async def root():
-    return {"service": Config.APP_NAME, "version": "2.0.0", "docs": "/api/docs"}
+    return {
+        "service": Config.APP_NAME,
+        "version": "2.0.0",
+        "docs": "/api/docs",
+        "gemini_test": "/api/v1/gemini-test",
+        "health": "/health",
+    }
 
 
 @app.exception_handler(Exception)

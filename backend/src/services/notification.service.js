@@ -100,10 +100,10 @@ class NotificationService {
    * Notify about contest
    */
   async notifyContest(userId, contestData) {
-    const { type, contestTitle, contestId, startTime } = contestData;
-    
+    const { type, contestTitle, contestId, startTime, delta, newRating, rank, totalParticipants } = contestData;
+
     let title, message;
-    
+
     switch (type) {
       case 'starting_soon':
         title = '⏰ Contest Starting Soon';
@@ -121,11 +121,29 @@ class NotificationService {
         title = '🏁 Contest Ended';
         message = `"${contestTitle}" has ended. Check the leaderboard!`;
         break;
+      case 'rating_updated':
+        title = delta > 0 ? '📈 Rating Increased!' : '📉 Rating Changed';
+        message = delta > 0
+          ? `+${delta} rating points! New rating: ${newRating} (Rank #${rank}/${totalParticipants})`
+          : `${delta} rating points. New rating: ${newRating} (Rank #${rank}/${totalParticipants})`;
+        break;
+      case 'plagiarism_flagged':
+        title = '⚠️ Submission Under Review';
+        message = `Your submission in a recent contest has been flagged for similarity review. An admin will review it shortly.`;
+        break;
+      case 'plagiarism_confirmed':
+        title = '🚫 Contest Disqualification';
+        message = `You have been disqualified from a recent contest due to plagiarism. Contact support if you believe this is an error.`;
+        break;
+      case 'plagiarism_cleared':
+        title = '✅ Review Cleared';
+        message = `Your submission has been reviewed and cleared. No action taken.`;
+        break;
       default:
         title = '📢 Contest Update';
         message = `Update for "${contestTitle}"`;
     }
-    
+
     return this.createNotification({
       user: userId,
       type: 'contest',
@@ -134,7 +152,7 @@ class NotificationService {
       icon: '🏆',
       link: `/contests/${contestId}`,
       metadata: contestData,
-      sendEmail: type === 'starting_soon'
+      sendEmail: type === 'starting_soon',
     });
   }
   
@@ -228,6 +246,58 @@ class NotificationService {
       console.error('Error cleaning up notifications:', error);
       throw error;
     }
+  }
+
+  /**
+   * Notify group owner/admins about a new join request
+   */
+  async notifyGroupJoinRequest(adminUserIds, requesterUsername, groupName, groupId) {
+    const notifications = adminUserIds.map(adminId => ({
+      user: adminId,
+      type: 'system',
+      title: '👥 New Join Request',
+      message: `${requesterUsername} wants to join "${groupName}". Review their request.`,
+      icon: '👥',
+      link: `/groups/${groupId}`,
+      metadata: { groupId, requesterUsername },
+      priority: 'medium'
+    }));
+    try {
+      await this.bulkCreateNotifications(notifications);
+    } catch (err) {
+      console.error('notifyGroupJoinRequest error:', err.message);
+    }
+  }
+
+  /**
+   * Notify user that their group join request was approved
+   */
+  async notifyGroupJoinApproved(userId, groupName, groupId) {
+    return this.createNotification({
+      user: userId,
+      type: 'system',
+      title: '✅ Join Request Approved!',
+      message: `Your request to join "${groupName}" was approved. Welcome to the group!`,
+      icon: '🎉',
+      link: `/groups/${groupId}`,
+      metadata: { groupId },
+      priority: 'high'
+    });
+  }
+
+  /**
+   * Notify user that their group join request was rejected
+   */
+  async notifyGroupJoinRejected(userId, groupName) {
+    return this.createNotification({
+      user: userId,
+      type: 'system',
+      title: '❌ Join Request Declined',
+      message: `Your request to join "${groupName}" was not approved.`,
+      icon: '❌',
+      link: '/groups',
+      priority: 'medium'
+    });
   }
 }
 

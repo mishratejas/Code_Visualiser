@@ -114,7 +114,7 @@ const plagiarismReportSchema = new mongoose.Schema({
   checkedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    default: null   // null = auto-run by cron job; set when run manually by admin
   },
   
   status: {

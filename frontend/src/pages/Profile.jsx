@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
-  FiGithub, FiGlobe, FiSettings, FiMapPin, FiLinkedin,
-  FiCode, FiAward, FiTrendingUp, FiCalendar, FiStar,
-  FiCheckCircle, FiClock, FiUsers, FiEdit2, FiRefreshCw,
+  FiGithub, FiGlobe, FiMapPin, FiLinkedin,
+  FiCode, FiCalendar, FiStar,
+  FiCheckCircle, FiUsers, FiEdit2, FiRefreshCw,
 } from 'react-icons/fi';
-import { BsTrophyFill, BsFire } from 'react-icons/bs';
+import { BsTrophyFill } from 'react-icons/bs';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
-  AreaChart, Area, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
 import api from '../services/api';
 import Loader from '../components/common/Loader';
@@ -53,7 +52,7 @@ const getRatingInfo = (r) => {
 };
 
 /* ── Donut progress ring ─────────────────────────────────────────────────── */
-const DonutProgress = ({ solved, total, easy, medium, hard }) => {
+const DonutProgress = ({ solved, total }) => {
   const r = 54, circ = 2 * Math.PI * r;
   const pct = total > 0 ? solved / total : 0;
   return (
@@ -92,12 +91,9 @@ const Profile = () => {
   const [activity, setActivity]       = useState([]);
   const [loading, setLoading]         = useState(true);
   const [tab, setTab]                 = useState('overview');
-  const [chartsReady, setChartsReady] = useState(false);
 
-  const isOwn       = me?.username === username || (!username && me);
-  const targetUser  = username || me?.username;
-
-  useEffect(() => { setTimeout(() => setChartsReady(true), 300); }, []);
+  const isOwn      = me?.username === username || (!username && me);
+  const targetUser = username || me?.username;
 
   const load = useCallback(async () => {
     if (!targetUser) { navigate('/login'); return; }
@@ -109,46 +105,52 @@ const Profile = () => {
       setProfileData(userData);
       const uid = userData._id || userData.id;
 
-      const [sRes, subRes, actRes] = await Promise.allSettled([
+      const [sRes, subRes] = await Promise.allSettled([
         api.get(`/users/${uid}/stats`),
-        // Always filter submissions by the viewed user's problemId list — or fetch globally for own profile
         api.get('/submissions', { params: { limit: 20 } }),
-        api.get(`/users/${uid}/activity`).catch(() => ({ data: [] })),
       ]);
 
       if (sRes.status === 'fulfilled') {
-        const raw = sRes.value?.data?.user?.stats || sRes.value?.data?.stats || sRes.value?.stats || {};
+        const d        = sRes.value;
+        const raw      = d?.data?.user?.stats || d?.data?.stats || d?.stats || {};
+        const detailed = d?.data?.detailedStats || d?.detailedStats || {};
+
         setStats({
-          easySolved:   raw.easySolved   ?? 0,
-          mediumSolved: raw.mediumSolved ?? 0,
-          hardSolved:   raw.hardSolved   ?? 0,
-          totalSolved:  raw.totalProblemsSolved ?? raw.problemsSolved ?? 0,
-          streak:       raw.streak       ?? 0,
-          maxStreak:    raw.maxStreak    ?? 0,
-          globalRank:   raw.rank         ?? 0,
-          rating:       raw.rating       ?? 1500,
-          score:        raw.score        ?? 0,
-          contests:     raw.contestsParticipated ?? 0,
-          totalSubs:    raw.totalSubmissions ?? 0,
-          accepted:     raw.acceptedSubmissions ?? 0,
-          acceptRate:   raw.totalSubmissions > 0
+          easySolved:      raw.easySolved         ?? 0,
+          mediumSolved:    raw.mediumSolved        ?? 0,
+          hardSolved:      raw.hardSolved          ?? 0,
+          totalSolved:     raw.totalProblemsSolved ?? raw.problemsSolved ?? 0,
+          streak:          raw.streak              ?? 0,
+          maxStreak:       raw.maxStreak           ?? 0,
+          globalRank:      raw.rank                ?? 0,
+          rating:          raw.rating              ?? 1500,
+          score:           raw.score               ?? 0,
+          contests:        raw.contestsParticipated ?? 0,
+          contestsWon:     raw.contestsWon         ?? 0,
+          bestContestRank: raw.bestContestRank      ?? null,
+          totalSubs:       raw.totalSubmissions    ?? 0,
+          accepted:        raw.acceptedSubmissions ?? 0,
+          acceptRate: raw.totalSubmissions > 0
             ? Math.round((raw.acceptedSubmissions / raw.totalSubmissions) * 100) : 0,
         });
+
+        const daily = (detailed.dailyActivity || []).map(a => ({
+          date:     a._id || a.date,
+          count:    a.count || 0,
+          accepted: a.accepted || 0,
+        }));
+        setActivity(daily);
       } else {
-        setStats({ easySolved:0, mediumSolved:0, hardSolved:0, totalSolved:0, streak:0, maxStreak:0, globalRank:0, rating:1500, score:0, contests:0, totalSubs:0, accepted:0, acceptRate:0 });
+        setStats({ easySolved:0, mediumSolved:0, hardSolved:0, totalSolved:0, streak:0,
+          maxStreak:0, globalRank:0, rating:1500, score:0, contests:0, contestsWon:0,
+          bestContestRank:null, totalSubs:0, accepted:0, acceptRate:0 });
+        setActivity([]);
       }
 
       if (subRes.status === 'fulfilled') {
-        const d = subRes.value;
-        // API interceptor unwraps axios response.data → d is the ApiResponse body
-        // Shape: { success, data: { submissions: [...], pagination, stats } }
+        const d    = subRes.value;
         const list = d?.data?.submissions || d?.submissions || d?.data || [];
         setSubmissions(Array.isArray(list) ? list.slice(0, 20) : []);
-      }
-
-      if (actRes.status === 'fulfilled') {
-        const d = actRes.value;
-        setActivity(d?.data?.activity || d?.activity || []);
       }
     } catch (e) {
       console.error(e);
@@ -161,7 +163,6 @@ const Profile = () => {
   /* ── theme tokens ──────────────────────────────────────────────────────── */
   const bg     = isDark ? 'bg-gray-950' : 'bg-gray-50';
   const card   = isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200 shadow-sm';
-  const card2  = isDark ? 'bg-gray-800/50' : 'bg-gray-50';
   const txt    = isDark ? 'text-white' : 'text-gray-900';
   const sub    = isDark ? 'text-gray-400' : 'text-gray-500';
   const divClr = isDark ? 'divide-gray-800' : 'divide-gray-100';
@@ -178,7 +179,7 @@ const Profile = () => {
     </div>
   );
 
-  const p = profileData.profile || {};
+  const p          = profileData.profile || {};
   const ratingInfo = getRatingInfo(stats?.rating || 1500);
 
   // Heatmap — 52 weeks × 7 days
@@ -191,14 +192,11 @@ const Profile = () => {
     })
   );
 
-  const diffData = [
-    { name:'Easy',   value:stats?.easySolved||0,   color:'#10B981' },
-    { name:'Medium', value:stats?.mediumSolved||0,  color:'#F59E0B' },
-    { name:'Hard',   value:stats?.hardSolved||0,    color:'#EF4444' },
-  ].filter(d => d.value > 0);
-
   const totalSolved = stats?.totalSolved || 0;
-  const TOTAL_PROBS = 300; // approximate — update to real total if you have it
+  const TOTAL_PROBS = 300;
+
+  // Avatar src
+  const avatarSrc = profileData.avatar || p.avatar || null;
 
   return (
     <div className={`min-h-screen ${bg}`}>
@@ -210,11 +208,14 @@ const Profile = () => {
           {/* Avatar + name */}
           <div className={`${card} border rounded-2xl p-6 text-center`}>
             <div className="relative inline-block mb-4">
-              <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-rose-500 to-orange-500 flex items-center justify-center text-white text-4xl font-black mx-auto shadow-lg shadow-rose-500/20">
-                {profileData.avatar
-                  ? <img src={profileData.avatar} alt="" className="w-full h-full rounded-2xl object-cover" />
-                  : profileData.username?.charAt(0).toUpperCase()
-                }
+              <div className="w-24 h-24 rounded-2xl overflow-hidden mx-auto shadow-lg shadow-rose-500/20">
+                {avatarSrc ? (
+                  <img src={avatarSrc} alt={profileData.username} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-rose-500 to-orange-500 flex items-center justify-center text-white text-4xl font-black">
+                    {profileData.username?.charAt(0).toUpperCase()}
+                  </div>
+                )}
               </div>
               {(stats?.streak||0) > 2 && (
                 <div className="absolute -top-1.5 -right-1.5 w-7 h-7 bg-orange-500 rounded-full flex items-center justify-center text-sm shadow-md">🔥</div>
@@ -224,12 +225,10 @@ const Profile = () => {
             <h1 className={`text-xl font-black ${txt}`}>{profileData.username}</h1>
             {p.name && <p className={`text-sm ${sub} mt-0.5`}>{p.name}</p>}
 
-            {/* Rating badge */}
             <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mt-2 ${ratingInfo.bg} ${ratingInfo.color}`}>
               <FiStar className="h-3 w-3" /> {ratingInfo.label} · {stats?.rating||1500}
             </div>
 
-            {/* Edit button */}
             {isOwn && (
               <Link to="/settings" className={`mt-4 flex items-center justify-center gap-2 w-full py-2 rounded-xl border text-xs font-medium transition-all
                 ${isDark ? 'border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
@@ -237,7 +236,6 @@ const Profile = () => {
               </Link>
             )}
 
-            {/* Links */}
             <div className={`mt-4 space-y-2 text-left border-t ${bdrClr} pt-4`}>
               {p.bio && <p className={`text-xs ${sub} leading-relaxed`}>{p.bio}</p>}
               <div className="space-y-1.5">
@@ -274,11 +272,11 @@ const Profile = () => {
           {/* Quick stats */}
           <div className={`${card} border rounded-2xl overflow-hidden`}>
             {[
-              { label:'Ranking',       value: stats?.globalRank ? `#${stats.globalRank}` : 'N/A', icon:'🏅' },
-              { label:'Rating',        value: stats?.rating || 1500, icon:'⭐' },
-              { label:'Contests',      value: stats?.contests || 0,  icon:'🏆' },
-              { label:'Streak',        value: `${stats?.streak||0}d`, icon:'🔥' },
-              { label:'Acceptance',    value: `${stats?.acceptRate||0}%`, icon:'✅' },
+              { label:'Ranking',    value: stats?.globalRank ? `#${stats.globalRank}` : 'N/A', icon:'🏅' },
+              { label:'Rating',     value: stats?.rating || 1500,               icon:'⭐' },
+              { label:'Contests',   value: stats?.contests || 0,                icon:'🏆' },
+              { label:'Streak',     value: `${stats?.streak||0}d`,              icon:'🔥' },
+              { label:'Acceptance', value: `${stats?.acceptRate||0}%`,          icon:'✅' },
             ].map((s, i) => (
               <div key={s.label} className={`flex items-center justify-between px-4 py-3 ${i>0?`border-t ${bdrClr}`:''}`}>
                 <span className={`text-xs ${sub} flex items-center gap-2`}><span>{s.icon}</span>{s.label}</span>
@@ -296,7 +294,6 @@ const Profile = () => {
               {totalSolved >= 50 && <span className="px-2 py-1 bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs rounded-full">Algorithm Expert</span>}
               {(stats?.streak||0) >= 7 && <span className="px-2 py-1 bg-orange-500/10 text-orange-400 border border-orange-500/20 text-xs rounded-full">🔥 Week Streak</span>}
               {(stats?.hardSolved||0) >= 5 && <span className="px-2 py-1 bg-red-500/10 text-red-400 border border-red-500/20 text-xs rounded-full">Hard Killer</span>}
-              {(stats?.contests||0) >= 1 && <span className="px-2 py-1 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 text-xs rounded-full">Competitor</span>}
               {(stats?.rating||1500) >= 2000 && <span className="px-2 py-1 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 text-xs rounded-full">★ Expert</span>}
               {totalSolved === 0 && <span className={`text-xs ${sub}`}>Solve problems to earn badges</span>}
             </div>
@@ -306,9 +303,9 @@ const Profile = () => {
         {/* ══ MAIN CONTENT ══════════════════════════════════════════════════ */}
         <div className="space-y-4 min-w-0 overflow-hidden">
 
-          {/* Tabs */}
+          {/* Tabs — contests removed */}
           <div className={`flex border-b ${bdrClr}`}>
-            {['overview','submissions','contests'].map(t => (
+            {['overview', 'submissions'].map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={`px-5 py-3 text-sm font-semibold capitalize transition-colors border-b-2 -mb-px
                   ${tab===t ? 'border-rose-500 text-rose-400' : `border-transparent ${sub} hover:text-gray-200`}`}>
@@ -321,25 +318,17 @@ const Profile = () => {
           {tab === 'overview' && (
             <div className="space-y-4">
 
-              {/* Solved summary card — LeetCode style */}
+              {/* Solved summary */}
               <div className={`${card} border rounded-2xl p-6`}>
                 <div className="flex flex-col sm:flex-row gap-6 items-center sm:items-start">
-                  {/* Donut */}
                   <div className="flex-shrink-0">
-                    <DonutProgress
-                      solved={totalSolved}
-                      total={TOTAL_PROBS}
-                      easy={stats?.easySolved||0}
-                      medium={stats?.mediumSolved||0}
-                      hard={stats?.hardSolved||0}
-                    />
+                    <DonutProgress solved={totalSolved} total={TOTAL_PROBS} />
                   </div>
-                  {/* Difficulty breakdown */}
                   <div className="flex-1 w-full space-y-4">
                     {[
-                      { label:'Easy',   solved:stats?.easySolved||0,   total:100, color:'bg-green-500', text:'text-green-400' },
-                      { label:'Medium', solved:stats?.mediumSolved||0,  total:150, color:'bg-yellow-500',text:'text-yellow-400' },
-                      { label:'Hard',   solved:stats?.hardSolved||0,    total:50,  color:'bg-red-500',   text:'text-red-400' },
+                      { label:'Easy',   solved:stats?.easySolved||0,  total:100, color:'bg-green-500',  text:'text-green-400' },
+                      { label:'Medium', solved:stats?.mediumSolved||0, total:150, color:'bg-yellow-500', text:'text-yellow-400' },
+                      { label:'Hard',   solved:stats?.hardSolved||0,   total:50,  color:'bg-red-500',    text:'text-red-400' },
                     ].map(d => (
                       <div key={d.label}>
                         <div className="flex justify-between items-center mb-1.5">
@@ -357,7 +346,6 @@ const Profile = () => {
                   </div>
                 </div>
 
-                {/* Stats row */}
                 <div className={`grid grid-cols-2 sm:grid-cols-4 gap-0 mt-6 border-t ${bdrClr} pt-4 divide-x ${divClr}`}>
                   {[
                     { label:'Submissions', value: stats?.totalSubs||0 },
@@ -377,7 +365,12 @@ const Profile = () => {
               <div className={`${card} border rounded-2xl p-6`}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className={`text-sm font-bold ${txt}`}>Submission Activity</h3>
-                  <div className="flex items-center gap-2"><button onClick={load} className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1"><FiRefreshCw className="h-3 w-3"/>Refresh</button><span className={`text-xs ${sub}`}>Past year</span></div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={load} className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1">
+                      <FiRefreshCw className="h-3 w-3"/>Refresh
+                    </button>
+                    <span className={`text-xs ${sub}`}>Past year</span>
+                  </div>
                 </div>
                 <div className="overflow-x-auto pb-2" style={{WebkitOverflowScrolling:"touch"}}>
                   <div className="flex gap-[3px] min-w-max">
@@ -409,7 +402,7 @@ const Profile = () => {
                     <div className={`text-xs ${sub} mt-1`}>{ratingInfo.label}</div>
                   </div>
                   <div className={`flex-1 h-px ${isDark?'bg-gray-800':'bg-gray-200'}`} />
-                  <div className="grid grid-cols-2 gap-4 text-center">
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-center">
                     <div>
                       <div className={`text-xl font-bold ${txt}`}>{stats?.contests||0}</div>
                       <div className={`text-xs ${sub}`}>Attended</div>
@@ -418,6 +411,18 @@ const Profile = () => {
                       <div className={`text-xl font-bold ${txt}`}>#{stats?.globalRank||'—'}</div>
                       <div className={`text-xs ${sub}`}>Global Rank</div>
                     </div>
+                    {stats?.contestsWon > 0 && (
+                      <div>
+                        <div className="text-xl font-bold text-yellow-400">{stats.contestsWon}</div>
+                        <div className={`text-xs ${sub}`}>Wins 🏆</div>
+                      </div>
+                    )}
+                    {stats?.bestContestRank && (
+                      <div>
+                        <div className={`text-xl font-bold ${txt}`}>#{stats.bestContestRank}</div>
+                        <div className={`text-xs ${sub}`}>Best Rank</div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -433,7 +438,6 @@ const Profile = () => {
                   <button
                     onClick={load}
                     className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-colors ${isDark ? 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-900'}`}
-                    title="Refresh submissions"
                   >
                     <FiRefreshCw className="h-3 w-3" /> Refresh
                   </button>
@@ -458,7 +462,7 @@ const Profile = () => {
                         </Link>
                         <div className={`text-xs ${sub} flex gap-2 mt-0.5`}>
                           <span>{s.language}</span>
-                          {s.executionTime && <><span>·</span><span>{s.executionTime}ms</span></>}
+                          {s.runtime && <><span>·</span><span>{s.runtime}ms</span></>}
                         </div>
                       </div>
                       <span className={`text-xs ${sub} whitespace-nowrap`}>
@@ -477,17 +481,6 @@ const Profile = () => {
                   ))}
                 </div>
               )}
-            </div>
-          )}
-
-          {/* ── CONTESTS ──────────────────────────────────────────────────── */}
-          {tab === 'contests' && (
-            <div className={`${card} border rounded-2xl p-6 text-center`}>
-              <BsTrophyFill className={`h-10 w-10 mx-auto mb-3 ${sub} opacity-30`} />
-              <p className={`${sub} text-sm`}>Contest history coming soon</p>
-              <Link to="/contests" className="mt-4 inline-block px-5 py-2 bg-gradient-to-r from-rose-500 to-red-500 text-white text-sm rounded-xl">
-                Join a Contest
-              </Link>
             </div>
           )}
 

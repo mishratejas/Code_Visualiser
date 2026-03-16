@@ -9,8 +9,7 @@ import {
 } from 'react-icons/fi';
 import { BsTrophyFill, BsFire } from 'react-icons/bs';
 import {
-  AreaChart, Area, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import api from '../services/api';
 import Loader from '../components/common/Loader';
@@ -260,33 +259,58 @@ const Dashboard = () => {
 
         {/* Charts */}
         <div className="grid lg:grid-cols-2 gap-6">
-          {/* Weekly Activity */}
+          {/* Weekly Activity — pure SVG (recharts v3 has a Decimal.js bug with CartesianGrid) */}
           <div className={`${card} rounded-2xl p-5 border`}>
             <h3 className={`text-sm font-bold mb-4 ${txt}`}>Weekly Activity</h3>
-            {chartsReady ? (
-              <ResponsiveContainer width="100%" height={200}>
-                <AreaChart data={activityData}>
-                  <defs>
-                    <linearGradient id="sub" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#F43F5E" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#F43F5E" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="sol" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#1f2937' : '#e5e7eb'} />
-                  <XAxis dataKey="day" stroke={isDark ? '#6b7280' : '#9ca3af'} fontSize={11} />
-                  <YAxis stroke={isDark ? '#6b7280' : '#9ca3af'} fontSize={11} />
-                  <Tooltip
-                    contentStyle={{ background: isDark ? '#111827' : '#fff', border: 'none', borderRadius: 10, fontSize: 12 }}
-                  />
-                  <Area type="monotone" dataKey="submissions" stroke="#F43F5E" fill="url(#sub)" name="Submissions" />
-                  <Area type="monotone" dataKey="solved" stroke="#10B981" fill="url(#sol)" name="Solved" />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : <div className="h-[200px] flex items-center justify-center"><Loader /></div>}
+            {chartsReady ? (() => {
+              const W = 100, H = 160, PAD = 24;
+              const maxVal = Math.max(1, ...activityData.map(d => Math.max(d.submissions||0, d.solved||0)));
+              const xs = activityData.map((_, i) => PAD + i * ((W - PAD * 2) / Math.max(activityData.length - 1, 1)));
+              const ys = (key) => activityData.map(d => H - PAD - ((d[key]||0) / maxVal) * (H - PAD * 2));
+              const polyline = (key) => activityData.map((_, i) => `${xs[i]},${ys(key)[i]}`).join(' ');
+              const area = (key) => {
+                const pts = activityData.map((_, i) => `${xs[i]},${ys(key)[i]}`).join(' ');
+                const last = xs[xs.length - 1];
+                const first = xs[0];
+                return `${first},${H - PAD} ${pts} ${last},${H - PAD}`;
+              };
+              return (
+                <div className="relative">
+                  <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{height: 180}}>
+                    <defs>
+                      <linearGradient id="gSub" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#F43F5E" stopOpacity="0.35"/><stop offset="100%" stopColor="#F43F5E" stopOpacity="0"/></linearGradient>
+                      <linearGradient id="gSol" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10B981" stopOpacity="0.35"/><stop offset="100%" stopColor="#10B981" stopOpacity="0"/></linearGradient>
+                    </defs>
+                    {/* Grid lines */}
+                    {[0,0.25,0.5,0.75,1].map(pct => (
+                      <line key={pct} x1={PAD} x2={W-PAD} y1={PAD + pct*(H-PAD*2)} y2={PAD + pct*(H-PAD*2)}
+                        stroke={isDark?'#1f2937':'#e5e7eb'} strokeWidth="0.5"/>
+                    ))}
+                    {/* Area fills */}
+                    <polygon points={area('submissions')} fill="url(#gSub)"/>
+                    <polygon points={area('solved')} fill="url(#gSol)"/>
+                    {/* Lines */}
+                    <polyline points={polyline('submissions')} fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <polyline points={polyline('solved')} fill="none" stroke="#10B981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    {/* Dots */}
+                    {activityData.map((d,i) => (
+                      <g key={i}>
+                        <circle cx={xs[i]} cy={ys('submissions')[i]} r="1.5" fill="#F43F5E"/>
+                        <circle cx={xs[i]} cy={ys('solved')[i]} r="1.5" fill="#10B981"/>
+                      </g>
+                    ))}
+                    {/* X labels */}
+                    {activityData.map((d,i) => (
+                      <text key={i} x={xs[i]} y={H-6} textAnchor="middle" fontSize="5" fill={isDark?'#6b7280':'#9ca3af'}>{d.day}</text>
+                    ))}
+                  </svg>
+                  <div className="flex items-center gap-4 mt-1 justify-center">
+                    <span className="flex items-center gap-1 text-xs text-gray-400"><span className="w-3 h-0.5 bg-rose-500 inline-block rounded"/>Submissions</span>
+                    <span className="flex items-center gap-1 text-xs text-gray-400"><span className="w-3 h-0.5 bg-emerald-500 inline-block rounded"/>Solved</span>
+                  </div>
+                </div>
+              );
+            })() : <div className="h-[200px] flex items-center justify-center"><Loader /></div>}
           </div>
 
           {/* Difficulty Breakdown */}

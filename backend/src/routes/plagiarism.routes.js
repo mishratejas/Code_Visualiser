@@ -2,29 +2,26 @@ import express from 'express';
 import {
   checkPlagiarism,
   getContestReport,
-  compareSubmissions
-} from '../controllers/palgiarism.controller.js'; // Note: typo in filename
-import { protect, restrictTo } from '../middlewares/auth.middleware.js';
-import { USER_ROLES } from '../constants.js';
+  compareSubmissions,
+  reviewPair,
+} from '../controllers/palgiarism.controller.js';
+import { authenticate } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
-// All routes require authentication
-router.use(protect);
+router.use(authenticate);
 
-// Plagiarism check routes (admin only)
-router.post(
-  '/check',
-  restrictTo(USER_ROLES.ADMIN, USER_ROLES.SUPER_ADMIN),
-  checkPlagiarism
-);
+// Admin: trigger full contest check
+router.post('/check', checkPlagiarism);
 
+// Anyone authenticated: get report for a contest
 router.get('/contest/:contestId', getContestReport);
 
-router.post(
-  '/compare',
-  restrictTo(USER_ROLES.ADMIN, USER_ROLES.SUPER_ADMIN),
-  compareSubmissions
-);
+// Admin: compare exactly 2 submissions
+router.post('/compare', compareSubmissions);
+
+// Admin: review a suspicious pair and set verdict (plagiarism_confirmed | false_positive | common_solution)
+// Body: { contestId, submission1Id, submission2Id, verdict, notes }
+router.post('/review', reviewPair);
 
 export default router;

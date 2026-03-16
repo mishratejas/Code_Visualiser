@@ -36,7 +36,13 @@ const ContestProblem = () => {
   const [userScore, setUserScore] = useState(0);
   const [leaderboard, setLeaderboard] = useState([]);
   const [testResults, setTestResults] = useState([]);
-  
+
+  // ── My Submissions tab ────────────────────────────────────────────────────
+  const [mySubmissions, setMySubmissions] = useState([]);
+  const [loadingSubs, setLoadingSubs] = useState(false);
+  const [viewingCode, setViewingCode] = useState(null); // { code, language, verdict, submissionId }
+  const [loadingCode, setLoadingCode] = useState(false);
+
   const editorRef = useRef(null);
 
   useEffect(() => {
@@ -178,6 +184,58 @@ const ContestProblem = () => {
         ? prev.filter(i => i !== index)
         : [...prev, index]
     );
+  };
+
+  // ── Fetch this user's contest submissions for this problem ────────────────
+  const fetchMySubmissions = async () => {
+    if (!contestId) return;
+    setLoadingSubs(true);
+    try {
+      const res = await api.get(`/contests/${contestId}/submissions`);
+      const all = res?.submissions || res?.data?.submissions || res?.data || [];
+      // Filter to only this problem
+      const forProblem = Array.isArray(all)
+        ? all.filter(s => s.problem_id === problemId || s.problemId === problemId)
+        : [];
+      setMySubmissions(forProblem);
+    } catch (e) {
+      console.error('Failed to load contest submissions:', e);
+      setMySubmissions([]);
+    } finally {
+      setLoadingSubs(false);
+    }
+  };
+
+  // Auto-fetch when submissions tab is opened
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    if (tab === 'submissions') fetchMySubmissions();
+  };
+
+  // ── View code for a submission (only after contest ends) ──────────────────
+  const isContestEnded = contest ? new Date() > new Date(contest.endTime || contest.end_time) : false;
+
+  const handleViewCode = async (submission) => {
+    if (!isContestEnded) {
+      toast.error('Code is hidden during the contest. Available after it ends.');
+      return;
+    }
+    setLoadingCode(true);
+    try {
+      const subId = submission.submission_id || submission._id;
+      const res = await api.get(`/submissions/${subId}`);
+      const sub = res?.data?.submission || res?.submission || res?.data;
+      setViewingCode({
+        code: sub?.code || '// Code not available',
+        language: sub?.language || submission.language || 'cpp',
+        verdict: sub?.verdict || submission.status,
+        submissionId: subId,
+      });
+    } catch {
+      toast.error('Failed to load submission code');
+    } finally {
+      setLoadingCode(false);
+    }
   };
 
   const runCustomTest = async () => {
@@ -403,17 +461,17 @@ const ContestProblem = () => {
               {/* Tabs */}
               <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl rounded-2xl border border-gray-700/50 overflow-hidden">
                 <div className="flex border-b border-gray-700">
-                  {['statement', 'hints'].map(tab => (
+                  {['statement', 'hints', 'submissions'].map(tab => (
                     <button
                       key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      className={`flex-1 px-6 py-4 font-semibold transition-all ${
+                      onClick={() => handleTabChange(tab)}
+                      className={`flex-1 px-4 py-4 font-semibold transition-all text-sm ${
                         activeTab === tab
                           ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white'
                           : 'text-gray-400 hover:bg-gray-700/50'
                       }`}
                     >
-                      {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                      {tab === 'submissions' ? 'My Submissions' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </button>
                   ))}
                 </div>
@@ -540,6 +598,91 @@ const ContestProblem = () => {
                       ) : (
                         <div className="text-center py-8 text-gray-400">
                           No hints available for this problem
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── My Submissions tab ─────────────────────────────── */}
+                  {activeTab === 'submissions' && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-base font-bold text-white">My Submissions</h3>
+                        <button
+                          onClick={fetchMySubmissions}
+                          className="text-xs text-gray-400 hover:text-white px-2 py-1 bg-gray-700/50 rounded-lg transition-colors"
+                        >
+                          ↻ Refresh
+                        </button>
+                      </div>
+
+                      {/* Code-lock notice during contest */}
+                      {!isContestEnded && (
+                        <div className="flex items-center gap-2 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-xs text-yellow-300">
+                          <span>🔒</span>
+                          <span>Submission code is hidden during the contest. View code becomes available after the contest ends.</span>
+                        </div>
+                      )}
+
+                      {isContestEnded && (
+                        <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg text-xs text-green-300">
+                          <span>🔓</span>
+                          <span>Contest ended — you can now view all submission code.</span>
+                        </div>
+                      )}
+
+                      {loadingSubs ? (
+                        <div className="flex justify-center py-8">
+                          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                        </div>
+                      ) : mySubmissions.length === 0 ? (
+                        <div className="text-center py-10 text-gray-500 text-sm">
+                          No submissions yet for this problem.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {mySubmissions.map((sub, i) => {
+                            const isAC = sub.status === 'accepted';
+                            const subId = sub.submission_id || sub._id || sub.id;
+                            const submittedAt = sub.submitted_at || sub.submittedAt || sub.createdAt;
+                            return (
+                              <div key={subId || i}
+                                className={`flex items-center justify-between p-3 rounded-xl border ${
+                                  isAC
+                                    ? 'bg-green-900/20 border-green-500/30'
+                                    : 'bg-gray-800/40 border-gray-700/50'
+                                }`}>
+                                <div className="flex flex-col gap-0.5">
+                                  <span className={`text-sm font-bold ${isAC ? 'text-green-400' : 'text-red-400'}`}>
+                                    {isAC ? '✅' : '❌'} {sub.status?.replace(/_/g, ' ').toUpperCase() || 'PENDING'}
+                                  </span>
+                                  <span className="text-xs text-gray-500">
+                                    {sub.language?.toUpperCase()}
+                                    {sub.score > 0 && ` · +${sub.score} pts`}
+                                    {sub.time_taken > 0 && ` · ${sub.time_taken}ms`}
+                                    {sub.test_cases_passed != null && ` · ${sub.test_cases_passed}/${sub.total_test_cases} cases`}
+                                  </span>
+                                  {submittedAt && (
+                                    <span className="text-xs text-gray-600">
+                                      {new Date(submittedAt).toLocaleTimeString()}
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => handleViewCode(sub)}
+                                  disabled={loadingCode}
+                                  title={!isContestEnded ? 'Available after contest ends' : 'View code'}
+                                  className={`text-xs px-3 py-1.5 rounded-lg transition-colors font-medium ${
+                                    isContestEnded
+                                      ? 'bg-blue-600/30 text-blue-300 border border-blue-500/30 hover:bg-blue-600/50'
+                                      : 'bg-gray-700/40 text-gray-600 border border-gray-700/30 cursor-not-allowed'
+                                  }`}
+                                >
+                                  {loadingCode ? '…' : isContestEnded ? 'View Code' : '🔒 Locked'}
+                                </button>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -813,6 +956,36 @@ const ContestProblem = () => {
           </div>
         </div>
       </div>
+
+      {/* ── Code Viewer Modal — only shown after contest ends ─────────────── */}
+      {viewingCode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl border border-gray-700 bg-gray-900 shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700">
+              <div className="flex items-center gap-3">
+                <span className={`text-sm font-bold ${viewingCode.verdict === 'accepted' ? 'text-green-400' : 'text-red-400'}`}>
+                  {viewingCode.verdict === 'accepted' ? '✅ Accepted' : `❌ ${viewingCode.verdict?.replace(/_/g, ' ')}`}
+                </span>
+                <span className="text-xs px-2 py-0.5 bg-gray-800 text-gray-400 rounded">
+                  {viewingCode.language?.toUpperCase()}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setCode(viewingCode.code); setLanguage(viewingCode.language); setViewingCode(null); toast.success('Code loaded into editor'); }}
+                  className="text-xs px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:opacity-90"
+                >
+                  Load in Editor
+                </button>
+                <button onClick={() => setViewingCode(null)} className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400">✕</button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <pre className="text-sm font-mono text-gray-200 whitespace-pre-wrap break-all leading-relaxed">{viewingCode.code}</pre>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -37,7 +37,7 @@ class Config:
         if k.strip() and k.strip() not in ("", "your_gemini_api_key_here")
     ]))
     GEMINI_API_KEY  = GEMINI_API_KEYS[0] if GEMINI_API_KEYS else ""
-    GEMINI_MODEL    = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    GEMINI_MODEL    = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     REDIS_URL        = os.getenv("REDIS_URL", "redis://localhost:6379")
     NODE_BACKEND_URL = os.getenv("NODE_BACKEND_URL", "http://localhost:8000")

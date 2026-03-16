@@ -150,6 +150,23 @@ const userSchema = new mongoose.Schema(
         type: Number,
         default: 0,
       },
+      // ── Contest fields ─────────────────────────────────────────────────
+      rating: {
+        type: Number,
+        default: 1500,   // Starting Elo rating (Codeforces-style)
+      },
+      contestsParticipated: {
+        type: Number,
+        default: 0,
+      },
+      contestsWon: {
+        type: Number,
+        default: 0,
+      },
+      bestContestRank: {
+        type: Number,
+        default: null,
+      },
     },
 
     preferences: {

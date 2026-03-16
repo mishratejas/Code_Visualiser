@@ -147,6 +147,23 @@ class SocketService {
   }
 
   /**
+   * Join personal user notification room
+   * Call this once after login so the backend can push real-time notifications
+   */
+  joinUserRoom(userId) {
+    if (!userId) return;
+    const joinFn = () => {
+      this.socket.emit('join_user_room', { userId });
+      console.log('👤 Joined personal notification room for user:', userId);
+    };
+    if (this.socket?.connected) {
+      joinFn();
+    } else {
+      this.connectionQueue.push(joinFn);
+    }
+  }
+
+  /**
    * Join a contest room
    */
   joinContest(contestId, userId) {

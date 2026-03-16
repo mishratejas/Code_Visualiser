@@ -1,10 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import {
-  FiHelpCircle, FiChevronDown, FiChevronRight,
-  FiBook, FiCode, FiMessageCircle, FiMail,
-  FiUsers, FiSearch, FiZap, FiAward, FiCalendar, FiUser
+  FiHelpCircle, FiChevronDown,
+  FiBook, FiCode, FiZap, FiCalendar, FiUser, FiSearch,
 } from 'react-icons/fi';
-import { MdOutlineContactSupport } from 'react-icons/md';
 import { useTheme } from '../context/ThemeContext';
 import ThemeToggle from '../components/common/ThemeToggle';
 
@@ -26,7 +24,7 @@ const faqs = {
     { q: 'How do I register for a contest?', a: 'Go to Contests, find an upcoming contest, and click Register. Private contests require a password from the organizer.' },
     { q: 'Can I create my own contest?', a: 'Yes! Any user with an Organizer account can create contests. Sign up as an organizer or use the contest creation form if you already have admin access.' },
     { q: 'How is the contest leaderboard ranked?', a: 'Rankings are based on: number of problems solved (more = better), then total penalty time (less = better). Penalty is added for each wrong submission.' },
-    { q: 'What happens if I submit after the contest ends?', a: 'Submissions after the end time are not counted toward the contest. You can still submit for practice, but they won\'t affect your rank.' },
+    { q: 'What happens if I submit after the contest ends?', a: "Submissions after the end time are not counted toward the contest. You can still submit for practice, but they won't affect your rank." },
   ],
   'editor': [
     { q: 'How do I change the editor theme or font size?', a: 'Go to Settings → Editor. You can change your default language, font size, and app theme (light/dark) there.' },
@@ -36,16 +34,16 @@ const faqs = {
   'account': [
     { q: 'How do I change my password?', a: 'Go to Settings → Security. Enter your current password and then your new password. If you signed in with Google, you may need to set a password first.' },
     { q: 'Can I change my username?', a: 'Yes, go to Settings → Profile. Note: changing your username updates your profile URL, so old links may not work.' },
-    { q: 'How do I delete my account?', a: 'Go to Settings → Danger Zone. You\'ll need to confirm by typing your username. This action is permanent and cannot be undone.' },
+    { q: 'How do I delete my account?', a: "Go to Settings → Danger Zone. You'll need to confirm by typing your username. This action is permanent and cannot be undone." },
   ],
 };
 
 const categories = [
   { id: 'getting-started', name: 'Getting Started', icon: <FiBook />, color: 'from-blue-500 to-cyan-500' },
-  { id: 'problems', name: 'Problems', icon: <FiCode />, color: 'from-purple-500 to-pink-500' },
-  { id: 'contests', name: 'Contests', icon: <FiCalendar />, color: 'from-green-500 to-emerald-500' },
-  { id: 'editor', name: 'Code Editor', icon: <FiZap />, color: 'from-yellow-500 to-orange-500' },
-  { id: 'account', name: 'Account', icon: <FiUser />, color: 'from-red-500 to-rose-500' },
+  { id: 'problems',        name: 'Problems',        icon: <FiCode />, color: 'from-purple-500 to-pink-500' },
+  { id: 'contests',        name: 'Contests',        icon: <FiCalendar />, color: 'from-green-500 to-emerald-500' },
+  { id: 'editor',          name: 'Code Editor',     icon: <FiZap />, color: 'from-yellow-500 to-orange-500' },
+  { id: 'account',         name: 'Account',         icon: <FiUser />, color: 'from-red-500 to-rose-500' },
 ];
 
 const Help = () => {
@@ -91,7 +89,7 @@ const Help = () => {
             </div>
             <div>
               <h1 className={`text-2xl font-bold ${textClass}`}>Help Center</h1>
-              <p className={`text-sm ${subTextClass}`}>Find answers and get support</p>
+              <p className={`text-sm ${subTextClass}`}>Find answers to common questions</p>
             </div>
           </div>
           <ThemeToggle />
@@ -118,7 +116,6 @@ const Help = () => {
         </div>
 
         {searchResults ? (
-          // Search Results
           <div className="space-y-4">
             <p className={`text-sm ${subTextClass}`}>
               {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for "{searchQuery}"
@@ -136,7 +133,6 @@ const Help = () => {
             )}
           </div>
         ) : (
-          // Category + FAQ layout
           <div className="grid md:grid-cols-4 gap-6">
             {/* Category Sidebar */}
             <div className="space-y-1.5">
@@ -156,7 +152,6 @@ const Help = () => {
 
             {/* FAQ Content */}
             <div className="md:col-span-3 space-y-3">
-              {/* Category Header */}
               {(() => {
                 const cat = categories.find(c => c.id === activeCategory);
                 return cat ? (
@@ -175,34 +170,6 @@ const Help = () => {
           </div>
         )}
 
-        {/* Contact Support */}
-        <div className={`${cardClass} border rounded-2xl p-6`}>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-rose-500 to-red-500">
-              <MdOutlineContactSupport className="h-6 w-6 text-white" />
-            </div>
-            <h2 className={`text-lg font-bold ${textClass}`}>Still need help?</h2>
-          </div>
-          <p className={`text-sm ${subTextClass} mb-5`}>
-            Can't find your answer in the FAQ? Our support team is happy to help.
-          </p>
-          <div className="grid sm:grid-cols-3 gap-3">
-            {[
-              { icon: <FiMail className="h-5 w-5" />, title: 'Email Support', desc: 'support@codearena.io', color: 'from-blue-500 to-cyan-500' },
-              { icon: <FiMessageCircle className="h-5 w-5" />, title: 'Discord Community', desc: 'Join 10,000+ coders', color: 'from-indigo-500 to-purple-500' },
-              { icon: <FiUsers className="h-5 w-5" />, title: 'Forum', desc: 'Ask the community', color: 'from-green-500 to-teal-500' },
-            ].map(({ icon, title, desc, color }) => (
-              <div key={title} className={`${isDark ? 'bg-gray-800/50 hover:bg-gray-800' : 'bg-gray-50 hover:bg-gray-100'} rounded-xl p-4 flex items-center gap-3 transition-colors cursor-pointer`}>
-                <div className={`p-2 rounded-lg bg-gradient-to-br ${color} text-white flex-shrink-0`}>{icon}</div>
-                <div>
-                  <p className={`font-medium text-sm ${textClass}`}>{title}</p>
-                  <p className={`text-xs ${subTextClass}`}>{desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
       </div>
     </div>
   );
@@ -218,7 +185,7 @@ const FaqItem = ({ item, idx, openFaq, setOpenFaq, isDark, textClass, subTextCla
       >
         <span className={`font-medium text-sm pr-4 ${textClass}`}>{item.q}</span>
         <span className={`flex-shrink-0 ${subTextClass}`}>
-          {isOpen ? <FiChevronDown className="h-5 w-5 rotate-180 transition-transform" /> : <FiChevronDown className="h-5 w-5 transition-transform" />}
+          <FiChevronDown className={`h-5 w-5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
         </span>
       </button>
       {isOpen && (

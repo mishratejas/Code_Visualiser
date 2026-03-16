@@ -4,6 +4,7 @@ import Contest from '../models/postgres/Contest.models.js';
 import User from '../models/user.models.js';
 import { Op } from 'sequelize';
 import sequelize from '../db/postgres/index.js';
+import notificationService from '../services/notification.service.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const resolveId = (req) => req.user?.id || req.user?._id?.toString();
@@ -240,6 +241,15 @@ export const joinGroup = async (req, res) => {
       if (joinStatus === 'active') await group.increment('member_count');
 
       if (joinStatus === 'pending') {
+        // Notify group owner and admins about the join request
+        const requester = await User.findById(userId).select('username').lean();
+        const admins = await GroupMember.findAll({
+          where: { group_id: id, status: 'active', role: { [Op.in]: ['owner', 'admin'] } }
+        });
+        const adminIds = admins.map(a => a.user_id).filter(uid => uid !== userId);
+        notificationService.notifyGroupJoinRequest(adminIds, requester?.username || 'Someone', group.name, id)
+          .catch(err => console.error('Group join notification error:', err.message));
+
         return res.json({ success: true, pending: true, message: 'Join request sent! Waiting for admin approval.' });
       }
     }
@@ -267,6 +277,10 @@ export const approveMember = async (req, res) => {
     await pending.update({ status: 'active', joined_at: new Date() });
     await Group.increment('member_count', { where: { id } });
 
+    // Notify the approved user
+    notificationService.notifyGroupJoinApproved(targetUserId, group.name, id)
+      .catch(err => console.error('Group approve notification error:', err.message));
+
     res.json({ success: true, message: 'Member approved!' });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -284,6 +298,14 @@ export const rejectMember = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
 
     await GroupMember.destroy({ where: { group_id: id, user_id: targetUserId, status: 'pending' } });
+
+    // Notify the rejected user
+    const group = await Group.findByPk(id, { attributes: ['name'] });
+    if (group) {
+      notificationService.notifyGroupJoinRejected(targetUserId, group.name)
+        .catch(err => console.error('Group reject notification error:', err.message));
+    }
+
     res.json({ success: true, message: 'Request rejected' });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
