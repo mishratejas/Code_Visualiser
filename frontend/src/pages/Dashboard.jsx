@@ -82,7 +82,7 @@ const Dashboard = () => {
     try {
       const [statsRes, subsRes, contestsRes] = await Promise.allSettled([
         api.get(`/users/${userId}/stats`),
-        api.get('/submissions', { params: { limit: 8 } }),
+        api.get('/submissions/recent', { params: { limit: 8 } }),
         api.get('/contests', { params: { limit: 4 } }),
       ]);
 
@@ -117,10 +117,12 @@ const Dashboard = () => {
         });
       }
 
-      // ── Submissions ──
+      // ── Submissions ── /submissions/recent returns { submissions: [...], stats: {...} }
       if (subsRes.status === 'fulfilled') {
         const d = subsRes.value;
-        const list = d?.data?.submissions || d?.submissions || d?.data || [];
+        // Unwrap: interceptor gives us response.data, ApiResponse wraps in { success, data }
+        const payload = d?.data ?? d;
+        const list = payload?.submissions ?? payload?.data?.submissions ?? [];
         setRecentSubs(Array.isArray(list) ? list.slice(0, 8) : []);
       }
 

@@ -274,6 +274,10 @@ export const approveMember = async (req, res) => {
     const pending = await GroupMember.findOne({ where: { group_id: id, user_id: targetUserId, status: 'pending' } });
     if (!pending) return res.status(404).json({ success: false, message: 'No pending request found' });
 
+    // Fetch group BEFORE using group.name (was missing — caused ReferenceError)
+    const group = await Group.findByPk(id, { attributes: ['id', 'name'] });
+    if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
+
     await pending.update({ status: 'active', joined_at: new Date() });
     await Group.increment('member_count', { where: { id } });
 
@@ -380,15 +384,27 @@ export const inviteMember = async (req, res) => {
     const existing = await GroupMember.findOne({ where: { group_id: id, user_id: targetId } });
     if (existing?.status === 'active') return res.status(400).json({ success: false, message: 'User is already a member' });
 
+    // Fetch group for name (needed by notification + member_count)
+    const group = await Group.findByPk(id, { attributes: ['id', 'name'] });
+    if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
+
     if (existing) {
-      await existing.update({ status: 'active', invited_by: userId });
+      // Re-activating a pending/rejected/left member — also increment count (was missing)
+      await existing.update({ status: 'active', invited_by: userId, joined_at: new Date() });
+      await Group.increment('member_count', { where: { id } });
     } else {
       await GroupMember.create({ group_id: id, user_id: targetId, role: 'member', status: 'active', invited_by: userId, joined_at: new Date() });
       await Group.increment('member_count', { where: { id } });
     }
 
+    // Notify the invited user if the service supports it
+    if (notificationService.notifyGroupInvite) {
+      notificationService.notifyGroupInvite(targetId, group.name, id).catch(() => {});
+    }
+
     res.json({ success: true, message: `@${username} has been added to the group` });
   } catch (e) {
+    console.error('inviteMember error:', e);
     res.status(500).json({ success: false, message: e.message });
   }
 };

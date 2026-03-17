@@ -51,15 +51,19 @@ export const checkPlagiarism = asyncHandler(async (req, res) => {
 export const getContestReport = asyncHandler(async (req, res) => {
   const { contestId } = req.params;
 
-  // Use findOne directly so we control the "not found" response (no 500 throw)
-  const report = await PlagiarismReport.findOne({ contest: contestId })
-    .sort({ checkedAt: -1 })
-    .populate('suspiciousPairs.user1', 'username email')
-    .populate('suspiciousPairs.user2', 'username email')
-    .lean();
-
-  if (!report) {
-    return res.status(404).json(new ApiResponse(404, null, 'No plagiarism report found for this contest'));
+  // IMPORTANT: do NOT use PlagiarismReport.findOne().populate() here.
+  // user1/user2 are stored as plain hex strings, not Mongoose ObjectId refs,
+  // so populate() silently returns null for every user — causing the frontend
+  // to show "No pairs match this filter".
+  // Use the service's getReport() which does a proper manual User.find() lookup.
+  let report;
+  try {
+    report = await plagiarismService.getReport(contestId);
+  } catch (e) {
+    if (e.message?.includes('No plagiarism report found')) {
+      return res.status(404).json(new ApiResponse(404, null, 'No plagiarism report found for this contest'));
+    }
+    throw e;
   }
 
   res.status(200).json(new ApiResponse(200, report, 'Plagiarism report fetched'));

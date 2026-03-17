@@ -12,30 +12,64 @@ import User from '../models/user.models.js';
 
 function expectedScore(rA, rB) { return 1 / (1 + Math.pow(10, (rB - rA) / 400)); }
 
+function getRatingTier(rating) {
+  if (rating >= 2400) return 'Grandmaster';
+  if (rating >= 2100) return 'Master';
+  if (rating >= 1900) return 'Candidate Master';
+  if (rating >= 1600) return 'Expert';
+  if (rating >= 1400) return 'Specialist';
+  if (rating >= 1200) return 'Pupil';
+  return 'Newbie';
+}
+
 async function applyRatings(contestId) {
   try {
     const participants = await ContestParticipant.findAll({
       where: { contest_id: contestId, is_disqualified: false },
       order: [['score','DESC'],['penalty','ASC'],['joined_at','ASC']]
     });
-    if (participants.length < 2) return;
+    if (participants.length < 2) {
+      console.log(`⚠️  Contest ${contestId}: only ${participants.length} participant(s), skipping ratings`);
+      return;
+    }
 
     const n = participants.length;
-    const expectedRanks = participants.map((p, i) => {
+
+    // Ensure every participant has a valid rating_before — if it was never
+    // snapshotted at join time, pull the current MongoDB rating now.
+    for (const p of participants) {
+      if (!p.rating_before || p.rating_before <= 0) {
+        const mongoUser = await User.findById(p.user_id).select('stats.rating').lean();
+        await p.update({ rating_before: mongoUser?.stats?.rating || 1500 });
+      }
+    }
+
+    // Reload so expected-rank math uses correct rating_before values
+    const refreshed = await ContestParticipant.findAll({
+      where: { contest_id: contestId, is_disqualified: false },
+      order: [['score','DESC'],['penalty','ASC'],['joined_at','ASC']]
+    });
+
+    const expectedRanks = refreshed.map((p, i) => {
       let expected = 1;
       for (let j = 0; j < n; j++) {
-        if (i !== j) expected += expectedScore(participants[j].rating_before, p.rating_before);
+        if (i !== j) expected += expectedScore(refreshed[j].rating_before, p.rating_before);
       }
       return expected;
     });
 
+    // Fetch contest title once for notifications
+    const contestRow = await Contest.findByPk(contestId, { attributes: ['title'] });
+    const contestTitle = contestRow?.title || `Contest #${contestId}`;
+
     const K = 32;
     for (let i = 0; i < n; i++) {
-      const p = participants[i];
+      const p = refreshed[i];
       const actualRank = i + 1;
       const expRank = expectedRanks[i];
       const delta = Math.round(K * (expRank - actualRank) / n * 10);
-      const newRating = Math.max(100, p.rating_before + delta);
+      const ratingBefore = p.rating_before || 1500;
+      const newRating = Math.max(100, ratingBefore + delta);
       await p.update({ rating_after: newRating, rating_change: delta, rank: actualRank });
 
       const updateOp = {
@@ -55,18 +89,17 @@ async function applyRatings(contestId) {
 
       await User.findByIdAndUpdate(p.user_id, updateOp);
 
-      // Notify each participant of their rating change
-      if (delta !== 0) {
-        notificationService.notifyContest(p.user_id, {
-          type: 'rating_updated',
-          contestId,
-          contestTitle: '',  // filled below
-          delta,
-          newRating,
-          rank: actualRank,
-          totalParticipants: n,
-        }).catch(() => {});
-      }
+      // Always notify (delta=0 still useful: confirms rank was as expected)
+      notificationService.notifyContest(p.user_id, {
+        type: 'rating_updated',
+        contestId,
+        contestTitle,
+        delta,
+        newRating,
+        rank: actualRank,
+        totalParticipants: n,
+        tier: getRatingTier(newRating),
+      }).catch(() => {});
     }
     console.log(`✅ Ratings applied for contest ${contestId} (${n} participants)`);
   } catch (e) {

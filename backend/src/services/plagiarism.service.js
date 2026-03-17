@@ -18,6 +18,7 @@ import crypto from 'crypto';
 import PlagiarismReport from '../models/plagiarism.models.js';
 import Submission from '../models/submission.models.js';
 import ContestSubmission from '../models/postgres/ContestSubmission.models.js';
+import User from '../models/user.models.js';
 import logger from '../config/logger.js';
 
 // ── Winnowing ─────────────────────────────────────────────────────────────────
@@ -116,9 +117,20 @@ function comparePair(s1, s2, threshold = 0.75) {
   const fp1 = s1._fp || winnowFingerprint(s1.code, lang1);
   const fp2 = s2._fp || winnowFingerprint(s2.code, lang2);
 
-  const winnowSim  = jaccardSimilarity(fp1, fp2);
-  const structSim  = lang1 === lang2 ? structuralSimilarity(s1.code, s2.code) : 0.0;
-  const overallSim = 0.6 * winnowSim + 0.4 * structSim;
+  const winnowSim = jaccardSimilarity(fp1, fp2);
+
+  // Structural similarity only makes sense for same language.
+  // For cross-language pairs we still run winnowing — identical logic
+  // (e.g. same C++ submitted by two users as different "languages") will
+  // still score 1.0 on winnowing alone.
+  const sameLanguage = lang1 === lang2;
+  const structSim    = sameLanguage ? structuralSimilarity(s1.code, s2.code) : 0.0;
+
+  // If cross-language: weight 100% winnowing so identical code is still caught.
+  // If same language: 60% winnowing + 40% structural (original weighting).
+  const overallSim = sameLanguage
+    ? 0.6 * winnowSim + 0.4 * structSim
+    : winnowSim;
 
   return { winnowSim, structSim, overallSim, isSuspicious: overallSim >= threshold };
 }
@@ -236,14 +248,15 @@ class PlagiarismService {
           const s1 = submissions[i];
           const s2 = submissions[j];
 
-          // ✅ KEY FIX: skip same-user pairs — a user cannot plagiarise themselves
+          // Skip same-user pairs — a user cannot plagiarise themselves
           if (s1.user_id === s2.user_id) continue;
 
           // Only compare submissions for the same problem
           if (s1.problem_id !== s2.problem_id) continue;
 
-          // Skip cross-language pairs
-          if (s1.language !== s2.language) continue;
+          // NOTE: cross-language pairs are NOT skipped — comparePair() handles
+          // them gracefully (winnowing-only, no structural weight).
+          // This catches identical code submitted under different language labels.
 
           const { winnowSim, structSim, overallSim, isSuspicious } = comparePair(s1, s2, this.threshold);
           allSimilarities.push(overallSim);
@@ -282,7 +295,7 @@ class PlagiarismService {
         suspiciousPairs,
         metadata: {
           algorithmsUsed: ['winnowing', 'structural'],
-          version:        '2.1-local',
+          version:        '2.2-local',
         },
       });
 
@@ -308,14 +321,45 @@ class PlagiarismService {
   }
 
   async getReport(contestId) {
+    // Use .lean() — populate() silently fails because user1/user2 are stored as
+    // plain strings (MongoDB ObjectId hex), not Mongoose ObjectId references.
+    // We manually enrich them instead.
     const report = await PlagiarismReport.findOne({ contest: contestId })
       .sort({ checkedAt: -1 })
-      .populate('suspiciousPairs.user1', 'username email')
-      .populate('suspiciousPairs.user2', 'username email');
+      .lean();
 
     if (!report) {
       throw new Error('No plagiarism report found for this contest');
     }
+
+    // Collect all unique user IDs across all suspicious pairs
+    const pairs = report.suspiciousPairs || [];
+    const rawIds = pairs.flatMap(p => [
+      p.user1?.toString(),
+      p.user2?.toString(),
+    ]).filter(id => id && /^[a-f\d]{24}$/i.test(id));
+    const uniqueIds = [...new Set(rawIds)];
+
+    // Fetch usernames from MongoDB in one query
+    let userMap = {};
+    if (uniqueIds.length) {
+      const users = await User.find({ _id: { $in: uniqueIds } })
+        .select('username email profile.avatar')
+        .lean();
+      users.forEach(u => { userMap[u._id.toString()] = u; });
+    }
+
+    // Enrich each pair's user1/user2 with actual user data
+    report.suspiciousPairs = pairs.map(p => {
+      const u1id = p.user1?.toString();
+      const u2id = p.user2?.toString();
+      return {
+        ...p,
+        user1: userMap[u1id] || { _id: u1id, username: `User_${(u1id || '').slice(-6)}`, email: null },
+        user2: userMap[u2id] || { _id: u2id, username: `User_${(u2id || '').slice(-6)}`, email: null },
+      };
+    });
+
     return report;
   }
 

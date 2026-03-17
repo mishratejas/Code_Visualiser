@@ -122,9 +122,11 @@ const ContestProblem = () => {
 
       setProblem(foundProblem);
 
-      // Load saved code or default
+      // Load saved code or default — key is namespaced by userId to prevent
+      // one user's code leaking into another user's editor on the same browser
+      const userId = user?._id || user?.id || 'anon';
       const savedCode = localStorage.getItem(
-        `contest_${contestId}_problem_${problemId}_${language}`,
+        `contest_${contestId}_problem_${problemId}_${language}_${userId}`,
       );
       if (savedCode) {
         setCode(savedCode);
@@ -171,17 +173,19 @@ const ContestProblem = () => {
 
   const handleCodeChange = (newCode) => {
     setCode(newCode);
-    // Auto-save to localStorage
+    // Auto-save to localStorage — namespaced by userId to isolate per user
+    const userId = user?._id || user?.id || 'anon';
     localStorage.setItem(
-      `contest_${contestId}_problem_${problemId}_${language}`,
+      `contest_${contestId}_problem_${problemId}_${language}_${userId}`,
       newCode,
     );
   };
 
   const handleLanguageChange = (newLang) => {
     setLanguage(newLang);
+    const userId = user?._id || user?.id || 'anon';
     const savedCode = localStorage.getItem(
-      `contest_${contestId}_problem_${problemId}_${newLang}`,
+      `contest_${contestId}_problem_${problemId}_${newLang}_${userId}`,
     );
     if (savedCode) {
       setCode(savedCode);
