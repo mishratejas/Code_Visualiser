@@ -25,7 +25,12 @@ async def _gemini(prompt: str, fallback: Any) -> Any:
     if _model is None:
         return fallback
     try:
-        resp = await _model.generate_content_async(prompt)
+        import asyncio
+        loop = asyncio.get_event_loop()
+        resp = await loop.run_in_executor(
+            None,
+            lambda: _model.generate_content(prompt)
+        )
         text = resp.text.strip()
         text = re.sub(r'^```(?:json)?\s*', '', text)
         text = re.sub(r'\s*```$', '', text)

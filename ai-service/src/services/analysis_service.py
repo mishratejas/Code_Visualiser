@@ -21,11 +21,12 @@ _current_key_index = 0
 
 if GEMINI_READY:
     try:
-        from google import genai as _genai_sdk
+        import google.generativeai as _genai_sdk
         for key in Config.GEMINI_API_KEYS:
             try:
-                client = _genai_sdk.Client(api_key=key)
-                _gemini_models.append((key, client))
+                _genai_sdk.configure(api_key=key)
+                model = _genai_sdk.GenerativeModel(Config.GEMINI_MODEL)
+                _gemini_models.append((key, model))
                 logger.info(f"Gemini key loaded: ...{key[-6:]}")
             except Exception as e:
                 logger.warning(f"Failed to init Gemini key ...{key[-6:]}: {e}")
@@ -134,41 +135,49 @@ def _regex_metrics(code: str, language: str, m: StructuralMetrics, lines: list) 
 
 
 def _calc_nesting(code: str) -> int:
-    """Calculate max nesting depth of LOOPS specifically (not all braces)."""
+    """
+    Calculate max loop nesting depth.
+    Uses Python AST for Python code (accurate), brace-counting for C++/Java/JS.
+    """
+    import ast as _ast
     import re
-    # Count brace depth only at loop keywords
-    lines = code.split('\n')
-    max_loop_depth = 0
+
+    # ── Python: use AST (handles indentation correctly) ──────────────────────
+    try:
+        tree = _ast.parse(code)
+        def _depth(node, cur=0):
+            if isinstance(node, (_ast.For, _ast.While)):
+                cur += 1
+            return max((cur, *(_depth(c, cur) for c in _ast.iter_child_nodes(node))))
+        return _depth(tree)
+    except SyntaxError:
+        pass
+
+    # ── C++ / Java / JS: brace-depth tracking ────────────────────────────────
+    max_depth = 0
     loop_depth = 0
     brace_depth = 0
-    loop_brace_starts = []  # brace depth when each loop started
+    loop_brace_starts = []
 
-    for line in lines:
+    for line in code.split("\n"):
         stripped = line.strip()
-        # Detect loop start
-        is_loop = bool(re.search(r'\b(for|while)\b', stripped))
-        # Count braces
-        opens = stripped.count('{')
-        closes = stripped.count('}')
+        opens  = stripped.count("{")
+        closes = stripped.count("}")
+        is_loop = bool(re.search(r"\b(for|while)\b", stripped))
 
         if is_loop:
             loop_depth += 1
-            max_loop_depth = max(max_loop_depth, loop_depth)
-            loop_brace_starts.append(brace_depth)
+            max_depth = max(max_depth, loop_depth)
+            loop_brace_starts.append(brace_depth + opens)  # depth AFTER the opening brace
 
         brace_depth += opens - closes
 
-        # Pop loop depth when braces close past loop start
-        while loop_brace_starts and brace_depth <= loop_brace_starts[-1]:
+        # Pop when we close past a loop's opening brace
+        while loop_brace_starts and brace_depth < loop_brace_starts[-1]:
             loop_brace_starts.pop()
             loop_depth = max(0, loop_depth - 1)
 
-    if max_loop_depth == 0:  # Python — use indentation
-        for line in code.split('\n'):
-            if re.search(r'\bfor\b|\bwhile\b', line):
-                indent = len(line) - len(line.lstrip())
-                max_loop_depth = max(max_loop_depth, indent // 4 + 1)
-    return max_loop_depth
+    return max_depth
 
 
 async def _call_gemini(prompt: str, fallback: dict) -> dict:
@@ -178,20 +187,19 @@ async def _call_gemini(prompt: str, fallback: dict) -> dict:
         return fallback
 
     import asyncio
-    from google import genai as _genai_sdk
+    import google.generativeai as _genai_sdk
 
     num_keys = len(_gemini_models)
     for attempt in range(num_keys):
         idx = (_current_key_index + attempt) % num_keys
-        key, client = _gemini_models[idx]
+        key, model = _gemini_models[idx]
         try:
+            # Configure the key for this attempt, then call
+            _genai_sdk.configure(api_key=key)
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
-                lambda: client.models.generate_content(
-                    model=Config.GEMINI_MODEL,
-                    contents=prompt,
-                )
+                lambda: model.generate_content(prompt)
             )
             text = response.text.strip()
             text = re.sub(r'^```(?:json)?\s*', '', text)

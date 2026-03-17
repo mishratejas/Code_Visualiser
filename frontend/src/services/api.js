@@ -34,7 +34,13 @@ api.interceptors.response.use(
   (response) => response.data,
   (error) => {
     if (error.response?.status === 429) toast.error('Too many requests. Please try again later.');
-    else if (error.response?.status >= 500) toast.error('Server error. Please try again later.');
+    else if (error.response?.status >= 500) {
+      // Don't toast for "no report found" — that's a normal state, not a server error
+      const msg = error.response?.data?.message || '';
+      if (!msg.toLowerCase().includes('no plagiarism report')) {
+        toast.error('Server error. Please try again later.');
+      }
+    }
     return Promise.reject(error);
   }
 );
@@ -146,6 +152,17 @@ export const aiApi = {
    * Compare two submissions
    */
   comparePlagiarism: (sub1Id, sub2Id) => api.post('/plagiarism/compare', { submission1Id: sub1Id, submission2Id: sub2Id }),
+
+  /**
+   * Get plagiarism report for a contest (admin)
+   */
+  getPlagiarismReport: (contestId) => api.get(`/plagiarism/contest/${contestId}`),
+
+  /**
+   * Review a suspicious pair (admin)
+   * verdict: 'plagiarism_confirmed' | 'false_positive' | 'common_solution'
+   */
+  reviewPlagiarismPair: (data) => api.post('/plagiarism/review', data),
 
   /**
    * Get AI interview question

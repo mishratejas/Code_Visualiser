@@ -18,7 +18,7 @@ import ContestTimer from '../components/contests/ContestTimer';
 const getRatingColor = r => r >= 2000 ? 'text-yellow-400' : r >= 1700 ? 'text-blue-400' : r >= 1400 ? 'text-green-400' : 'text-gray-400';
 
 // ── Pending Members Panel (admin view) ────────────────────────────────────────
-function PendingMembersPanel({ groupId, isDark, card, txt, sub, onApprove }) {
+function PendingMembersPanel({ groupId, isDark, card, txt, sub, onApprove, onReject }) {
   const [pending, setPending] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
 
@@ -26,7 +26,9 @@ function PendingMembersPanel({ groupId, isDark, card, txt, sub, onApprove }) {
     setLoading(true);
     try {
       const res = await api.get(`/groups/${groupId}/pending`);
-      setPending(res?.data || res?.data?.data || []);
+      // res = { success, data: [...] } after axios interceptor unwraps response.data
+      const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+      setPending(list);
     } catch { setPending([]); }
     finally { setLoading(false); }
   }, [groupId]);
@@ -47,6 +49,7 @@ function PendingMembersPanel({ groupId, isDark, card, txt, sub, onApprove }) {
       await api.post(`/groups/${groupId}/reject/${userId}`);
       toast.success('Request rejected');
       load();
+      if (onReject) onReject();
     } catch (e) { toast.error(e.response?.data?.message || 'Failed'); }
   };
 
@@ -99,6 +102,7 @@ export default function GroupDetail() {
   const [joining, setJoining] = useState(false);
   const [joinPending, setJoinPending] = useState(false);
   const [leaveConfirm, setLeaveConfirm] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const bg   = isDark ? 'bg-gray-950' : 'bg-gray-50';
   const card = isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200 shadow-sm';
@@ -121,6 +125,16 @@ export default function GroupDetail() {
       setGroup(data);
       setMembers(data.members || []);
       setContests(data.contests || []);
+
+      // Fetch pending count for admin badge (non-blocking)
+      if (data.myRole === 'owner' || data.myRole === 'admin') {
+        api.get(`/groups/${id}/pending`)
+          .then(r => {
+            const list = Array.isArray(r?.data) ? r.data : [];
+            setPendingCount(list.length);
+          })
+          .catch(() => {});
+      }
     } catch (e) {
       toast.error('Failed to load group');
       navigate('/groups');
@@ -279,7 +293,11 @@ export default function GroupDetail() {
               className={`px-5 py-3 text-sm font-semibold capitalize border-b-2 -mb-px transition-colors flex items-center gap-1.5
                 ${tab === t ? 'border-rose-500 text-rose-400' : `border-transparent ${sub} hover:text-gray-200`}`}>
               {t}
-              {t === 'pending' && <span className="text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-full px-1.5 py-0.5">!</span>}
+              {t === 'pending' && (
+                <span className="text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
+                  {pendingCount > 0 ? pendingCount : '!'}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -410,7 +428,15 @@ export default function GroupDetail() {
 
         {/* ── PENDING REQUESTS (admin only) ── */}
         {tab === 'pending' && isAdmin && (
-          <PendingMembersPanel groupId={id} isDark={isDark} card={card} txt={txt} sub={sub} onApprove={load} />
+          <PendingMembersPanel
+            groupId={id}
+            isDark={isDark}
+            card={card}
+            txt={txt}
+            sub={sub}
+            onApprove={() => { load(); setPendingCount(c => Math.max(0, c - 1)); }}
+            onReject={() => setPendingCount(c => Math.max(0, c - 1))}
+          />
         )}
 
         {/* ── CONTESTS ── */}

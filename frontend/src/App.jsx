@@ -46,6 +46,7 @@ const Interview = lazy(() => import("./pages/Interview"));
 const Discuss = lazy(() => import("./pages/Discuss"));
 const Groups = lazy(() => import("./pages/Groups"));
 const GroupDetail = lazy(() => import("./pages/GroupDetail"));
+const PlagiarismPanel = lazy(() => import("./pages/PlagiarismPanel"));
 
 // Layout wrapper
 const Layout = ({ children, showSidebar = false }) => {
@@ -237,6 +238,13 @@ const App = () => {
                     <Route path="/groups/:id" element={
                       <PrivateRoute>
                         <Layout showSidebar={true}><GroupDetail /></Layout>
+                      </PrivateRoute>
+                    } />
+
+                    {/* Admin: Plagiarism Panel */}
+                    <Route path="/contests/:contestId/plagiarism" element={
+                      <PrivateRoute>
+                        <Layout showSidebar={true}><PlagiarismPanel /></Layout>
                       </PrivateRoute>
                     } />
 

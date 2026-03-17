@@ -50,15 +50,19 @@ export const checkPlagiarism = asyncHandler(async (req, res) => {
 // ─── GET /api/v1/plagiarism/contest/:contestId ────────────────────────────────
 export const getContestReport = asyncHandler(async (req, res) => {
   const { contestId } = req.params;
-  const report = await plagiarismService.getReport(contestId);
 
-  // Enrich suspicious pairs with usernames for display
-  const enriched = await PlagiarismReport.findById(report._id)
+  // Use findOne directly so we control the "not found" response (no 500 throw)
+  const report = await PlagiarismReport.findOne({ contest: contestId })
+    .sort({ checkedAt: -1 })
     .populate('suspiciousPairs.user1', 'username email')
     .populate('suspiciousPairs.user2', 'username email')
     .lean();
 
-  res.status(200).json(new ApiResponse(200, enriched, 'Plagiarism report fetched'));
+  if (!report) {
+    return res.status(404).json(new ApiResponse(404, null, 'No plagiarism report found for this contest'));
+  }
+
+  res.status(200).json(new ApiResponse(200, report, 'Plagiarism report fetched'));
 });
 
 // ─── POST /api/v1/plagiarism/compare ─────────────────────────────────────────

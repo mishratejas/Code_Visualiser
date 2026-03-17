@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { 
   FiCalendar, FiClock, FiUsers, FiLock, FiUnlock, 
   FiCode, FiCheckCircle, FiAlertCircle, FiArrowRight,
-  FiTag, FiAward, FiInfo
+  FiTag, FiAward, FiInfo, FiShield, FiStopCircle, FiRefreshCw
 } from 'react-icons/fi';
 import { MdOutlineEmojiEvents } from 'react-icons/md';
 import Loader from '../components/common/Loader';
@@ -22,6 +22,7 @@ const ContestDetail = () => {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [leaderboard, setLeaderboard] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
+  const [endingContest, setEndingContest] = useState(false);
 
   useEffect(() => {
     fetchContest();
@@ -84,6 +85,20 @@ const ContestDetail = () => {
       setShowPasswordModal(true);
     } else {
       handleRegister();
+    }
+  };
+
+  const handleEndContest = async () => {
+    if (!window.confirm(`End "${contest.title}" now and apply ratings? This cannot be undone.`)) return;
+    setEndingContest(true);
+    try {
+      await api.post(`/contests/${id}/end`);
+      toast.success('Contest ended — ratings applied!', { icon: '🏆', duration: 5000 });
+      fetchContest();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to end contest');
+    } finally {
+      setEndingContest(false);
     }
   };
 
@@ -271,6 +286,66 @@ const ContestDetail = () => {
           </div>
         </div>
       </div>
+
+      {/* Admin: Plagiarism Panel shortcut */}
+      {(user?.role === 'admin' || user?.role === 'super_admin') && (
+        <div className="space-y-3">
+          {/* End Contest + Apply Ratings */}
+          {(isLive || isEnded) && (
+            <div className="bg-gradient-to-r from-orange-900/30 to-yellow-900/20 border border-orange-500/30 rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-600/20 rounded-lg border border-orange-500/30">
+                  <FiStopCircle className="h-5 w-5 text-orange-400" />
+                </div>
+                <div>
+                  <div className="font-semibold text-white">
+                    {isLive ? 'End Contest & Apply Ratings' : 'Re-apply Ratings'}
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    {isLive
+                      ? 'Force-end the contest now and compute ELO ratings for all participants'
+                      : contest.is_rated
+                        ? 'Ratings are applied automatically — use this to manually re-trigger if they failed'
+                        : 'This is an unrated contest — ratings will not change'}
+                  </div>
+                </div>
+              </div>
+              {contest.is_rated && (
+                <button
+                  onClick={handleEndContest}
+                  disabled={endingContest}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-600 to-yellow-600 text-white rounded-xl hover:shadow-lg hover:shadow-orange-500/20 transition-all font-medium whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {endingContest
+                    ? <><FiRefreshCw className="h-4 w-4 animate-spin" />Applying…</>
+                    : <><FiStopCircle className="h-4 w-4" />{isLive ? 'End & Apply Ratings' : 'Re-apply Ratings'}</>
+                  }
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Plagiarism Panel */}
+          <div className="bg-gradient-to-r from-red-900/30 to-orange-900/20 border border-red-500/30 rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-600/20 rounded-lg border border-red-500/30">
+                <FiShield className="h-5 w-5 text-red-400" />
+              </div>
+              <div>
+                <div className="font-semibold text-white">Plagiarism Detection</div>
+                <div className="text-sm text-gray-400">Review and manage suspicious submissions for this contest</div>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate(`/contests/${id}/plagiarism`)}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-orange-600 text-white rounded-xl hover:shadow-lg hover:shadow-red-500/20 transition-all font-medium whitespace-nowrap"
+            >
+              <FiShield className="h-4 w-4" />
+              Open Plagiarism Panel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Contest Info Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

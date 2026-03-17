@@ -24,6 +24,7 @@ import achievementRoutes from "./routes/achievement.routes.js";
 import aiRoutes from "./routes/ai.routes.js";
 import discussRoutes from "./routes/discuss.routes.js";
 import groupRoutes from "./routes/group.routes.js";
+import plagiarismRoutes from "./routes/plagiarism.routes.js";
 
 class App {
   constructor() {
@@ -246,6 +247,7 @@ class App {
     this.app.use(`${apiPrefix}/ai`,           aiRoutes);
     this.app.use(`${apiPrefix}/discuss`,       discussRoutes);
     this.app.use(`${apiPrefix}/groups`,        groupRoutes);
+    this.app.use(`${apiPrefix}/plagiarism`,    plagiarismRoutes);
 
     // Test endpoint to verify all routes
     this.app.get(`${apiPrefix}/routes`, (req, res) => {

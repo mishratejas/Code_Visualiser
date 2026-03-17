@@ -48,6 +48,7 @@ const LiveContest = () => {
   const [liveUpdates, setLiveUpdates] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [endingContest, setEndingContest] = useState(false);
 
   // ✅ Use refs to prevent re-initialization
   const socketInitialized = useRef(false);
@@ -265,6 +266,20 @@ const LiveContest = () => {
     fetchContest();
   };
 
+  const handleEndContest = async () => {
+    if (!window.confirm(`Force-end "${contest?.title}" now and apply ratings? This cannot be undone.`)) return;
+    setEndingContest(true);
+    try {
+      await api.post(`/contests/${id}/end`);
+      toast.success('Contest ended — ratings applied!', { icon: '🏆', duration: 5000 });
+      navigate(`/contests/${id}`);
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'Failed to end contest');
+    } finally {
+      setEndingContest(false);
+    }
+  };
+
   const formatTime = (ms) => {
     const hours = Math.floor(ms / 3600000);
     const minutes = Math.floor((ms % 3600000) / 60000);
@@ -433,6 +448,22 @@ const LiveContest = () => {
               >
                 <FiRefreshCw className="h-5 w-5 group-hover:rotate-180 transition-transform duration-500" />
               </button>
+
+              {/* Admin: End Contest */}
+              {(user?.role === 'admin' || user?.role === 'super_admin') && (
+                <button
+                  onClick={handleEndContest}
+                  disabled={endingContest}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-xl hover:shadow-lg hover:shadow-orange-500/20 transition-all text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                  title="Force-end contest and apply ratings"
+                >
+                  {endingContest
+                    ? <FiRefreshCw className="h-4 w-4 animate-spin" />
+                    : <FiAlertTriangle className="h-4 w-4" />
+                  }
+                  {endingContest ? 'Ending…' : 'End Contest'}
+                </button>
+              )}
             </div>
           </div>
         </div>

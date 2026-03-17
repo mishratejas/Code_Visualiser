@@ -1,106 +1,82 @@
 import SyncService from '../services/syncService.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import User from '../models/user.models.js';
+import MongoUser from '../models/user.models.js';
 
 // @desc    Get global leaderboard
 // @route   GET /api/v1/leaderboard
 // @access  Public
 export const getLeaderboard = asyncHandler(async (req, res) => {
   const {
-    page = 1,
-    limit = 100,
-    timeframe = 'all'
+    page      = 1,
+    limit     = 100,
+    timeframe = 'all',
   } = req.query;
 
-  const offset = (parseInt(page) - 1) * parseInt(limit);
-  const limitNum = Math.min(parseInt(limit), 200);
+  const pageNum  = Math.max(1, parseInt(page));
+  const limitNum = Math.min(parseInt(limit) || 100, 200);
+  const offset   = (pageNum - 1) * limitNum;
 
-  let rawLeaderboard = [];
+  // ── Always query MongoDB — it has ALL registered users ──────────────────────
+  // Postgres only has users that were explicitly synced (subset), so we use
+  // MongoDB as the source of truth and supplement with Postgres stats where available.
 
-  if (process.env.POSTGRES_URI) {
-    try {
-      rawLeaderboard = await SyncService.getLeaderboard(limitNum, offset);
-    } catch (e) {
-      console.error('Postgres leaderboard failed, falling back to MongoDB:', e.message);
-    }
-  }
-
-  // MongoDB fallback or supplement
-  if (!rawLeaderboard || rawLeaderboard.length === 0) {
-    rawLeaderboard = await User.aggregate([
+  const [users, totalCount] = await Promise.all([
+    MongoUser.aggregate([
       { $match: { isActive: { $ne: false } } },
       {
         $project: {
-          username: 1,
-          'profile.name': 1,
-          'profile.avatar': 1,
-          'profile.country': 1,
-          'stats.score': 1,
-          'stats.totalProblemsSolved': 1,
-          'stats.easySolved': 1,
-          'stats.mediumSolved': 1,
-          'stats.hardSolved': 1,
-          'stats.streak': 1,
-          'stats.rank': 1,
-          'stats.rating': 1,
-          'stats.contestsParticipated': 1,
-        }
+          username:                        1,
+          'profile.name':                  1,
+          'profile.avatar':                1,
+          'profile.country':               1,
+          'stats.score':                   1,
+          'stats.totalProblemsSolved':     1,
+          'stats.easySolved':              1,
+          'stats.mediumSolved':            1,
+          'stats.hardSolved':              1,
+          'stats.streak':                  1,
+          'stats.rating':                  1,
+          'stats.contestsParticipated':    1,
+          'stats.rank':                    1,
+        },
       },
-      { $sort: { 'stats.score': -1, 'stats.totalProblemsSolved': -1 } },
+      { $sort: { 'stats.score': -1, 'stats.totalProblemsSolved': -1, 'stats.rating': -1 } },
       { $skip: offset },
-      { $limit: limitNum }
-    ]);
+      { $limit: limitNum },
+    ]),
+    MongoUser.countDocuments({ isActive: { $ne: false } }),
+  ]);
 
-    // Normalize MongoDB shape to match Postgres shape
-    rawLeaderboard = rawLeaderboard.map((u, idx) => ({
-      rank: offset + idx + 1,
-      userId: u._id?.toString(),
-      username: u.username || `User${idx + 1}`,
-      name: u.profile?.name || '',
-      avatar: u.profile?.avatar || null,
-      country: u.profile?.country || '',
-      totalSolved: u.stats?.totalProblemsSolved || 0,
-      score: u.stats?.score || 0,
-      rating: u.stats?.rating || 1500,
-      streak: u.stats?.streak || 0,
-      contests: u.stats?.contestsParticipated || 0,
-    }));
-  } else {
-    // Normalize Postgres shape
-    rawLeaderboard = rawLeaderboard.map((u, idx) => {
-      const obj = u.dataValues || u;
-      return {
-        rank: offset + idx + 1,
-        userId: obj.mongo_id || obj.id?.toString(),
-        username: obj.username || `User${idx + 1}`,
-        name: obj.name || '',
-        avatar: obj.avatar_url || null,
-        country: obj.country_code || '',
-        totalSolved: obj.total_problems_solved || 0,
-        score: obj.score || 0,
-        rating: obj.rating || 1500,
-        streak: obj.streak || 0,
-        contests: obj.contests_participated || 0,
-      };
-    });
-  }
+  const leaderboard = users.map((u, idx) => ({
+    rank:         offset + idx + 1,
+    userId:       u._id?.toString(),
+    username:     u.username || `User${offset + idx + 1}`,
+    name:         u.profile?.name  || '',
+    avatar:       u.profile?.avatar || null,
+    country:      u.profile?.country || '',
+    totalSolved:  u.stats?.totalProblemsSolved || 0,
+    score:        u.stats?.score  || 0,
+    rating:       u.stats?.rating || 1500,
+    streak:       u.stats?.streak || 0,
+    contests:     u.stats?.contestsParticipated || 0,
+  }));
 
-  // Trigger background rank update (non-blocking)
-  if (page === 1 && process.env.POSTGRES_URI) {
-    SyncService.updateRanks().catch(console.error);
+  // Trigger background rank update in Postgres (non-blocking, best-effort)
+  if (pageNum === 1 && process.env.POSTGRES_URI) {
+    SyncService.updateRanks().catch(() => {});
   }
 
   res.status(200).json(
     ApiResponse.success(
-      { leaderboard: rawLeaderboard, timeframe, page: parseInt(page), limit: limitNum, total: rawLeaderboard.length },
+      { leaderboard, timeframe, page: pageNum, limit: limitNum, total: totalCount },
       'Leaderboard fetched successfully'
     )
   );
 });
 
 // @desc    Get contest leaderboard
-// @route   GET /api/v1/contests/:contestId/leaderboard
+// @route   GET /api/v1/contests/:contestId/leaderboard (also mounted under /leaderboard/contests/:contestId)
 // @access  Public
 export const getContestLeaderboard = asyncHandler(async (req, res) => {
   const { contestId } = req.params;
@@ -108,41 +84,38 @@ export const getContestLeaderboard = asyncHandler(async (req, res) => {
 
   if (!process.env.POSTGRES_URI) {
     return res.status(200).json(
-      ApiResponse.success(
-        { leaderboard: [], message: 'Contest system requires PostgreSQL' },
-        'Contest leaderboard'
-      )
+      ApiResponse.success({ leaderboard: [], message: 'Contest system requires PostgreSQL' }, 'Contest leaderboard')
     );
   }
 
-  const { ContestParticipant } = await import('../models/postgres/ContestParticipant.models.js');
+  const { default: ContestParticipant } = await import('../models/postgres/ContestParticipant.models.js');
   const mongoose = (await import('mongoose')).default;
 
   const participants = await ContestParticipant.findAll({
     where: { contest_id: contestId, is_disqualified: false },
-    order: [['score','DESC'],['penalty','ASC'],['joined_at','ASC']],
+    order: [['score', 'DESC'], ['penalty', 'ASC'], ['joined_at', 'ASC']],
     limit: parseInt(limit),
   });
 
   const validIds = participants.map(p => p.user_id).filter(id => mongoose.isValidObjectId(id));
   let userMap = {};
   if (validIds.length) {
-    const users = await User.find({ _id: { $in: validIds } }).select('username profile.avatar').lean();
+    const users = await MongoUser.find({ _id: { $in: validIds } }).select('username profile.avatar').lean();
     users.forEach(u => { userMap[u._id.toString()] = u; });
   }
 
   const leaderboard = participants.map((p, i) => {
     const u = userMap[p.user_id] || null;
     return {
-      rank: i + 1,
-      userId: p.user_id,
-      username: u?.username || `User_${(p.user_id||'').slice(-6)}`,
-      avatar: u?.profile?.avatar || null,
-      score: p.score || 0,
-      penalty: p.penalty || 0,
+      rank:           i + 1,
+      userId:         p.user_id,
+      username:       u?.username || `User_${(p.user_id || '').slice(-6)}`,
+      avatar:         u?.profile?.avatar || null,
+      score:          p.score   || 0,
+      penalty:        p.penalty || 0,
       problemsSolved: p.problems_solved || 0,
-      ratingChange: p.rating_change || 0,
-      problemStats: p.problem_stats || {},
+      ratingChange:   p.rating_change   || 0,
+      problemStats:   p.problem_stats   || {},
     };
   });
 
