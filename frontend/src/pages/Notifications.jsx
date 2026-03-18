@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FiBell, FiCheck, FiTrash2, FiFilter, FiCheckCircle, FiAlertCircle, FiAward, FiCalendar, FiCode, FiRefreshCw } from 'react-icons/fi';
 import { toast } from 'react-hot-toast';
 import api from '../services/api';
@@ -15,52 +15,64 @@ const Notifications = () => {
   const [hasMore, setHasMore] = useState(false);
   const [stats, setStats] = useState({ total: 0, unread: 0 });
 
-  useEffect(() => {
-    setPage(1);
-    setNotifications([]);
-  }, [filter]);
+  // Use a ref to hold latest filter+page so the fetch function
+  // always sees current values and not stale closures.
+  const filterRef = useRef(filter);
+  const pageRef   = useRef(page);
+  filterRef.current = filter;
+  pageRef.current   = page;
 
-  useEffect(() => {
-    fetchNotifications();
-  }, [filter, page]);
-
-  const fetchNotifications = async () => {
+  const fetchNotifications = async (forcePage, forceFilter) => {
+    const pg  = forcePage  ?? pageRef.current;
+    const flt = forceFilter ?? filterRef.current;
     try {
       setLoading(true);
-      const params = { page, limit: 20 };
-      if (filter === 'unread') params.unread = true;
-      if (filter === 'read') params.read = true;
+      const params = { page: pg, limit: 20 };
+      if (flt === 'unread') params.unread = true;
+      if (flt === 'read')   params.read   = true;
 
       const response = await api.get('/notifications', { params });
-      // api interceptor unwraps one level: response IS already response.data
-      // Backend returns: { success, data: { notifications, pagination, unreadCount } }
-      const resData = response?.data || {};
-      
-      const notifs = resData.notifications || [];
-      const pagination = resData.pagination || {};
 
-      if (page === 1) {
+      // Interceptor already returns response.data.
+      // Backend may return { data: { notifications, pagination, unreadCount } }
+      //                 OR flat { notifications, pagination, unreadCount }
+      const resData    = response?.data ?? response ?? {};
+      const notifs     = resData.notifications ?? [];
+      const pagination = resData.pagination    ?? {};
+
+      if (pg === 1) {
         setNotifications(notifs);
       } else {
         setNotifications(prev => [...prev, ...notifs]);
       }
 
-      setHasMore((pagination.page || 1) < (pagination.pages || 1));
+      setHasMore((pagination.page || pg) < (pagination.pages || pagination.totalPages || 1));
       setStats({
-        total: pagination.total || notifs.length,
-        unread: resData.unreadCount || notifs.filter(n => !n.read && !n.isRead).length,
+        total:  pagination.total ?? notifs.length,
+        unread: resData.unreadCount ?? notifs.filter(n => !n.read && !n.isRead).length,
       });
     } catch (error) {
       console.error('Failed to fetch notifications:', error);
-      setNotifications([]);
+      if (pg === 1) setNotifications([]);
     } finally {
       setLoading(false);
     }
   };
 
+  // When filter changes: reset page to 1 and fetch fresh
+  useEffect(() => {
+    setPage(1);
+    fetchNotifications(1, filter);
+  }, [filter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When page changes beyond 1 (load more): append
+  useEffect(() => {
+    if (page > 1) fetchNotifications(page, filter);
+  }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const markAsRead = async (id) => {
     try {
-      await api.post(`/notifications/mark-read/${id}`);
+      await api.patch(`/notifications/${id}/read`);
       setNotifications(prev =>
         prev.map(n => n._id === id ? { ...n, read: true, isRead: true } : n)
       );
@@ -72,7 +84,7 @@ const Notifications = () => {
 
   const markAllAsRead = async () => {
     try {
-      await api.post('/notifications/mark-all-read');
+      await api.patch('/notifications/read-all');
       setNotifications(prev => prev.map(n => ({ ...n, read: true, isRead: true })));
       setStats(prev => ({ ...prev, unread: 0 }));
       toast.success('All notifications marked as read');
@@ -132,8 +144,6 @@ const Notifications = () => {
     ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white'
     : `${isDark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`;
 
-  const unreadNotifs = notifications.filter(n => !n.read && !n.isRead);
-
   return (
     <div className={`min-h-screen ${bgClass} py-6 px-4`}>
       <div className="max-w-3xl mx-auto space-y-6">
@@ -169,10 +179,10 @@ const Notifications = () => {
               </button>
             )}
             <button
-              onClick={() => { setPage(1); fetchNotifications(); }}
+              onClick={() => fetchNotifications(1, filter)}
               className={`p-2 rounded-lg ${isDark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
             >
-              <FiRefreshCw className="h-4 w-4" />
+              <FiRefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
             <ThemeToggle />
           </div>

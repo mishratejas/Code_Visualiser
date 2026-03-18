@@ -104,7 +104,7 @@ const Header = () => {
 
   const markAllRead = async () => {
     try {
-      await api.post('/notifications/mark-all-read');
+      await api.patch('/notifications/read-all');
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       setUnread(0);
     } catch { /* silent */ }
@@ -112,7 +112,7 @@ const Header = () => {
 
   const markOne = async (id) => {
     try {
-      await api.post(`/notifications/mark-read/${id}`);
+      await api.patch(`/notifications/${id}/read`);
       setNotifications(prev => prev.map(n => n._id === id ? { ...n, read: true } : n));
       setUnread(prev => Math.max(0, prev - 1));
     } catch { /* silent */ }

@@ -41,6 +41,9 @@ const Contests = () => {
   const [contestPassword, setContestPassword] = useState("");
   const [registering, setRegistering] = useState(false);
 
+  // Contest-ban state
+  const [banStatus, setBanStatus] = useState(null); // { banned: bool, banExpiresAt: Date, reason: string }
+
   // Theme classes
   const bgClass = isDark ? "bg-gray-950" : "bg-gray-50";
   const cardClass = isDark
@@ -63,10 +66,34 @@ const Contests = () => {
     fetchContests();
   }, [filter]);
 
+  useEffect(() => {
+    if (user) fetchBanStatus();
+  }, [user]);
+
   const safeDate = (value) => {
     if (!value) return null;
     const d = new Date(value);
     return isNaN(d.getTime()) ? null : d;
+  };
+
+  const fetchBanStatus = async () => {
+    try {
+      const res = await api.get('/auth/me');
+      // auth/me returns the full user doc which includes contestBannedUntil / contestBanReason
+      const userData = res?.data?.user || res?.data || res || {};
+      const bannedUntil = userData.contestBannedUntil;
+      if (bannedUntil && new Date(bannedUntil) > new Date()) {
+        setBanStatus({
+          banned: true,
+          banExpiresAt: bannedUntil,
+          reason: userData.contestBanReason || 'Plagiarism violation',
+        });
+      } else {
+        setBanStatus({ banned: false });
+      }
+    } catch {
+      setBanStatus(null);
+    }
   };
 
   const safeFormat = (dateValue, formatString) => {
@@ -247,6 +274,37 @@ const Contests = () => {
         <div className="flex justify-end">
           <ThemeToggle />
         </div>
+
+        {/* ── Contest Ban Banner ── */}
+        {banStatus?.banned && banStatus?.banExpiresAt && (
+          <div className="flex items-start gap-4 p-4 rounded-xl border border-red-500/40 bg-red-500/10">
+            <div className="flex-shrink-0 p-2 bg-red-600/20 rounded-lg border border-red-500/30">
+              <svg className="h-5 w-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className={`font-semibold text-red-400`}>
+                You are banned from contests
+              </p>
+              <p className={`text-sm mt-0.5 ${subTextClass}`}>
+                Your contest participation is suspended until{" "}
+                <span className="font-semibold text-red-300">
+                  {new Date(banStatus.banExpiresAt).toLocaleDateString("en-US", {
+                    weekday: "long", year: "numeric", month: "long", day: "numeric",
+                    hour: "2-digit", minute: "2-digit",
+                  })}
+                </span>
+                {banStatus.reason && (
+                  <span className="block mt-1 text-xs text-red-400/70">
+                    Reason: {banStatus.reason}
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Page Header */}
         <div className={`${cardClass} rounded-xl p-6 border`}>

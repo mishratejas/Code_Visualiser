@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { 
   FiCalendar, FiClock, FiUsers, FiLock, FiUnlock, 
   FiCode, FiCheckCircle, FiAlertCircle, FiArrowRight,
-  FiTag, FiAward, FiInfo, FiShield, FiStopCircle, FiRefreshCw
+  FiTag, FiAward, FiInfo, FiShield
 } from 'react-icons/fi';
 import { MdOutlineEmojiEvents } from 'react-icons/md';
 import Loader from '../components/common/Loader';
@@ -290,41 +290,6 @@ const ContestDetail = () => {
       {/* Admin: Plagiarism Panel shortcut */}
       {(user?.role === 'admin' || user?.role === 'super_admin') && (
         <div className="space-y-3">
-          {/* End Contest + Apply Ratings */}
-          {(isLive || isEnded) && (
-            <div className="bg-gradient-to-r from-orange-900/30 to-yellow-900/20 border border-orange-500/30 rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-orange-600/20 rounded-lg border border-orange-500/30">
-                  <FiStopCircle className="h-5 w-5 text-orange-400" />
-                </div>
-                <div>
-                  <div className="font-semibold text-white">
-                    {isLive ? 'End Contest & Apply Ratings' : 'Re-apply Ratings'}
-                  </div>
-                  <div className="text-sm text-gray-400">
-                    {isLive
-                      ? 'Force-end the contest now and compute ELO ratings for all participants'
-                      : contest.is_rated
-                        ? 'Ratings are applied automatically — use this to manually re-trigger if they failed'
-                        : 'This is an unrated contest — ratings will not change'}
-                  </div>
-                </div>
-              </div>
-              {contest.is_rated && (
-                <button
-                  onClick={handleEndContest}
-                  disabled={endingContest}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-600 to-yellow-600 text-white rounded-xl hover:shadow-lg hover:shadow-orange-500/20 transition-all font-medium whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {endingContest
-                    ? <><FiRefreshCw className="h-4 w-4 animate-spin" />Applying…</>
-                    : <><FiStopCircle className="h-4 w-4" />{isLive ? 'End & Apply Ratings' : 'Re-apply Ratings'}</>
-                  }
-                </button>
-              )}
-            </div>
-          )}
-
           {/* Plagiarism Panel */}
           <div className="bg-gradient-to-r from-red-900/30 to-orange-900/20 border border-red-500/30 rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3">

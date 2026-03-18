@@ -114,9 +114,12 @@ const PlagiarismPanel = () => {
       }
 
       if (reportRes.status === "fulfilled") {
-        const rd = reportRes.value?.data?.data || reportRes.value?.data || reportRes.value;
-        // Backend now returns 404 with { data: null } when no report exists
-        setReport(rd ?? null);
+        // Axios interceptor returns response.data (the HTTP body).
+        // ApiResponse.success(report, msg) wraps as { success, data: report, message }.
+        // So reportRes.value = { success, data: report, message }
+        // and reportRes.value.data = the actual report object.
+        const rd = reportRes.value?.data ?? reportRes.value ?? null;
+        setReport((rd && typeof rd === 'object' && rd.suspiciousPairs !== undefined) ? rd : null);
       } else {
         // 404 = no report yet — that's fine, show the empty state
         // Any other error is also non-fatal here; the Run Check button handles recovery
@@ -139,8 +142,8 @@ const PlagiarismPanel = () => {
 
       // checkPlagiarism triggers analysis and returns the saved report
       const res = await aiApi.checkPlagiarism(contestId);
-      // The report may be nested in data.data (ApiResponse wrapper)
-      const resultData = res?.data?.data || res?.data || res;
+      // res = { success, data: report, message } after axios interceptor
+      const resultData = res?.data ?? res;
 
       // If the service returned a result directly, use it; otherwise re-fetch
       if (resultData?.suspiciousPairs !== undefined) {
@@ -155,8 +158,8 @@ const PlagiarismPanel = () => {
       } else {
         // Fallback: re-fetch the stored report
         const reportRes = await aiApi.getPlagiarismReport(contestId);
-        const rd = reportRes?.data?.data || reportRes?.data || reportRes;
-        setReport(rd);
+        const rd = reportRes?.data ?? reportRes;
+        setReport(rd?.suspiciousPairs !== undefined ? rd : null);
         toast.success("Plagiarism check completed", { id: "plag-check" });
       }
     } catch (err) {
@@ -182,20 +185,33 @@ const PlagiarismPanel = () => {
     const pairKey = `${pair.submission1}_${pair.submission2}`;
     try {
       setReviewingPairId(pairKey);
-      await aiApi.reviewPlagiarismPair({
+      const payload = {
         contestId,
         submission1Id: pair.submission1,
         submission2Id: pair.submission2,
         verdict,
         notes: reviewNotes,
-      });
-      toast.success(`Verdict saved: ${verdictMeta[verdict]?.label}`);
+      };
+      // When plagiarism is confirmed, also send ban + rating penalty fields
+      if (verdict === 'plagiarism_confirmed') {
+        payload.banUsers        = true;
+        payload.banDurationDays = 7;
+        payload.ratingPenalty   = 200;
+        payload.user1Id         = pair.user1?._id || pair.user1;
+        payload.user2Id         = pair.user2?._id || pair.user2;
+      }
+      await aiApi.reviewPlagiarismPair(payload);
+      if (verdict === 'plagiarism_confirmed') {
+        toast.success(`🚫 ${pair.user1?.username || 'User1'} & ${pair.user2?.username || 'User2'} banned 7 days · −200 rating each`);
+      } else {
+        toast.success(`Verdict saved: ${verdictMeta[verdict]?.label}`);
+      }
       setSelectedPair(null);
       setReviewNotes("");
       // Refresh report
       const reportRes = await aiApi.getPlagiarismReport(contestId);
-      const rd = reportRes?.data || reportRes;
-      setReport(rd);
+      const rd = reportRes?.data ?? reportRes;
+      setReport(rd?.suspiciousPairs !== undefined ? rd : null);
     } catch (err) {
       toast.error(err?.response?.data?.message || "Review failed");
     } finally {

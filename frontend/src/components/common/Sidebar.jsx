@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -8,6 +8,7 @@ import {
   FiFileText, FiHelpCircle, FiLogOut,
   FiChevronLeft, FiChevronRight, FiChevronDown, FiZap, FiUsers,
 } from 'react-icons/fi';
+import api from '../../services/api';
 
 const Sidebar = ({ mobileOpen, onMobileClose }) => {
   const { user, logout } = useAuth();
@@ -15,6 +16,18 @@ const Sidebar = ({ mobileOpen, onMobileClose }) => {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [openSubmenu, setOpenSubmenu] = useState(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Fetch unread notification count on mount
+  useEffect(() => {
+    if (!user) return;
+    api.get('/notifications/unread-count')
+      .then(res => {
+        const count = res?.data?.count ?? res?.count ?? 0;
+        setUnreadCount(count);
+      })
+      .catch(() => {});
+  }, [user]);
 
   const navItems = [
     { title: 'Dashboard',     icon: <FiHome      className="w-5 h-5" />, path: '/dashboard' },
@@ -33,7 +46,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }) => {
     { title: 'Leaderboard',   icon: <FiBarChart2 className="w-5 h-5" />, path: '/leaderboard' },
     { title: 'Groups',        icon: <FiUsers     className="w-5 h-5" />, path: '/groups' },
     { title: 'Achievements',  icon: <FiAward     className="w-5 h-5" />, path: '/achievements' },
-    { title: 'Notifications', icon: <FiBell      className="w-5 h-5" />, path: '/notifications' },
+    { title: 'Notifications', icon: <FiBell      className="w-5 h-5" />, path: '/notifications', badge: unreadCount > 0 ? unreadCount : null },
   ];
 
   const bottomItems = [
@@ -65,7 +78,10 @@ const Sidebar = ({ mobileOpen, onMobileClose }) => {
           to={item.submenu ? '#' : item.path}
           onClick={e => {
             if (item.submenu) { e.preventDefault(); setOpenSubmenu(isOpen ? null : item.title); }
-            else if (mobileOpen) onMobileClose();
+            else {
+              if (mobileOpen) onMobileClose();
+              if (item.path === '/notifications') setUnreadCount(0);
+            }
           }}
           className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all ${groupActive ? active : `${sub} ${hover}`}`}
         >
@@ -73,6 +89,11 @@ const Sidebar = ({ mobileOpen, onMobileClose }) => {
           {!collapsed && (
             <>
               <span className="flex-1">{item.title}</span>
+              {item.badge && (
+                <span className="min-w-[20px] h-5 px-1 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {item.badge > 99 ? '99+' : item.badge}
+                </span>
+              )}
               {item.submenu && <FiChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />}
             </>
           )}

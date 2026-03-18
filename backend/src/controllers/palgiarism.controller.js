@@ -3,12 +3,11 @@ import ApiResponse from '../utils/ApiResponse.js';
 import ApiError from '../utils/ApiError.js';
 import plagiarismService from '../services/plagiarism.service.js';
 import notificationService from '../services/notification.service.js';
-import PlagiarismReport from '../models/plagiarism.models.js';
 import ContestParticipant from '../models/postgres/ContestParticipant.models.js';
 import Contest from '../models/postgres/Contest.models.js';
 import User from '../models/user.models.js';
 
-// ─── helpers ────────────────────────────────────────────────────────────────
+// ─── helpers ─────────────────────────────────────────────────────────────────
 function expectedScore(rA, rB) { return 1 / (1 + Math.pow(10, (rB - rA) / 400)); }
 
 async function recomputeRatings(contestId) {
@@ -27,7 +26,7 @@ async function recomputeRatings(contestId) {
   for (let i = 0; i < n; i++) {
     const p = participants[i];
     const delta = Math.round(K * (expected[i] - (i + 1)) / n * 10);
-    const newRating = Math.max(100, p.rating_before + delta);
+    const newRating = Math.max(100, (p.rating_before || 1500) + delta);
     await p.update({ rating_after: newRating, rating_change: delta, rank: i + 1 });
     await User.findByIdAndUpdate(p.user_id, {
       $set: { 'stats.rating': newRating },
@@ -36,7 +35,7 @@ async function recomputeRatings(contestId) {
   }
 }
 
-// ─── POST /api/v1/plagiarism/check ────────────────────────────────────────────
+// ─── POST /api/v1/plagiarism/check ───────────────────────────────────────────
 export const checkPlagiarism = asyncHandler(async (req, res) => {
   const { contestId } = req.body;
   if (!contestId) throw new ApiError(400, 'Contest ID is required');
@@ -44,29 +43,36 @@ export const checkPlagiarism = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'Only admins can run plagiarism checks');
 
   const result = await plagiarismService.checkContest(contestId, req.user._id);
-  res.status(200).json(new ApiResponse(200, result, 'Plagiarism check completed'));
+
+  // After check, enrich user data the same way getReport does
+  let enrichedResult = result;
+  try {
+    enrichedResult = await plagiarismService.getReport(contestId);
+  } catch { /* fallback to raw result */ }
+
+  // ApiResponse.success(data, message) — correct arg order
+  res.status(200).json(ApiResponse.success(enrichedResult, 'Plagiarism check completed'));
 });
 
 // ─── GET /api/v1/plagiarism/contest/:contestId ────────────────────────────────
+// Uses plagiarismService.getReport() which does manual User.find() lookup.
+// DO NOT use PlagiarismReport.findOne().populate() — user1/user2 are stored as
+// plain hex strings, not ObjectId refs, so populate() silently returns null,
+// causing the frontend to show "No pairs match this filter".
 export const getContestReport = asyncHandler(async (req, res) => {
   const { contestId } = req.params;
 
-  // IMPORTANT: do NOT use PlagiarismReport.findOne().populate() here.
-  // user1/user2 are stored as plain hex strings, not Mongoose ObjectId refs,
-  // so populate() silently returns null for every user — causing the frontend
-  // to show "No pairs match this filter".
-  // Use the service's getReport() which does a proper manual User.find() lookup.
   let report;
   try {
     report = await plagiarismService.getReport(contestId);
   } catch (e) {
     if (e.message?.includes('No plagiarism report found')) {
-      return res.status(404).json(new ApiResponse(404, null, 'No plagiarism report found for this contest'));
+      return res.status(404).json(ApiResponse.success(null, 'No plagiarism report found for this contest'));
     }
     throw e;
   }
 
-  res.status(200).json(new ApiResponse(200, report, 'Plagiarism report fetched'));
+  res.status(200).json(ApiResponse.success(report, 'Plagiarism report fetched'));
 });
 
 // ─── POST /api/v1/plagiarism/compare ─────────────────────────────────────────
@@ -74,14 +80,10 @@ export const compareSubmissions = asyncHandler(async (req, res) => {
   const { submission1Id, submission2Id } = req.body;
   if (!submission1Id || !submission2Id) throw new ApiError(400, 'Both submission IDs required');
   const comparison = await plagiarismService.compareTwo(submission1Id, submission2Id);
-  res.status(200).json(new ApiResponse(200, comparison, 'Submissions compared'));
+  res.status(200).json(ApiResponse.success(comparison, 'Submissions compared'));
 });
 
 // ─── POST /api/v1/plagiarism/review ──────────────────────────────────────────
-// Admin reviews a suspicious pair and sets verdict:
-//   'plagiarism_confirmed' → disqualify both users, re-run ratings, notify
-//   'false_positive'       → clear the flag, notify users they're cleared
-//   'common_solution'      → mark as common but don't disqualify
 export const reviewPair = asyncHandler(async (req, res) => {
   if (req.user.role !== 'admin' && req.user.role !== 'super_admin')
     throw new ApiError(403, 'Admin access required');
@@ -91,7 +93,7 @@ export const reviewPair = asyncHandler(async (req, res) => {
   if (!['plagiarism_confirmed', 'false_positive', 'common_solution'].includes(verdict))
     throw new ApiError(400, 'Invalid verdict. Use: plagiarism_confirmed | false_positive | common_solution');
 
-  // 1 — update the report pair verdict
+  // 1 — update verdict in the report
   const report = await plagiarismService.reviewPair(
     contestId, submission1Id, submission2Id, verdict, notes, req.user._id
   );
@@ -101,13 +103,13 @@ export const reviewPair = asyncHandler(async (req, res) => {
          (p.submission1?.toString() === submission2Id && p.submission2?.toString() === submission1Id)
   );
 
-  const user1Id = pair?.user1?.toString();
-  const user2Id = pair?.user2?.toString();
+  // user1/user2 may be enriched objects (from getReport) or raw strings
+  const user1Id = pair?.user1?._id?.toString() || pair?.user1?.toString();
+  const user2Id = pair?.user2?._id?.toString() || pair?.user2?.toString();
   const contest = await Contest.findByPk(contestId);
   const contestTitle = contest?.title || `Contest #${contestId}`;
 
   if (verdict === 'plagiarism_confirmed') {
-    // 2a — disqualify both participants
     const [p1, p2] = await Promise.all([
       ContestParticipant.findOne({ where: { contest_id: contestId, user_id: user1Id } }),
       ContestParticipant.findOne({ where: { contest_id: contestId, user_id: user2Id } }),
@@ -115,32 +117,21 @@ export const reviewPair = asyncHandler(async (req, res) => {
     if (p1) await p1.update({ is_disqualified: true, score: 0 });
     if (p2) await p2.update({ is_disqualified: true, score: 0 });
 
-    // 2b — re-run ratings without disqualified users
     if (contest?.is_rated) await recomputeRatings(contestId);
 
-    // 2c — notify both users
     await Promise.allSettled([
-      user1Id && notificationService.notifyContest(user1Id, {
-        type: 'plagiarism_confirmed', contestTitle, contestId,
-      }),
-      user2Id && notificationService.notifyContest(user2Id, {
-        type: 'plagiarism_confirmed', contestTitle, contestId,
-      }),
+      user1Id && notificationService.notifyContest(user1Id, { type: 'plagiarism_confirmed', contestTitle, contestId }),
+      user2Id && notificationService.notifyContest(user2Id, { type: 'plagiarism_confirmed', contestTitle, contestId }),
     ]);
 
   } else if (verdict === 'false_positive' || verdict === 'common_solution') {
-    // 3 — notify users their submission was cleared
     await Promise.allSettled([
-      user1Id && notificationService.notifyContest(user1Id, {
-        type: 'plagiarism_cleared', contestTitle, contestId,
-      }),
-      user2Id && notificationService.notifyContest(user2Id, {
-        type: 'plagiarism_cleared', contestTitle, contestId,
-      }),
+      user1Id && notificationService.notifyContest(user1Id, { type: 'plagiarism_cleared', contestTitle, contestId }),
+      user2Id && notificationService.notifyContest(user2Id, { type: 'plagiarism_cleared', contestTitle, contestId }),
     ]);
   }
 
-  res.status(200).json(new ApiResponse(200, {
+  res.status(200).json(ApiResponse.success({
     verdict,
     contestId,
     user1: user1Id,

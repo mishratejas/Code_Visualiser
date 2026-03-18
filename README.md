@@ -1,567 +1,209 @@
-# 🚀 CodeForge - Complete Platform
+# CodeForge — Competitive Programming Platform
 
-> AI-Powered Competitive Programming Platform with Real-time Features
-
-![Status](https://img.shields.io/badge/Status-Production%20Ready-green)
-![Platform](https://img.shields.io/badge/Platform-Full%20Stack-blue)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+A full-stack competitive programming platform with AI-powered code analysis, real-time contests, plagiarism detection, and a rich social layer. Inspired by LeetCode and Codeforces.
 
 ---
 
-## 📖 Overview
-
-**CodeForge** is a modern competitive programming platform that combines traditional coding challenges with cutting-edge AI features. Built with a microservices architecture, it provides real-time contests, AI-powered code analysis, interview preparation, and personalized learning paths.
-
----
-
-## 🎯 Key Features
-
-### 💻 Core Features
-- ✅ **Multi-language Support** - JavaScript, Python, Java, C++, C
-- ✅ **Real-time Code Execution** - Instant feedback with test cases
-- ✅ **Live Contests** - Synchronized competitions with leaderboards
-- ✅ **Problem Library** - 100+ curated coding challenges
-- ✅ **User Profiles** - Comprehensive stats and achievements
-- ✅ **Submission History** - Track your progress over time
-
-### 🤖 AI-Powered Features
-- 🎯 **Code Analysis** - Quality, complexity, and performance insights
-- 💡 **Smart Hints** - Progressive problem-solving guidance
-- 🎓 **AI Interviews** - Mock technical interview practice
-- 📚 **Learning Paths** - Personalized skill development
-- 🔍 **Plagiarism Detection** - Ensure contest integrity
-- 🎯 **Smart Recommendations** - Tailored problem suggestions
-
-### ⚡ Real-time Features
-- 🔔 **Live Notifications** - In-app and email alerts
-- 🏆 **Dynamic Leaderboards** - Real-time ranking updates
-- 💬 **Contest Chat** - Live communication during contests
-- 📊 **Live Stats** - Real-time performance metrics
-
----
-
-## 🏗️ Architecture
-
-```
-┌─────────────────┐
-│   Frontend      │
-│   React 19      │ ← User Interface
-└────────┬────────┘
-         │ HTTP/WebSocket
-         ▼
-┌─────────────────┐
-│   Backend API   │
-│   Node.js       │ ← Business Logic
-└────────┬────────┘
-    ┌────┴────┬────────┬─────────┐
-    ▼         ▼        ▼         ▼
-┌────────┐ ┌─────┐ ┌──────┐ ┌────────┐
-│MongoDB │ │PgSQL│ │Redis │ │AI Svc  │
-│        │ │     │ │      │ │FastAPI │
-└────────┘ └─────┘ └──────┘ └────────┘
-```
-
----
-
-## 📦 Repository Structure
+## Repository Structure
 
 ```
 codeforge/
-├── frontend/           # React Application (24,884 LOC)
-│   ├── src/
-│   │   ├── components/  # Reusable UI components
-│   │   ├── pages/       # Route pages
-│   │   ├── services/    # API clients
-│   │   └── context/     # State management
-│   └── README.md        # Frontend documentation
-│
-├── backend/            # Node.js API (12,868 LOC)
-│   ├── src/
-│   │   ├── controllers/ # Route handlers
-│   │   ├── models/      # Database schemas
-│   │   ├── services/    # Business logic
-│   │   ├── middlewares/ # Express middleware
-│   │   └── routes/      # API endpoints
-│   └── README.md        # Backend documentation
-│
-├── ai-service/         # Python ML Service (7,351 LOC)
-│   ├── src/
-│   │   ├── models/      # ML models
-│   │   ├── services/    # AI services
-│   │   ├── core/        # Algorithms & parsers
-│   │   └── api/         # FastAPI routes
-│   ├── models/          # Trained ML models
-│   └── README.md        # AI Service documentation
-│
-├── docker-compose.yml  # Multi-service orchestration
+├── frontend/          # React + Vite client application
+├── backend/           # Node.js + Express REST API + Socket.IO server  
+├── ai-service/        # Python FastAPI AI microservice (Gemini + algorithms)
 └── README.md          # This file
 ```
 
 ---
 
-## 🚀 Quick Start
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    Browser                          │
+│           React + Vite (port 5173)                  │
+└──────────┬────────────────────────┬─────────────────┘
+           │ REST (HTTP)            │ WebSocket
+           ▼                        ▼
+┌──────────────────────────────────────────────────────┐
+│           Node.js Backend (port 8000)                │
+│   Express REST API + Socket.IO + Bull Queues         │
+│                                                      │
+│  ┌──────────┐  ┌───────┐  ┌──────────────────────┐  │
+│  │ MongoDB  │  │ Redis │  │  HTTP Proxy → :8001   │  │
+│  └──────────┘  └───────┘  └──────────────────────┘  │
+└──────────────────────────────┬───────────────────────┘
+                               │ HTTP (internal)
+                               ▼
+┌──────────────────────────────────────────────────────┐
+│           Python AI Service (port 8001)              │
+│   FastAPI + Gemini API + Winnowing + AST Analysis    │
+└──────────────────────────────────────────────────────┘
+```
+
+The frontend **never** contacts the AI service directly. All AI calls are proxied through the Node backend (`/api/v1/ai/*` → `:8001`).
+
+---
+
+## Services at a Glance
+
+| Service | Port | Stack | README |
+|---|---|---|---|
+| Frontend | 5173 | React 19, Vite, Tailwind CSS v4, Socket.IO client | [frontend/README.md](frontend/README.md) |
+| Backend | 8000 | Node.js, Express, MongoDB, Redis, Socket.IO, Bull | [backend/README.md](backend/README.md) |
+| AI Service | 8001 | Python 3.11+, FastAPI, Gemini 2.5 Flash, Redis cache | [ai-service/README.md](ai-service/README.md) |
+
+---
+
+## Quick Start
 
 ### Prerequisites
 
-- **Node.js** 18+ (Frontend & Backend)
-- **Python** 3.12+ (AI Service)
-- **MongoDB** 6.0+ (Primary database)
-- **PostgreSQL** 14+ (Contest data)
-- **Redis** 6.0+ (Cache & queues)
+- Node.js ≥ 18
+- Python ≥ 3.11
+- MongoDB (local or Atlas URI)
+- Redis (local; AI service falls back to in-memory if unavailable)
+- Google Gemini API key (free tier works; get one at https://aistudio.google.com)
 
-### Installation
+### 1. Backend
 
-1. **Clone the repository**
-```bash
-git clone https://github.com/yourusername/codeforge.git
-cd codeforge
-```
-
-2. **Start with Docker Compose** (Recommended)
-```bash
-docker-compose up -d
-```
-
-This starts:
-- Frontend at `http://localhost:5173`
-- Backend at `http://localhost:5000`
-- AI Service at `http://localhost:8000`
-- MongoDB, PostgreSQL, Redis
-
-3. **OR Manual Setup**
-
-#### Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-#### Backend
 ```bash
 cd backend
 npm install
-npm run dev
+cp .env.example .env      # fill in MONGO_URI, JWT_SECRET, GEMINI proxy config
+npm run dev               # starts on :8000
 ```
 
-#### AI Service
+### 2. AI Service
+
 ```bash
 cd ai-service
 pip install -r requirements.txt
-uvicorn src.main:app --reload
+cp .env.example .env      # fill in GEMINI_API_KEY
+uvicorn src.main:app --port 8001 --reload
 ```
 
----
-
-## 📚 Documentation
-
-Comprehensive documentation for each service:
-
-- **[Frontend README](./frontend/README.md)** - React app setup, components, state management
-- **[Backend README](./backend/README.md)** - API endpoints, database schema, authentication
-- **[AI Service README](./ai-service/README.md)** - ML models, algorithms, training
-- **[Implementation Plan](./IMPLEMENTATION_PLAN.md)** - Roadmap for new features
-
----
-
-## 🌐 API Endpoints
-
-### Authentication
+Verify Gemini is working:
 ```
-POST   /api/v1/auth/register      # Register new user
-POST   /api/v1/auth/login         # Login
-GET    /api/v1/auth/me            # Get current user
-POST   /api/v1/auth/logout        # Logout
+GET http://localhost:8001/api/v1/gemini-test
 ```
 
-### Problems
-```
-GET    /api/v1/problems           # List problems
-GET    /api/v1/problems/:id       # Get problem
-POST   /api/v1/problems           # Create problem (admin)
-PUT    /api/v1/problems/:id       # Update problem (admin)
-DELETE /api/v1/problems/:id       # Delete problem (admin)
-```
+### 3. Frontend
 
-### Submissions
-```
-POST   /api/v1/submissions        # Submit code
-GET    /api/v1/submissions        # Get submissions
-GET    /api/v1/submissions/:id    # Get submission
-POST   /api/v1/submissions/run    # Run code (without submitting)
-```
-
-### Contests
-```
-GET    /api/v1/contests           # List contests
-POST   /api/v1/contests           # Create contest
-GET    /api/v1/contests/:id       # Get contest
-POST   /api/v1/contests/:id/register  # Register for contest
-GET    /api/v1/contests/:id/leaderboard  # Get leaderboard
-```
-
-### AI Features
-```
-POST   /api/v1/ai/submissions/:id/analyze  # Analyze submission
-POST   /api/v1/ai/analyze/code    # Real-time analysis
-GET    /api/v1/ai/recommendations  # Get recommendations
-GET    /api/v1/ai/skill-gap        # Skill gap analysis
-POST   /api/v1/ai/interview/start  # Start AI interview
-GET    /api/v1/ai/hints/:problemId # Get smart hints
-POST   /api/v1/ai/plagiarism/check # Check plagiarism (admin)
-```
-
-### Notifications (NEW)
-```
-GET    /api/v1/notifications       # Get notifications
-POST   /api/v1/notifications/mark-read/:id  # Mark as read
-DELETE /api/v1/notifications/:id   # Delete notification
-```
-
-### Achievements (NEW)
-```
-GET    /api/v1/achievements        # List all achievements
-GET    /api/v1/achievements/user   # Get user achievements
-```
-
-Full API documentation: `http://localhost:5000/api/v1/docs`
-
----
-
-## 🔧 Technology Stack
-
-### Frontend
-- **React 19** - UI framework
-- **Vite** - Build tool
-- **Tailwind CSS** - Styling
-- **Monaco Editor** - Code editor
-- **Socket.io** - Real-time updates
-- **TanStack Query** - Server state
-- **Zustand** - Client state
-
-### Backend
-- **Node.js 18** - Runtime
-- **Express 5** - Web framework
-- **MongoDB** - Primary database
-- **PostgreSQL** - Contest data
-- **Redis** - Cache & queues
-- **Socket.io** - WebSockets
-- **Bull** - Job queues
-- **JWT** - Authentication
-
-### AI Service
-- **Python 3.12** - Language
-- **FastAPI** - Web framework
-- **Scikit-learn** - ML models
-- **tree-sitter** - Code parsing
-- **NumPy/Pandas** - Data processing
-- **Redis** - Caching
-
----
-
-## 📊 Database Schema
-
-### MongoDB Collections
-- **users** - User accounts and profiles
-- **problems** - Coding problems
-- **submissions** - Code submissions
-- **notifications** - User notifications
-- **achievements** - Achievement definitions
-- **userAchievements** - User progress
-- **aiAnalyses** - AI analysis results
-- **interviews** - Interview sessions
-
-### PostgreSQL Tables
-- **contests** - Contest metadata
-- **contestParticipants** - Registrations
-- **contestSubmissions** - Contest submissions
-
----
-
-## 🎨 Features in Detail
-
-### 1. Code Editor
-- Monaco Editor (VSCode-like)
-- Syntax highlighting for 5+ languages
-- Auto-completion
-- Theme selection
-- Keyboard shortcuts
-
-### 2. Code Execution
-- Multi-language support
-- Sandboxed execution
-- Time & memory limits
-- Real-time feedback
-- Test case validation
-
-### 3. Contests
-- Scheduled contests
-- Live leaderboard
-- Real-time updates
-- Problem sets
-- Ranking system
-
-### 4. AI Code Analysis
-- Quality scoring (0-1)
-- Complexity prediction
-- Anti-pattern detection
-- Performance insights
-- Improvement suggestions
-
-### 5. Smart Hints System (NEW)
-- Progressive hint levels
-- No spoilers
-- Context-aware
-- Approach suggestions
-- Similar problem references
-
-### 6. Plagiarism Detection
-- Winnowing algorithm
-- AST similarity
-- Code embedding
-- Multiple language support
-- Confidence scoring
-
-### 7. AI Interview
-- Technical question generation
-- Real-time evaluation
-- Adaptive difficulty
-- Follow-up questions
-- Comprehensive reports
-
-### 8. Achievements & Streaks (NEW)
-- Dynamic achievements
-- Progress tracking
-- Streak system
-- Gamification
-- Email notifications
-
----
-
-## 🔒 Security Features
-
-- ✅ JWT authentication
-- ✅ Password hashing (bcrypt)
-- ✅ Rate limiting
-- ✅ CORS protection
-- ✅ Helmet security headers
-- ✅ Input sanitization
-- ✅ SQL injection prevention
-- ✅ XSS protection
-- ✅ CSRF tokens
-
----
-
-## 🚀 Deployment
-
-### Development
-```bash
-docker-compose up
-```
-
-### Production
-
-#### Using Docker
-```bash
-docker-compose -f docker-compose.prod.yml up -d
-```
-
-#### Manual Deployment
-```bash
-# Build frontend
-cd frontend
-npm run build
-
-# Start backend
-cd backend
-npm start
-
-# Start AI service
-cd ai-service
-gunicorn src.main:app --workers 4
-```
-
-### Cloud Platforms
-- **Frontend**: Vercel, Netlify
-- **Backend**: AWS EC2, DigitalOcean, Heroku
-- **AI Service**: AWS EC2, Google Cloud Run
-- **Databases**: MongoDB Atlas, AWS RDS
-- **Cache**: Redis Cloud, AWS ElastiCache
-
----
-
-## 📈 Performance
-
-### Metrics
-- **Frontend Load Time**: < 2 seconds
-- **API Response Time**: < 100ms (cached)
-- **Code Execution**: < 5 seconds
-- **AI Analysis**: < 2 seconds
-- **Concurrent Users**: 10,000+
-
-### Optimization
-- ✅ Code splitting
-- ✅ Lazy loading
-- ✅ Redis caching
-- ✅ Database indexing
-- ✅ CDN for static assets
-- ✅ Gzip compression
-
----
-
-## 🧪 Testing
-
-### Frontend
 ```bash
 cd frontend
-npm test
-npm run test:e2e
+npm install
+cp .env.example .env      # VITE_API_URL=http://localhost:8000/api/v1
+npm run dev               # starts on :5173
 ```
 
-### Backend
-```bash
-cd backend
-npm test
-npm run test:integration
-```
-
-### AI Service
-```bash
-cd ai-service
-pytest
-pytest --cov=src
-```
+Open http://localhost:5173
 
 ---
 
-## 📝 Environment Variables
+## Core Features
 
-### Frontend
-```env
-VITE_API_URL=http://localhost:5000/api/v1
-VITE_SOCKET_URL=http://localhost:5000
-```
+### For Users
+- **Problem solving** — 300+ problems with Easy / Medium / Hard difficulty, tags, and categories; Monaco code editor with 10 language options
+- **Contests** — timed competitions with live leaderboard via WebSocket; automatic rating updates on contest end
+- **AI Code Analysis** — instant Gemini-powered feedback: time/space complexity, quality score, anti-patterns, improvement suggestions
+- **AI Interview** — full mock technical interview with a real-time AI examiner; hint system; solution evaluation
+- **Rating system** — Codeforces-style integer rating; ranks from Newbie to Grandmaster; history chart with cheated markers
+- **Achievements** — badges for milestones (first solve, 100 problems, 30-day streak, contest champion, etc.)
+- **Discussion forum** — per-problem and general discussion with voting and nested comments
+- **Groups** — team/organisation spaces with shared problem sets
 
-### Backend
-```env
-NODE_ENV=development
-PORT=5000
-MONGODB_URI=mongodb://localhost:27017/codeforge
-POSTGRES_URI=postgresql://localhost:5432/codeforge
-REDIS_URL=redis://localhost:6379
-JWT_SECRET=your_secret_key
-CLOUDINARY_URL=cloudinary://...
-AI_SERVICE_URL=http://localhost:8000
-```
+### For Admins / Organisers
+- Create and manage contests; attach problems; view registration
+- **Plagiarism Detection Panel** — run AI + algorithmic similarity analysis across all contest submissions; pairwise side-by-side code diff; three verdict outcomes; automatic 7-day ban + 200 rating penalty on `plagiarism_confirmed`
+- Real-time contest monitoring via WebSocket
 
-### AI Service
+---
+
+## Environment Variables Summary
+
+### Backend (`backend/.env`)
 ```env
-HOST=0.0.0.0
+MONGO_URI=mongodb://localhost:27017/codeforge
+JWT_SECRET=your_jwt_secret
 PORT=8000
-DATABASE_URL=postgresql://localhost:5432/ai_db
 REDIS_URL=redis://localhost:6379
+AI_SERVICE_URL=http://localhost:8001
+CLIENT_URL=http://localhost:5173
+GOOGLE_CLIENT_ID=...        # for OAuth
+GOOGLE_CLIENT_SECRET=...
+```
+
+### AI Service (`ai-service/.env`)
+```env
+PORT=8001
+GEMINI_API_KEY=AIza...                    # single key
+# OR
+GEMINI_API_KEYS=AIza...,AIza...,AIza...   # comma-separated for auto-failover
+GEMINI_MODEL=gemini-2.5-flash
+REDIS_URL=redis://localhost:6379
+NODE_BACKEND_URL=http://localhost:8000
+PLAGIARISM_THRESHOLD=0.75
+```
+
+### Frontend (`frontend/.env`)
+```env
+VITE_API_URL=http://localhost:8000/api/v1
+VITE_SOCKET_URL=http://localhost:8000
+VITE_APP_NAME=CodeForge
 ```
 
 ---
 
-## 🤝 Contributing
+## API Overview
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md).
+All REST endpoints are served at `http://localhost:8000/api/v1/`.
 
-### Development Workflow
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+| Group | Base path | Description |
+|---|---|---|
+| Auth | `/auth` | login, register, logout, Google OAuth, token refresh |
+| Problems | `/problems` | CRUD, categories, favorites, tags |
+| Submissions | `/submissions` | submit, run, get history |
+| Contests | `/contests` | CRUD, register, live leaderboard |
+| Users | `/users` | profile, stats, rating history, avatar |
+| Notifications | `/notifications` | list, unread count, mark read, delete |
+| Leaderboard | `/leaderboard` | global and per-contest rankings |
+| Achievements | `/achievements` | list, user progress |
+| Discuss | `/discuss` | posts, comments, voting |
+| Groups | `/groups` | CRUD, membership |
+| AI (proxied) | `/ai` | analyze, complexity, interview, recommendations, learning path |
+| Plagiarism (proxied) | `/plagiarism` | check contest, compare pair, get report, review verdict |
 
-### Code Style
-- **Frontend**: ESLint + Prettier
-- **Backend**: ESLint + Prettier
-- **AI Service**: Black + Flake8
+## WebSocket Events
 
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 👥 Team
-
-- **Project Lead**: [Your Name]
-- **Frontend Developer**: [Name]
-- **Backend Developer**: [Name]
-- **ML Engineer**: [Name]
-- **DevOps**: [Name]
-
----
-
-## 🙏 Acknowledgments
-
-- MongoDB for the database
-- PostgreSQL for contest data
-- Redis for caching
-- FastAPI for the AI service
-- React team for the framework
-- Monaco Editor for the code editor
-- Scikit-learn for ML models
+| Direction | Event | Payload | Description |
+|---|---|---|---|
+| Client → Server | `join_user_room` | `{ userId }` | Subscribe to personal notifications |
+| Client → Server | `join_contest` | `{ contestId, userId }` | Join live contest room |
+| Client → Server | `leave_contest` | `{ contestId }` | Leave contest room |
+| Server → Client | `notification` | notification object | Real-time notification push |
+| Server → Client | `leaderboard_update` | rankings array | Live contest rank changes |
+| Server → Client | `contest_status` | `{ status, contestId }` | Contest start / end event |
+| Server → Client | `new_submission` | submission object | Submission judged |
 
 ---
 
-## 📞 Support
+## Tech Stack Summary
 
-- **Email**: support@codeforge.com
-- **Discord**: [Join our server](https://discord.gg/codeforge)
-- **Twitter**: [@CodeForge](https://twitter.com/codeforge)
-- **Documentation**: https://docs.codeforge.com
-
----
-
-## 🗺️ Roadmap
-
-### ✅ Completed
-- User authentication
-- Problem solving
-- Code execution
-- Contests
-- AI code analysis
-- Leaderboards
-
-### 🚧 In Progress
-- Dynamic notifications system
-- Achievement system
-- Streak tracking
-- Image upload (Cloudinary)
-- Smart hints
-- Email notifications
-
-### 📅 Planned
-- Mobile app (React Native)
-- VS Code extension
-- Discord bot
-- Video solutions
-- Premium features
-- Team contests
-- Company challenges
-
----
-
-## 📊 Statistics
-
-| Metric | Value |
-|--------|-------|
-| Total Lines of Code | 45,103 |
-| Number of Files | 195 |
-| Programming Languages | 3 (JS, Python, CSS) |
-| API Endpoints | 50+ |
-| ML Models | 3 |
-| Supported Languages | 5 |
-| Features | 30+ |
-
----
-
-**Made with ❤️ by the CodeForge Team**
-
-*Last updated: February 2026*
+| Layer | Technology |
+|---|---|
+| Frontend framework | React 19 + Vite (rolldown-vite) |
+| Frontend styling | Tailwind CSS v4 |
+| Frontend state | React Context (auth, theme, editor) + Zustand (AI results) |
+| Code editor | Monaco Editor |
+| Charts | Recharts |
+| HTTP client | Axios with interceptor |
+| Real-time client | Socket.IO Client v4 |
+| Backend runtime | Node.js + Express |
+| Database | MongoDB + Mongoose |
+| Cache / Queue | Redis + Bull |
+| Auth | JWT (Bearer) + Google OAuth |
+| AI framework | Python FastAPI + Uvicorn |
+| AI model | Google Gemini 2.5 Flash |
+| Plagiarism algorithms | Winnowing (token fingerprinting) + Python AST |
+| Containerisation | Docker + docker-compose (AI service) |

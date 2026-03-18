@@ -85,6 +85,9 @@ export const usersApi = {
   uploadAvatar: (formData) => api.post('/users/avatar', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   getBookmarks:  ()      => api.get('/users/me/bookmarks'),
   toggleBookmark:(problemId) => api.post(`/users/bookmarks/${problemId}`),
+
+  // Contest ban status — read from the user's own profile
+  getMyBanStatus: () => api.get('/auth/me'),
 };
 
 // ── Leaderboard ──────────────────────────────────────────────────────────────
@@ -161,6 +164,8 @@ export const aiApi = {
   /**
    * Review a suspicious pair (admin)
    * verdict: 'plagiarism_confirmed' | 'false_positive' | 'common_solution'
+   * When verdict = plagiarism_confirmed, also pass:
+   *   banUsers: true, banDurationDays: 7, user1Id, user2Id, ratingPenalty: 200
    */
   reviewPlagiarismPair: (data) => api.post('/plagiarism/review', data),
 

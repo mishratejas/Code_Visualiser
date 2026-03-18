@@ -8,6 +8,7 @@ import {
 import { BsTrophyFill } from 'react-icons/bs';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceDot,
 } from 'recharts';
 import api from '../services/api';
 import Loader from '../components/common/Loader';
@@ -89,11 +90,26 @@ const Profile = () => {
   const [stats, setStats]             = useState(null);
   const [submissions, setSubmissions] = useState([]);
   const [activity, setActivity]       = useState([]);
+  const [ratingHistory, setRatingHistory] = useState([]);
   const [loading, setLoading]         = useState(true);
   const [tab, setTab]                 = useState('overview');
 
   const isOwn      = me?.username === username || (!username && me);
   const targetUser = username || me?.username;
+
+  // Build synthetic 2-point chart when real history endpoint is unavailable
+  const buildSynthetic = (userDoc, currentRating) => {
+    const banUntil = userDoc?.contestBannedUntil;
+    const isBanned = banUntil && new Date(banUntil) > new Date();
+    if (isBanned) {
+      setRatingHistory([
+        { idx: 1, name: 'Before ban',    rating: currentRating + 200, delta: 0,    cheated: false },
+        { idx: 2, name: 'Plagiarism ban', rating: currentRating,       delta: -200, cheated: true },
+      ]);
+    } else {
+      setRatingHistory([{ idx: 1, name: 'Current', rating: currentRating, delta: 0, cheated: false }]);
+    }
+  };
 
   const load = useCallback(async () => {
     if (!targetUser) { navigate('/login'); return; }
@@ -105,9 +121,10 @@ const Profile = () => {
       setProfileData(userData);
       const uid = userData._id || userData.id;
 
-      const [sRes, subRes] = await Promise.allSettled([
+      const [sRes, subRes, ratingRes] = await Promise.allSettled([
         api.get(`/users/${uid}/stats`),
         api.get('/submissions', { params: { limit: 20 } }),
+        api.get(`/users/${uid}/rating-history`),
       ]);
 
       if (sRes.status === 'fulfilled') {
@@ -151,6 +168,29 @@ const Profile = () => {
         const d    = subRes.value;
         const list = d?.data?.submissions || d?.submissions || d?.data || [];
         setSubmissions(Array.isArray(list) ? list.slice(0, 20) : []);
+      }
+
+      // Rating history — build chart data; fall back to synthetic if endpoint missing
+      const currentRating = sRes.status === 'fulfilled'
+        ? ((sRes.value?.data?.user?.stats || sRes.value?.data?.stats || sRes.value?.stats || {}).rating ?? 1500)
+        : 1500;
+
+      if (ratingRes.status === 'fulfilled') {
+        const d    = ratingRes.value;
+        const hist = d?.data?.history || d?.history || d?.data || [];
+        if (Array.isArray(hist) && hist.length > 0) {
+          setRatingHistory(hist.map((h, i) => ({
+            idx:    i + 1,
+            name:   h.contestTitle || h.contestName || `#${i + 1}`,
+            rating: h.newRating ?? h.rating ?? 1500,
+            delta:  h.ratingChange ?? h.delta ?? 0,
+            cheated: !!(h.cheated || h.plagiarism || h.disqualified),
+          })));
+        } else {
+          buildSynthetic(userData, currentRating);
+        }
+      } else {
+        buildSynthetic(userData, currentRating);
       }
     } catch (e) {
       console.error(e);
@@ -390,25 +430,32 @@ const Profile = () => {
                 </div>
               </div>
 
-              {/* Contest Rating */}
+              {/* Contest Rating + History Chart */}
               <div className={`${card} border rounded-2xl p-6`}>
                 <div className="flex items-center gap-3 mb-4">
                   <BsTrophyFill className="h-5 w-5 text-yellow-400" />
                   <h3 className={`text-sm font-bold ${txt}`}>Contest Rating</h3>
+                  {profileData?.contestBannedUntil && new Date(profileData.contestBannedUntil) > new Date() && (
+                    <span className="ml-auto text-xs px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 font-semibold">
+                      🚫 Banned until {new Date(profileData.contestBannedUntil).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </span>
+                  )}
                 </div>
-                <div className="flex items-center gap-6">
+
+                {/* Stats row */}
+                <div className="flex items-center gap-6 mb-6">
                   <div className="text-center">
-                    <div className={`text-4xl font-black ${ratingInfo.color}`}>{stats?.rating||1500}</div>
+                    <div className={`text-4xl font-black ${ratingInfo.color}`}>{stats?.rating || 1500}</div>
                     <div className={`text-xs ${sub} mt-1`}>{ratingInfo.label}</div>
                   </div>
-                  <div className={`flex-1 h-px ${isDark?'bg-gray-800':'bg-gray-200'}`} />
+                  <div className={`flex-1 h-px ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`} />
                   <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-center">
                     <div>
-                      <div className={`text-xl font-bold ${txt}`}>{stats?.contests||0}</div>
+                      <div className={`text-xl font-bold ${txt}`}>{stats?.contests || 0}</div>
                       <div className={`text-xs ${sub}`}>Attended</div>
                     </div>
                     <div>
-                      <div className={`text-xl font-bold ${txt}`}>#{stats?.globalRank||'—'}</div>
+                      <div className={`text-xl font-bold ${txt}`}>#{stats?.globalRank || '—'}</div>
                       <div className={`text-xs ${sub}`}>Global Rank</div>
                     </div>
                     {stats?.contestsWon > 0 && (
@@ -425,6 +472,39 @@ const Profile = () => {
                     )}
                   </div>
                 </div>
+
+                {/* Rating History Chart */}
+                {ratingHistory.length > 1 ? (
+                  <div>
+                    <p className={`text-xs ${sub} mb-3`}>Rating history · red markers = cheated/disqualified</p>
+                    <ResponsiveContainer width="100%" height={180}>
+                      <LineChart data={ratingHistory} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#1f2937' : '#f3f4f6'} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: isDark ? '#6b7280' : '#9ca3af' }} />
+                        <YAxis tick={{ fontSize: 10, fill: isDark ? '#6b7280' : '#9ca3af' }} width={45} domain={['auto', 'auto']} />
+                        <Tooltip
+                          contentStyle={{ background: isDark ? '#111827' : '#fff', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }}
+                          formatter={(value, name, props) => {
+                            const d = props.payload;
+                            const delta = d?.delta;
+                            const lines = [`Rating: ${value}`];
+                            if (delta !== undefined && delta !== 0) lines.push(`Change: ${delta > 0 ? '+' : ''}${delta}`);
+                            if (d?.cheated) lines.push('⚠ Cheated / Disqualified');
+                            return [lines.join('  |  '), ''];
+                          }}
+                        />
+                        <Line type="monotone" dataKey="rating" stroke="#f43f5e" strokeWidth={2} dot={{ r: 4, fill: '#f43f5e' }} activeDot={{ r: 6 }} />
+                        {/* Red ! markers on cheated entries */}
+                        {ratingHistory.filter(h => h.cheated).map((h) => (
+                          <ReferenceDot key={h.idx} x={h.name} y={h.rating} r={8} fill="#ef4444" stroke="#fff" strokeWidth={2}
+                            label={{ value: '!', position: 'center', fill: '#fff', fontSize: 10, fontWeight: 'bold' }} />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : ratingHistory.length === 0 ? (
+                  <p className={`text-xs ${sub} text-center py-4`}>Participate in contests to see rating history</p>
+                ) : null}
               </div>
             </div>
           )}
