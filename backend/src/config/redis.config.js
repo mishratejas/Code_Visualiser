@@ -1,37 +1,44 @@
 import Redis from 'ioredis';
 
-const redisConfig = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT) || 6379,
-  password: process.env.REDIS_PASSWORD || undefined,
-  db: parseInt(process.env.REDIS_DB) || 0,
-  
-  // Connection options
-  retryStrategy(times) {
-    const delay = Math.min(times * 50, 2000);
-    return delay;
-  },
-  
-  reconnectOnError(err) {
-    const targetError = 'READONLY';
-    if (err.message.includes(targetError)) {
-      return true;
-    }
-    return false;
-  },
-  
-  maxRetriesPerRequest: 3,
-  enableReadyCheck: true,
-  enableOfflineQueue: true,
-  
-  // Timeouts
-  connectTimeout: 10000,
-  
-  // Keep alive
-  keepAlive: 30000,
-};
+// If REDIS_URL is provided (e.g. Upstash rediss://...), use it directly.
+// Otherwise fall back to individual host/port/password vars (local dev).
+const isUpstash = process.env.REDIS_URL && process.env.REDIS_URL.startsWith('rediss://');
 
-const redis = new Redis(redisConfig);
+const redisConfig = isUpstash
+  ? {
+      // Upstash / TLS connection via URL
+      // ioredis parses the URL and enables TLS automatically with rediss://
+      // but we also set tls:{} explicitly to avoid ECONNRESET on some hosts
+      tls: {},
+      maxRetriesPerRequest: 3,
+      enableReadyCheck: false,   // Upstash doesn't support CLIENT SETNAME used by readyCheck
+      enableOfflineQueue: true,
+      connectTimeout: 10000,
+      retryStrategy(times) {
+        return Math.min(times * 100, 3000);
+      },
+    }
+  : {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT) || 6379,
+      password: process.env.REDIS_PASSWORD || undefined,
+      db: parseInt(process.env.REDIS_DB) || 0,
+      maxRetriesPerRequest: 3,
+      enableReadyCheck: true,
+      enableOfflineQueue: true,
+      connectTimeout: 10000,
+      keepAlive: 30000,
+      retryStrategy(times) {
+        return Math.min(times * 50, 2000);
+      },
+      reconnectOnError(err) {
+        return err.message.includes('READONLY');
+      },
+    };
+
+const redis = isUpstash
+  ? new Redis(process.env.REDIS_URL, redisConfig)
+  : new Redis(redisConfig);
 
 redis.on('connect', () => {
   console.log('✅ Redis: Connected to server');
