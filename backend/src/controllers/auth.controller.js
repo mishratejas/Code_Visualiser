@@ -1,24 +1,68 @@
 import jwt from 'jsonwebtoken';
+import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import ApiError from '../utils/ApiError.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import User from '../models/user.models.js';
+import Notification from '../models/notification.models.js';
 import config from '../config/index.js';
+
+/** HTML body for reset email */
+const buildResetEmailHtml = (resetUrl) => `
+  <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;background:#0f172a;color:#e2e8f0;border-radius:8px;">
+    <h2 style="color:#f43f5e;margin-bottom:16px;">Reset Your Password</h2>
+    <p style="margin-bottom:16px;">Click below to set a new password. This link expires in <strong>1 hour</strong>.</p>
+    <a href="${resetUrl}" style="display:inline-block;padding:12px 24px;background:linear-gradient(to right,#f43f5e,#ef4444);color:white;text-decoration:none;border-radius:6px;font-weight:bold;margin-bottom:20px;">Reset Password</a>
+    <p style="font-size:13px;color:#94a3b8;">If you didn't request this, ignore this email.</p>
+    <p style="font-size:12px;color:#64748b;margin-top:20px;">Or copy:<br/>${resetUrl}</p>
+  </div>
+`;
+
+const sendPasswordResetEmail = async (toEmail, resetUrl) => {
+  const mailBody = {
+    from: `"CodeForge" <${process.env.EMAIL_FROM || 'noreply@codeforge.com'}>`,
+    to: toEmail, subject: 'Password Reset Request - CodeForge',
+    html: buildResetEmailHtml(resetUrl),
+  };
+  const emailPass = process.env.EMAIL_PASSWORD || process.env.EMAIL_PASS || '';
+  const hasRealSmtp = process.env.EMAIL_HOST && process.env.EMAIL_USER && emailPass
+    && !process.env.EMAIL_USER.includes('ethereal')
+    && !emailPass.includes('ethereal-password');
+  if (hasRealSmtp) {
+    try {
+      const t = nodemailer.createTransport({
+        host: process.env.EMAIL_HOST, port: parseInt(process.env.EMAIL_PORT)||587,
+        secure: false, auth: { user: process.env.EMAIL_USER, pass: emailPass },
+      });
+      await t.sendMail(mailBody);
+      return { ok: true };
+    } catch(err) { console.error('SMTP error:', err.message); return { ok: false }; }
+  }
+  try {
+    const acct = await nodemailer.createTestAccount();
+    const t = nodemailer.createTransport({
+      host:'smtp.ethereal.email', port:587, secure:false,
+      auth:{ user:acct.user, pass:acct.pass },
+    });
+    const info = await t.sendMail(mailBody);
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    console.log('\n📧  Reset email (Ethereal dev preview):', previewUrl);
+    console.log('   Reset link:', resetUrl, '\n');
+    return { ok: true, previewUrl };
+  } catch(err) { console.error('Ethereal fallback error:', err.message); return { ok: false }; }
+};
 
 /**
  * Generate JWT Token
+ * @param {boolean} rememberMe - 30d expiry if true, otherwise 1h
  */
-const generateToken = (user) => {
+const generateToken = (user, rememberMe = false) => {
+  const expiry = rememberMe ? '30d' : (process.env.JWT_EXPIRE || '1h');
   return jwt.sign(
-    { 
-      userId: user._id, 
-      username: user.username,
-      email: user.email,
-      role: user.role 
-    },
+    { userId: user._id, username: user.username, email: user.email, role: user.role },
     process.env.JWT_SECRET || 'your_jwt_secret',
-    { expiresIn: process.env.JWT_EXPIRE || '7d' }
+    { expiresIn: expiry }
   );
 };
 
@@ -106,39 +150,56 @@ export const registerOrganizer = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, rememberMe = false } = req.body;
 
-  if (!email || !password) {
-    throw ApiError.badRequest('Please provide email and password');
-  }
+  if (!email || !password) throw ApiError.badRequest('Please provide email and password');
 
   const user = await User.findOne({ email }).select('+password');
 
-  if (!user || !(await user.comparePassword(password))) {
-    if (user) {
-      await user.incrementLoginAttempts();
-    }
+  // 1. Check if user exists first
+  if (!user) {
     throw ApiError.unauthorized('Invalid email or password');
   }
 
+  // 2. Check if account is locked BEFORE verifying password or incrementing attempts
+  //    This prevents further incrementing attempts on an already-locked account
+  //    and gives the correct error message immediately.
   if (user.isLocked()) {
     throw ApiError.forbidden('Account is temporarily locked due to too many failed login attempts');
   }
 
+  // 3. Now verify the password
+  if (!(await user.comparePassword(password))) {
+    await user.incrementLoginAttempts();
+    throw ApiError.unauthorized('Invalid email or password');
+  }
+
+  // 4. Successful login — reset the counter
   await user.resetLoginAttempts();
-  const token = generateToken(user);
+
+  // Create a welcome notification on very first login
+  try {
+    const notifCount = await Notification.countDocuments({ user: user._id });
+    if (notifCount === 0) {
+      await Notification.create({
+        user: user._id, type: 'system',
+        title: 'Welcome to CodeForge!',
+        message: 'Start solving problems, join contests, and track your progress. Happy coding!',
+        read: false,
+      });
+    }
+  } catch { /* non-critical */ }
+
+  const cookieMaxAge = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+  const token = generateToken(user, rememberMe);
   user.password = undefined;
 
   res.cookie('token', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 60 * 60 * 1000 // 1 hour
+    httpOnly: true, secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict', maxAge: cookieMaxAge,
   });
 
-  res.status(200).json(
-    ApiResponse.success({ user, token }, 'Login successful')
-  );
+  res.status(200).json(ApiResponse.success({ user, token, rememberMe }, 'Login successful'));
 });
 
 /**
@@ -303,17 +364,18 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
 
   user.passwordResetToken = resetTokenHash;
-  user.passwordResetExpires = Date.now() + 10 * 60 * 1000;
+  user.passwordResetExpires = Date.now() + 60 * 60 * 1000; // 1 hour
   await user.save();
 
-  console.log('Password reset token:', resetToken);
+  const resetUrl = `${process.env.PASSWORD_RESET_URL || 'http://localhost:5173/reset-password'}/${resetToken}`;
+  const { ok, previewUrl } = await sendPasswordResetEmail(email, resetUrl);
 
-  res.status(200).json(
-    ApiResponse.success(
-      { resetToken: process.env.NODE_ENV === 'development' ? resetToken : undefined },
-      'Password reset email sent'
-    )
-  );
+  res.status(200).json(ApiResponse.success(
+    process.env.NODE_ENV === 'development'
+      ? { ...(previewUrl ? { emailPreviewUrl: previewUrl } : {}), ...(!ok ? { resetUrl, note: 'Email failed - use this link' } : {}) }
+      : null,
+    'If your email is registered, a password reset link has been sent'
+  ));
 });
 
 /**

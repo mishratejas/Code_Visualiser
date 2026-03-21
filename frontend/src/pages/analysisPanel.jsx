@@ -1,11 +1,10 @@
 /**
  * AnalysisPanel — Full-page detailed AI code analysis
- * Bigger, more accurate, more detailed than before
  */
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Brain, Clock, MemoryStick, AlertTriangle, CheckCircle, Lightbulb,
-  TrendingUp, Loader2, Zap, Shield, Code, BarChart3, Target, 
+  TrendingUp, Loader2, Zap, Shield, Code, BarChart3, Target,
   ChevronDown, ChevronUp, Cpu, Star, AlertCircle, Info,
 } from 'lucide-react';
 import useAnalysisStore from '../store/analysisStore';
@@ -17,13 +16,11 @@ const QUALITY_COLORS = {
   fair:      { text:'text-yellow-400', bg:'bg-yellow-500/10', border:'border-yellow-500/20', label:'Fair'       },
   poor:      { text:'text-red-400',    bg:'bg-red-500/10',    border:'border-red-500/20',    label:'Poor'       },
 };
-
 const SEVERITY = {
   high:   'bg-red-900/30 border-red-500/30 text-red-300',
   medium: 'bg-yellow-900/30 border-yellow-500/30 text-yellow-300',
   low:    'bg-blue-900/30 border-blue-500/30 text-blue-300',
 };
-
 const RATING_BADGE = {
   optimized:   'bg-green-500/20 text-green-400 border border-green-500/30',
   acceptable:  'bg-blue-500/20 text-blue-400 border border-blue-500/30',
@@ -31,7 +28,11 @@ const RATING_BADGE = {
 };
 
 const Tag = ({ children, color = 'purple' }) => {
-  const colors = { purple:'bg-purple-500/20 text-purple-300 border-purple-500/30', green:'bg-green-500/20 text-green-300 border-green-500/30', blue:'bg-blue-500/20 text-blue-300 border-blue-500/30' };
+  const colors = {
+    purple:'bg-purple-500/20 text-purple-300 border-purple-500/30',
+    green:'bg-green-500/20 text-green-300 border-green-500/30',
+    blue:'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  };
   return <span className={`text-xs px-2 py-0.5 rounded-full border ${colors[color]}`}>{children}</span>;
 };
 
@@ -58,21 +59,39 @@ const ScoreBar = ({ label, value, max = 100, color = 'bg-purple-500' }) => (
   </div>
 );
 
+/* ── Key must match exactly what analysisStore uses ────────────────────────── */
+function buildStoreKey(submissionId, language, code) {
+  if (submissionId) return `sub:${submissionId}`;
+  const codeHash = code
+    ? [...code].reduce((h, c) => (Math.imul(31, h) + c.charCodeAt(0)) | 0, 0).toString(36)
+    : 'empty';
+  return `code:${language}:${codeHash}`;
+}
+
 /* ── Main Component ──────────────────────────────────────────────────────── */
 export default function AnalysisPanel({
   code, language, submissionId, runtimeMs = 0,
   testCasesPassed = 0, totalTestCases = 0,
 }) {
-  const { analyzeCode, currentAnalysis, loading, error } = useAnalysisStore();
-  const [analysisKey] = useState(submissionId || `${language}:${code?.slice(0, 20)}`);
+  const { analyzeCode, loading, error, analyses } = useAnalysisStore();
   const [expandedSection, setExpandedSection] = useState(null);
 
-  const isLoading = loading[analysisKey];
-  const errMsg    = error[analysisKey];
-  const analysis  = useAnalysisStore(s => s.analyses[analysisKey]) || currentAnalysis;
+  // Key computed fresh every render so it always matches what the store uses.
+  // Do NOT use useState here — that would freeze the key on mount and cause
+  // stale cache lookups when props change (different submission / new code).
+  const storeKey = useMemo(
+    () => buildStoreKey(submissionId, language, code),
+    [submissionId, language, code]
+  );
 
-  const handleAnalyze = () => {
-    analyzeCode({ code, language, submissionId, runtimeMs, testCasesPassed, totalTestCases });
+  // Use only this submission's analysis — never fall back to currentAnalysis
+  // (currentAnalysis is global last-run and causes cross-submission bleed).
+  const analysis  = analyses[storeKey] ?? null;
+  const isLoading = loading[storeKey]  ?? false;
+  const errMsg    = error[storeKey]    ?? null;
+
+  const handleAnalyze = (forceRefresh = false) => {
+    analyzeCode({ code, language, submissionId, runtimeMs, testCasesPassed, totalTestCases, forceRefresh });
   };
 
   const toggleSection = (sec) => setExpandedSection(s => s === sec ? null : sec);
@@ -91,7 +110,7 @@ export default function AnalysisPanel({
     </div>
   );
 
-  /* ── Empty state ──────────────────────────────────────────────────────── */
+  /* ── Empty / error state ──────────────────────────────────────────────── */
   if (!analysis) return (
     <div className="p-8 text-center">
       <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-500/20">
@@ -112,14 +131,15 @@ export default function AnalysisPanel({
           <p className="text-gray-400">{errMsg}</p>
           {errMsg.includes('offline') && (
             <div className="mt-2 bg-gray-900 rounded-lg px-3 py-2 font-mono text-xs text-green-400 border border-gray-700">
-              pip install google-generativeai<br/>
               cd ai-service && uvicorn src.main:app --port 8001
             </div>
           )}
         </div>
       )}
-      <button onClick={handleAnalyze}
-        className="px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-purple-500/20 flex items-center gap-2 mx-auto">
+      <button
+        onClick={() => handleAnalyze(false)}
+        className="px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-purple-500/20 flex items-center gap-2 mx-auto"
+      >
         <Zap className="w-4 h-4" />
         Analyze Code
       </button>
@@ -146,13 +166,15 @@ export default function AnalysisPanel({
             </span>
           )}
         </div>
-        <button onClick={handleAnalyze}
-          className="text-xs text-gray-500 hover:text-purple-400 transition-colors flex items-center gap-1">
+        <button
+          onClick={() => handleAnalyze(true)}
+          className="text-xs text-gray-500 hover:text-purple-400 transition-colors flex items-center gap-1"
+        >
           <Loader2 className="w-3 h-3" /> Re-analyze
         </button>
       </div>
 
-      {/* ── Complexity Overview ──────────────────────────────────────────── */}
+      {/* Complexity */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700/50">
           <div className="flex items-center gap-1.5 text-gray-400 text-xs mb-2">
@@ -161,11 +183,6 @@ export default function AnalysisPanel({
           <div className="text-white font-mono font-bold text-base">
             {analysis.time_complexity?.split(' — ')[0] || '—'}
           </div>
-          {analysis.time_complexity?.includes('—') && (
-            <div className="text-xs text-gray-500 mt-1 line-clamp-2">
-              {analysis.time_complexity.split(' — ')[1]}
-            </div>
-          )}
         </div>
         <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700/50">
           <div className="flex items-center gap-1.5 text-gray-400 text-xs mb-2">
@@ -174,29 +191,10 @@ export default function AnalysisPanel({
           <div className="text-white font-mono font-bold text-base">
             {analysis.space_complexity?.split(' — ')[0] || '—'}
           </div>
-          {analysis.space_complexity?.includes('—') && (
-            <div className="text-xs text-gray-500 mt-1 line-clamp-2">
-              {analysis.space_complexity.split(' — ')[1]}
-            </div>
-          )}
         </div>
       </div>
 
-      {/* Best / Worst case */}
-      {(analysis.best_case || analysis.worst_case) && (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-gray-800/40 rounded-lg px-3 py-2 border border-gray-700/30">
-            <div className="text-xs text-green-400 mb-1">Best Case</div>
-            <div className="font-mono text-xs text-gray-300">{analysis.best_case || '—'}</div>
-          </div>
-          <div className="bg-gray-800/40 rounded-lg px-3 py-2 border border-gray-700/30">
-            <div className="text-xs text-red-400 mb-1">Worst Case</div>
-            <div className="font-mono text-xs text-gray-300">{analysis.worst_case || '—'}</div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Quality + Performance ────────────────────────────────────────── */}
+      {/* Quality */}
       <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700/50 space-y-3">
         <SectionHeader icon={BarChart3} title="Code Quality" />
         <div className="flex items-center gap-4">
@@ -205,11 +203,12 @@ export default function AnalysisPanel({
             <span className="text-xs text-gray-500">/100</span>
           </div>
           <div className="flex-1 space-y-2">
-            <ScoreBar label="Overall Quality" value={qScore} color={qScore >= 80 ? 'bg-green-500' : qScore >= 60 ? 'bg-blue-500' : qScore >= 40 ? 'bg-yellow-500' : 'bg-red-500'} />
+            <ScoreBar label="Overall Quality" value={qScore}
+              color={qScore >= 80 ? 'bg-green-500' : qScore >= 60 ? 'bg-blue-500' : qScore >= 40 ? 'bg-yellow-500' : 'bg-red-500'} />
             {analysis.performance_rating && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">Performance:</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${RATING_BADGE[analysis.performance_rating]}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${RATING_BADGE[analysis.performance_rating] || ''}`}>
                   {analysis.performance_rating}
                 </span>
               </div>
@@ -224,7 +223,7 @@ export default function AnalysisPanel({
         </div>
       </div>
 
-      {/* ── Test Cases ──────────────────────────────────────────────────── */}
+      {/* Test Cases */}
       {totalTestCases > 0 && (
         <div className={`rounded-xl p-3 border ${testCasesPassed === totalTestCases ? 'bg-green-900/20 border-green-500/20' : 'bg-red-900/20 border-red-500/20'}`}>
           <div className="flex items-center justify-between">
@@ -244,14 +243,12 @@ export default function AnalysisPanel({
         </div>
       )}
 
-      {/* ── Structural Metrics ───────────────────────────────────────────── */}
+      {/* Structural Metrics */}
       {Object.keys(m).length > 0 && (
         <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700/50">
-          <button className="flex items-center justify-between w-full"
-            onClick={() => toggleSection('metrics')}>
+          <button className="flex items-center justify-between w-full" onClick={() => toggleSection('metrics')}>
             <div className="flex items-center gap-2 text-gray-300 font-semibold text-sm">
-              <Cpu className="w-4 h-4" />
-              <span>Structural Metrics</span>
+              <Cpu className="w-4 h-4" /><span>Structural Metrics</span>
             </div>
             {expandedSection === 'metrics' ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
           </button>
@@ -259,15 +256,11 @@ export default function AnalysisPanel({
             <div className="mt-3 space-y-2">
               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                 {[
-                  ['Lines of code',       m.lines_of_code],
-                  ['Code lines',          m.code_lines],
-                  ['Comment lines',       m.comment_lines],
-                  ['Functions',           m.function_count],
-                  ['Loops',               m.loop_count],
-                  ['Max nesting',         m.max_nesting_depth],
-                  ['Cyclomatic CC',       m.cyclomatic_complexity],
-                  ['Avg line length',     m.avg_line_length != null ? `${m.avg_line_length.toFixed(1)} chars` : null],
-                  ['Comment density',     m.comment_density != null ? `${(m.comment_density*100).toFixed(1)}%` : null],
+                  ['Lines of code', m.lines_of_code],
+                  ['Functions',     m.function_count],
+                  ['Loops',         m.loop_count],
+                  ['Max nesting',   m.max_nesting_depth],
+                  ['Cyclomatic CC', m.cyclomatic_complexity],
                 ].filter(([,v]) => v != null).map(([label, val]) => (
                   <div key={label} className="flex justify-between border-b border-gray-700/30 pb-1">
                     <span className="text-gray-500">{label}</span>
@@ -287,37 +280,7 @@ export default function AnalysisPanel({
         </div>
       )}
 
-      {/* ── Code Strengths ───────────────────────────────────────────────── */}
-      {analysis.code_strengths?.length > 0 && (
-        <div className="bg-green-900/20 rounded-xl p-4 border border-green-500/20">
-          <SectionHeader icon={Star} title="What's Good" />
-          <ul className="space-y-1.5">
-            {analysis.code_strengths.map((s, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs text-green-300">
-                <CheckCircle className="w-3 h-3 text-green-400 mt-0.5 flex-shrink-0" />
-                {s}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* ── Correctness Issues ───────────────────────────────────────────── */}
-      {analysis.correctness_issues?.length > 0 && (
-        <div className="bg-red-900/20 rounded-xl p-4 border border-red-500/20">
-          <SectionHeader icon={AlertCircle} title="Correctness Issues" />
-          <ul className="space-y-1.5">
-            {analysis.correctness_issues.map((issue, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs text-red-300">
-                <AlertCircle className="w-3 h-3 text-red-400 mt-0.5 flex-shrink-0" />
-                {issue}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* ── Anti-patterns ────────────────────────────────────────────────── */}
+      {/* Anti-patterns */}
       {analysis.anti_patterns?.length > 0 && (
         <div>
           <SectionHeader icon={AlertTriangle} title={`Anti-patterns (${analysis.anti_patterns.length})`} />
@@ -326,34 +289,18 @@ export default function AnalysisPanel({
               <div key={i} className={`rounded-xl p-3 border text-xs ${SEVERITY[ap.severity] || SEVERITY.low}`}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold capitalize">{ap.type?.replace(/_/g, ' ')}</span>
-                  <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${ap.severity === 'high' ? 'bg-red-500/20' : ap.severity === 'medium' ? 'bg-yellow-500/20' : 'bg-blue-500/20'}`}>
-                    {ap.severity}
-                  </span>
+                  <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
+                    ap.severity === 'high' ? 'bg-red-500/20' : ap.severity === 'medium' ? 'bg-yellow-500/20' : 'bg-blue-500/20'
+                  }`}>{ap.severity}</span>
                 </div>
                 <p>{ap.description}</p>
-                {ap.line_hint && <p className="text-gray-500 mt-1 italic text-xs">{ap.line_hint}</p>}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* ── Edge Cases Missed ────────────────────────────────────────────── */}
-      {analysis.edge_cases_missed?.length > 0 && (
-        <div className="bg-orange-900/20 rounded-xl p-4 border border-orange-500/20">
-          <SectionHeader icon={Target} title="Edge Cases to Consider" />
-          <ul className="space-y-1.5">
-            {analysis.edge_cases_missed.map((ec, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs text-orange-300">
-                <Info className="w-3 h-3 text-orange-400 mt-0.5 flex-shrink-0" />
-                {ec}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* ── Suggestions ──────────────────────────────────────────────────── */}
+      {/* Suggestions */}
       {analysis.suggestions?.length > 0 && (
         <div>
           <SectionHeader icon={Lightbulb} title="Specific Suggestions" />
@@ -370,14 +317,12 @@ export default function AnalysisPanel({
         </div>
       )}
 
-      {/* ── Bottleneck Analysis ──────────────────────────────────────────── */}
+      {/* Bottleneck */}
       {analysis.bottleneck_analysis?.length > 0 && (
         <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700/50">
-          <button className="flex items-center justify-between w-full"
-            onClick={() => toggleSection('bottleneck')}>
+          <button className="flex items-center justify-between w-full" onClick={() => toggleSection('bottleneck')}>
             <div className="flex items-center gap-2 text-gray-300 font-semibold text-sm">
-              <TrendingUp className="w-4 h-4" />
-              <span>Bottleneck Analysis</span>
+              <TrendingUp className="w-4 h-4" /><span>Bottleneck Analysis</span>
             </div>
             {expandedSection === 'bottleneck' ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
           </button>
@@ -385,8 +330,7 @@ export default function AnalysisPanel({
             <ul className="mt-3 space-y-2">
               {analysis.bottleneck_analysis.map((b, i) => (
                 <li key={i} className="flex items-start gap-2 text-xs text-yellow-300">
-                  <Zap className="w-3 h-3 text-yellow-400 mt-0.5 flex-shrink-0" />
-                  {b}
+                  <Zap className="w-3 h-3 text-yellow-400 mt-0.5 flex-shrink-0" />{b}
                 </li>
               ))}
             </ul>
@@ -394,17 +338,7 @@ export default function AnalysisPanel({
         </div>
       )}
 
-      {/* ── Data structures ──────────────────────────────────────────────── */}
-      {analysis.data_structures_used?.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          <span className="text-xs text-gray-500 self-center">Data structures:</span>
-          {analysis.data_structures_used.map((ds, i) => (
-            <Tag key={i} color="blue">{ds}</Tag>
-          ))}
-        </div>
-      )}
-
-      {/* ── Summary ──────────────────────────────────────────────────────── */}
+      {/* Summary */}
       {analysis.explanation && (
         <div className={`rounded-xl p-4 border ${q.bg} ${q.border}`}>
           <div className="flex items-center gap-2 mb-2">

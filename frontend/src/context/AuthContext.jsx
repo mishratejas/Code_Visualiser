@@ -19,12 +19,15 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuth = async () => {
     try {
-      const token     = localStorage.getItem('token');
-      const savedUser = localStorage.getItem('user');
+      // Check both localStorage (rememberMe) and sessionStorage (session-only)
+      const token     = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const savedUser = localStorage.getItem('user')  || sessionStorage.getItem('user');
 
       if (!token || !savedUser || savedUser === 'undefined' || savedUser === 'null') {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
         return;
       }
 
@@ -32,9 +35,10 @@ export const AuthProvider = ({ children }) => {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         if (payload.exp && payload.exp * 1000 < Date.now()) {
-          // Token expired — clear session
           localStorage.removeItem('token');
           localStorage.removeItem('user');
+          sessionStorage.removeItem('token');
+          sessionStorage.removeItem('user');
           return;
         }
       } catch { /* ignore decode errors */ }
@@ -46,10 +50,14 @@ export const AuthProvider = ({ children }) => {
       } else {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
       }
     } catch {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('user');
     } finally {
       setLoading(false);
     }
@@ -61,14 +69,19 @@ export const AuthProvider = ({ children }) => {
       const response = await authApi.login(credentials);
 
       // Handle { data: { user, token } } or { user, token }
-      const userData = response?.data?.user || response?.user;
-      const token    = response?.data?.token || response?.token;
+      const userData   = response?.data?.user  || response?.user;
+      const token      = response?.data?.token || response?.token;
+      const rememberMe = credentials?.rememberMe ?? false;
 
       if (!userData || !token) throw new Error('Invalid response from server');
       if (!userData._id && !userData.id) throw new Error('User data is incomplete');
 
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(userData));
+      // rememberMe → persist across sessions (localStorage)
+      // no rememberMe → only for current browser session (sessionStorage)
+      const storage = rememberMe ? localStorage : sessionStorage;
+      storage.setItem('token', token);
+      storage.setItem('user', JSON.stringify(userData));
+
       setUser(userData);
       setIsAuthenticated(true);
       toast.success('Login successful!');
@@ -111,6 +124,8 @@ export const AuthProvider = ({ children }) => {
     finally {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('user');
       setUser(null);
       setIsAuthenticated(false);
       toast.success('Logged out successfully');

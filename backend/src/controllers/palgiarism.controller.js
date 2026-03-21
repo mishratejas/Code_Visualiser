@@ -88,7 +88,11 @@ export const reviewPair = asyncHandler(async (req, res) => {
   if (req.user.role !== 'admin' && req.user.role !== 'super_admin')
     throw new ApiError(403, 'Admin access required');
 
-  const { contestId, submission1Id, submission2Id, verdict, notes } = req.body;
+  const {
+    contestId, submission1Id, submission2Id, verdict, notes,
+    banUsers = false, banDurationDays = 7, ratingPenalty = 0,
+    user1Id: overrideUser1Id, user2Id: overrideUser2Id,
+  } = req.body;
 
   if (!['plagiarism_confirmed', 'false_positive', 'common_solution'].includes(verdict))
     throw new ApiError(400, 'Invalid verdict. Use: plagiarism_confirmed | false_positive | common_solution');
@@ -119,6 +123,37 @@ export const reviewPair = asyncHandler(async (req, res) => {
 
     if (contest?.is_rated) await recomputeRatings(contestId);
 
+    // Apply ban and/or rating penalty if requested by admin
+    const userIds = [user1Id, user2Id].filter(Boolean);
+    if (userIds.length > 0) {
+      const mongoUpdates = {};
+
+      if (banUsers && banDurationDays > 0) {
+        const banUntil = new Date(Date.now() + banDurationDays * 24 * 60 * 60 * 1000);
+        mongoUpdates['security.lockUntil'] = banUntil;
+        mongoUpdates['security.failedLoginAttempts'] = 10; // force lock
+        // Also record the contest-specific ban so Profile page can display it
+        mongoUpdates['security.contestBannedUntil'] = banUntil;
+        console.log(`Banning users ${userIds.join(', ')} until ${banUntil.toISOString()}`);
+      }
+
+      if (ratingPenalty > 0) {
+        // Deduct rating from each user's MongoDB stats
+        await Promise.allSettled(userIds.map(uid =>
+          User.findByIdAndUpdate(uid, {
+            $inc: { 'stats.rating': -Math.abs(ratingPenalty) },
+          })
+        ));
+        console.log(`Applied -${ratingPenalty} rating penalty to users ${userIds.join(', ')}`);
+      }
+
+      if (Object.keys(mongoUpdates).length > 0) {
+        await Promise.allSettled(userIds.map(uid =>
+          User.findByIdAndUpdate(uid, { $set: mongoUpdates })
+        ));
+      }
+    }
+
     await Promise.allSettled([
       user1Id && notificationService.notifyContest(user1Id, { type: 'plagiarism_confirmed', contestTitle, contestId }),
       user2Id && notificationService.notifyContest(user2Id, { type: 'plagiarism_confirmed', contestTitle, contestId }),
@@ -138,6 +173,9 @@ export const reviewPair = asyncHandler(async (req, res) => {
     user2: user2Id,
     disqualified: verdict === 'plagiarism_confirmed',
     ratingsRecomputed: verdict === 'plagiarism_confirmed' && !!contest?.is_rated,
+    banned: verdict === 'plagiarism_confirmed' && banUsers,
+    banDurationDays: verdict === 'plagiarism_confirmed' && banUsers ? banDurationDays : 0,
+    ratingPenaltyApplied: verdict === 'plagiarism_confirmed' && ratingPenalty > 0 ? ratingPenalty : 0,
   }, `Review saved — verdict: ${verdict}`));
 });
 

@@ -593,21 +593,8 @@ export const submitCode = asyncHandler(async (req, res) => {
     submissionId: submission._id,
   }).catch(err => console.error("Notification error:", err));
 
-  // Request AI analysis in background (non-blocking)
-  axios.post(`${AI_SERVICE_URL}/api/v1/analyze/code`, {
-    code: submission.code,
-    language: submission.language,
-    submission_id: submission._id.toString(),
-    runtime_ms: executionResult.runtime || 0,
-    test_cases_passed: executionResult.testCasesPassed || 0,
-    total_test_cases: problem.testCases?.length || 0,
-  }, { timeout: 30000 })
-    .then(res => {
-      if (res.data?.data) {
-        Submission.findByIdAndUpdate(submission._id, { aiAnalysis: res.data.data }).catch(() => {});
-      }
-    })
-    .catch(() => {}); // Silently ignore — AI service may not be running
+  // NOTE: AI analysis is triggered by the frontend after submission,
+  // not here. Doing it here caused stale Redis cache hits on the frontend.
 
   const responseData = {
     submission: {
@@ -664,18 +651,40 @@ async function updateUserStats(userId, problem, verdict, problemId, isResubmit) 
           user.stats.hardSolved = (user.stats.hardSolved || 0) + 1;
         }
 
-        // Add to solved problems array
+        // Add to solved problems array.
+        // Schema expects objects { problem, solvedAt, ... }, not bare IDs.
         if (!user.solvedProblems) user.solvedProblems = [];
-        if (!user.solvedProblems.includes(problemId)) {
-          user.solvedProblems.push(problemId);
+        const alreadySolved = user.solvedProblems.some(
+          sp => sp.problem?.toString() === problemId.toString()
+        );
+        if (!alreadySolved) {
+          user.solvedProblems.push({
+            problem:          problemId,
+            solvedAt:         new Date(),
+            firstSolve:       true,
+            submissionsCount: 1,
+          });
         }
       }
     }
 
-    // Add to attempted problems
+    // Add to attempted problems.
+    // Schema expects objects { problem, lastAttempt, attemptsCount, solved }, not bare IDs.
     if (!user.attemptedProblems) user.attemptedProblems = [];
-    if (!user.attemptedProblems.includes(problemId)) {
-      user.attemptedProblems.push(problemId);
+    const existingAttempt = user.attemptedProblems.find(
+      ap => ap.problem?.toString() === problemId.toString()
+    );
+    if (!existingAttempt) {
+      user.attemptedProblems.push({
+        problem:       problemId,
+        lastAttempt:   new Date(),
+        attemptsCount: 1,
+        solved:        verdict === 'accepted',
+      });
+    } else {
+      existingAttempt.lastAttempt   = new Date();
+      existingAttempt.attemptsCount = (existingAttempt.attemptsCount || 0) + 1;
+      if (verdict === 'accepted') existingAttempt.solved = true;
     }
 
     await user.save();

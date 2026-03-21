@@ -238,6 +238,13 @@ const userSchema = new mongoose.Schema(
         default: false,
       },
       twoFactorSecret: String,
+      // Set when a user is banned via plagiarism confirmation.
+      // Separate from security.lockUntil (login throttle) so the profile
+      // page can display a contest-specific ban message.
+      contestBannedUntil: {
+        type: Date,
+        default: null,
+      },
     },
 
     subscriptions: {
@@ -316,6 +323,16 @@ const userSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+    },
+
+    passwordResetToken: {
+      type: String,
+      default: undefined,
+    },
+
+    passwordResetExpires: {
+      type: Date,
+      default: undefined,
     },
 
     attemptedProblems: [

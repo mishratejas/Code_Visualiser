@@ -13,6 +13,7 @@ const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api/
 const Login = () => {
   const [formData, setFormData]         = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe]     = useState(false);
   const [loading, setLoading]           = useState(false);
   const { login }                       = useAuth();
   const { toggleTheme, isDark }         = useTheme();
@@ -31,7 +32,7 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      await login(formData);
+      await login({ ...formData, rememberMe });
       navigate(from, { replace: true });
     } catch { /* toast already shown in AuthContext */ }
     finally { setLoading(false); }
@@ -127,8 +128,13 @@ const Login = () => {
             </div>
 
             <div className="flex items-center justify-between">
-              <label className={`flex items-center gap-2 text-xs ${sub}`}>
-                <input type="checkbox" className="h-3.5 w-3.5 rounded text-rose-500 focus:ring-rose-500" />
+              <label className={`flex items-center gap-2 text-xs ${sub} cursor-pointer`}>
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded text-rose-500 focus:ring-rose-500 cursor-pointer"
+                />
                 Remember me
               </label>
               <Link to="/forgot-password" className="text-xs text-rose-500 hover:text-rose-400">

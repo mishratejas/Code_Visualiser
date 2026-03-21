@@ -110,7 +110,9 @@ function ThreadView({ thread, onClose, isDark, user, onVoteUpdate }) {
     setSending(true);
     try{
       const r=await api.post(`/discuss/${thread.id}/comments`,{body:reply.trim()});
-      if(r.data?.data)setComments(p=>[...p,r.data.data]);
+      // axios interceptor unwraps response.data → r = { success, data: newComment }
+      const newComment = r?.data ?? r;
+      if(newComment?._id) setComments(p=>[...p,newComment]);
       setReply('');toast.success('Reply posted!');
     }catch(e){toast.error(e.response?.data?.message||'Failed to reply');}
     finally{setSending(false);}

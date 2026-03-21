@@ -208,10 +208,22 @@ const PlagiarismPanel = () => {
       }
       setSelectedPair(null);
       setReviewNotes("");
-      // Refresh report
+      // Refresh report so confirmed pairs show punishment details
       const reportRes = await aiApi.getPlagiarismReport(contestId);
       const rd = reportRes?.data ?? reportRes;
-      setReport(rd?.suspiciousPairs !== undefined ? rd : null);
+      if (rd?.suspiciousPairs !== undefined) {
+        setReport(rd);
+      } else {
+        // Optimistically update the pair verdict in local state
+        setReport(prev => prev ? {
+          ...prev,
+          suspiciousPairs: prev.suspiciousPairs.map(p =>
+            (p.submission1 === pair.submission1 && p.submission2 === pair.submission2)
+              ? { ...p, verdict, reviewNotes, punishmentApplied: verdict === 'plagiarism_confirmed' }
+              : p
+          )
+        } : prev);
+      }
     } catch (err) {
       toast.error(err?.response?.data?.message || "Review failed");
     } finally {
@@ -516,9 +528,24 @@ const PlagiarismPanel = () => {
                       )}
 
                       {/* Reviewed info */}
-                      {pair.verdict !== "pending" && pair.reviewNotes && (
-                        <div className="mt-4 pt-4 border-t border-gray-700/40 text-sm text-gray-400 italic">
-                          Notes: {pair.reviewNotes}
+                      {pair.verdict !== "pending" && (
+                        <div className="mt-4 pt-4 border-t border-gray-700/40 space-y-2">
+                          {pair.verdict === "plagiarism_confirmed" && (
+                            <div className="flex flex-wrap gap-2">
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
+                                🚫 Disqualified from contest
+                              </span>
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-400 text-xs font-semibold">
+                                🔒 Banned 7 days
+                              </span>
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-xs font-semibold">
+                                📉 −200 rating
+                              </span>
+                            </div>
+                          )}
+                          {pair.reviewNotes && (
+                            <p className="text-sm text-gray-400 italic">Notes: {pair.reviewNotes}</p>
+                          )}
                         </div>
                       )}
                     </div>

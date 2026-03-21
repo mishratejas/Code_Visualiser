@@ -72,7 +72,7 @@ const Notifications = () => {
 
   const markAsRead = async (id) => {
     try {
-      await api.patch(`/notifications/${id}/read`);
+      await api.post(`/notifications/mark-read/${id}`);
       setNotifications(prev =>
         prev.map(n => n._id === id ? { ...n, read: true, isRead: true } : n)
       );
@@ -84,7 +84,7 @@ const Notifications = () => {
 
   const markAllAsRead = async () => {
     try {
-      await api.patch('/notifications/read-all');
+      await api.post('/notifications/mark-all-read');
       setNotifications(prev => prev.map(n => ({ ...n, read: true, isRead: true })));
       setStats(prev => ({ ...prev, unread: 0 }));
       toast.success('All notifications marked as read');

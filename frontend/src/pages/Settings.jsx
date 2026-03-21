@@ -10,6 +10,48 @@ import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
 import ThemeToggle from '../components/common/ThemeToggle';
 
+// ─── Sub-components are defined OUTSIDE Settings to prevent remounting on every
+//     keystroke. Previously they were inside Settings, causing React to treat them
+//     as brand-new component types each render → unmount → cursor lost.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const InputField = ({ label, name, value, onChange, type = 'text', placeholder = '', hint = '', labelClass, inputClass, subText }) => (
+  <div>
+    <label className={labelClass}>{label}</label>
+    <input
+      type={type} name={name} value={value} onChange={onChange} placeholder={placeholder}
+      className={`w-full px-4 py-2.5 ${inputClass} rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20 transition-all`}
+    />
+    {hint && <p className={`mt-1.5 text-xs ${subText}`}>{hint}</p>}
+  </div>
+);
+
+const Toggle = ({ label, desc, checked, onChange, textClass, subText, isDark }) => (
+  <div className="flex items-center justify-between py-3">
+    <div>
+      <p className={`text-sm font-medium ${textClass}`}>{label}</p>
+      {desc && <p className={`text-xs ${subText} mt-0.5`}>{desc}</p>}
+    </div>
+    <button
+      type="button" onClick={onChange}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${checked ? 'bg-rose-500' : isDark ? 'bg-gray-700' : 'bg-gray-300'}`}
+    >
+      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+  </div>
+);
+
+const SaveBtn = ({ label = 'Save Changes', loadLabel = 'Saving...', disabled = false, icon, loading }) => (
+  <button
+    type="submit" disabled={loading || disabled}
+    className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all disabled:opacity-50"
+  >
+    {icon || <FiSave className="h-4 w-4" />} {loading ? loadLabel : label}
+  </button>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const Settings = () => {
   const { user, updateUser, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
@@ -119,9 +161,7 @@ const Settings = () => {
     e.preventDefault();
     try {
       setLoading(true);
-      // Upload avatar first if pending
       if (avatarFile) await handleAvatarUpload();
-
       const res = await api.put('/users/me/profile', {
         username:   profile.username,
         name:       profile.name,
@@ -222,48 +262,16 @@ const Settings = () => {
   const labelClass = `block text-sm font-medium mb-1.5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`;
   const dividerClass = isDark ? 'divide-gray-800' : 'divide-gray-100';
 
+  // Shared props passed down to sub-components so they stay pure
+  const fieldProps = { labelClass, inputClass, subText };
+
   const tabs = [
     { id: 'profile',       label: 'Profile',       icon: <FiUser className="h-4 w-4" /> },
-    { id: 'notifications', label: 'Notifications', icon: <FiBell className="h-4 w-4" /> },
-    { id: 'preferences',   label: 'Editor',        icon: <FiCode className="h-4 w-4" /> },
-    { id: 'security',      label: 'Security',      icon: <FiShield className="h-4 w-4" /> },
-    { id: 'danger',        label: 'Danger Zone',   icon: <FiTrash2 className="h-4 w-4" /> },
+    { id: 'notifications', label: 'Notifications',  icon: <FiBell className="h-4 w-4" /> },
+    { id: 'preferences',   label: 'Preferences',    icon: <FiCode className="h-4 w-4" /> },
+    { id: 'security',      label: 'Security',       icon: <FiLock className="h-4 w-4" /> },
+    { id: 'danger',        label: 'Danger Zone',    icon: <FiTrash2 className="h-4 w-4" /> },
   ];
-
-  const InputField = ({ label, name, value, onChange, type = 'text', placeholder = '', hint = '' }) => (
-    <div>
-      <label className={labelClass}>{label}</label>
-      <input
-        type={type} name={name} value={value} onChange={onChange} placeholder={placeholder}
-        className={`w-full px-4 py-2.5 ${inputClass} rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20 transition-all`}
-      />
-      {hint && <p className={`mt-1.5 text-xs ${subText}`}>{hint}</p>}
-    </div>
-  );
-
-  const Toggle = ({ label, desc, checked, onChange }) => (
-    <div className="flex items-center justify-between py-3">
-      <div>
-        <p className={`text-sm font-medium ${textClass}`}>{label}</p>
-        {desc && <p className={`text-xs ${subText} mt-0.5`}>{desc}</p>}
-      </div>
-      <button
-        type="button" onClick={onChange}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${checked ? 'bg-rose-500' : isDark ? 'bg-gray-700' : 'bg-gray-300'}`}
-      >
-        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
-      </button>
-    </div>
-  );
-
-  const SaveBtn = ({ label = 'Save Changes', loadLabel = 'Saving...', disabled = false, icon = <FiSave className="h-4 w-4" /> }) => (
-    <button
-      type="submit" disabled={loading || disabled}
-      className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all disabled:opacity-50"
-    >
-      {icon} {loading ? loadLabel : label}
-    </button>
-  );
 
   return (
     <div className={`min-h-screen ${bgClass} py-6 px-4`}>
@@ -369,15 +377,15 @@ const Settings = () => {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <InputField label="Username" name="username" value={profile.username} onChange={e => setProfile({ ...profile, username: e.target.value })} placeholder="Your username" />
-                  <InputField label="Display Name" name="name" value={profile.name} onChange={e => setProfile({ ...profile, name: e.target.value })} placeholder="Your full name" />
+                  <InputField {...fieldProps} label="Username"     name="username"   value={profile.username}   onChange={e => setProfile(p => ({ ...p, username: e.target.value }))}   placeholder="Your username" />
+                  <InputField {...fieldProps} label="Display Name" name="name"       value={profile.name}       onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}       placeholder="Your full name" />
                 </div>
 
                 <div>
                   <label className={labelClass}>Bio</label>
                   <textarea
                     value={profile.bio}
-                    onChange={e => setProfile({ ...profile, bio: e.target.value })}
+                    onChange={e => setProfile(p => ({ ...p, bio: e.target.value }))}
                     placeholder="Tell us about yourself..."
                     rows={3}
                     className={`w-full px-4 py-2.5 ${inputClass} rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20 resize-none transition-all`}
@@ -385,17 +393,17 @@ const Settings = () => {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <InputField label="Country" name="country" value={profile.country} onChange={e => setProfile({ ...profile, country: e.target.value })} placeholder="e.g. India" />
-                  <InputField label="University" name="university" value={profile.university} onChange={e => setProfile({ ...profile, university: e.target.value })} placeholder="Your university" />
+                  <InputField {...fieldProps} label="Country"    name="country"    value={profile.country}    onChange={e => setProfile(p => ({ ...p, country: e.target.value }))}    placeholder="e.g. India" />
+                  <InputField {...fieldProps} label="University" name="university" value={profile.university} onChange={e => setProfile(p => ({ ...p, university: e.target.value }))} placeholder="Your university" />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <InputField label="GitHub" name="github" value={profile.github} onChange={e => setProfile({ ...profile, github: e.target.value })} placeholder="github username" />
-                  <InputField label="LinkedIn" name="linkedin" value={profile.linkedin} onChange={e => setProfile({ ...profile, linkedin: e.target.value })} placeholder="linkedin.com/in/..." />
-                  <InputField label="Website" name="website" value={profile.website} onChange={e => setProfile({ ...profile, website: e.target.value })} placeholder="https://yoursite.com" />
+                  <InputField {...fieldProps} label="GitHub"   name="github"   value={profile.github}   onChange={e => setProfile(p => ({ ...p, github: e.target.value }))}   placeholder="github username" />
+                  <InputField {...fieldProps} label="LinkedIn" name="linkedin" value={profile.linkedin} onChange={e => setProfile(p => ({ ...p, linkedin: e.target.value }))} placeholder="linkedin.com/in/..." />
+                  <InputField {...fieldProps} label="Website"  name="website"  value={profile.website}  onChange={e => setProfile(p => ({ ...p, website: e.target.value }))}  placeholder="https://yoursite.com" />
                 </div>
 
-                <SaveBtn />
+                <SaveBtn loading={loading} />
               </form>
             )}
 
@@ -406,14 +414,14 @@ const Settings = () => {
                   Email Notifications
                 </h2>
                 <div className={`divide-y ${dividerClass}`}>
-                  <Toggle label="Submission Updates"  desc="Get notified when your code is judged"  checked={notifications.submissions}  onChange={() => setNotifications(n => ({ ...n, submissions: !n.submissions }))} />
-                  <Toggle label="Achievement Unlocked" desc="Celebrate your milestones"              checked={notifications.achievements} onChange={() => setNotifications(n => ({ ...n, achievements: !n.achievements }))} />
-                  <Toggle label="Contest Reminders"   desc="Reminders before contests start"        checked={notifications.contests}     onChange={() => setNotifications(n => ({ ...n, contests: !n.contests }))} />
-                  <Toggle label="Weekly Digest"       desc="Weekly summary of your activity"        checked={notifications.emailDigest}  onChange={() => setNotifications(n => ({ ...n, emailDigest: !n.emailDigest }))} />
-                  <Toggle label="Newsletter"          desc="Tips, new features, and updates"        checked={notifications.newsletter}   onChange={() => setNotifications(n => ({ ...n, newsletter: !n.newsletter }))} />
+                  <Toggle isDark={isDark} textClass={textClass} subText={subText} label="Submission Updates"  desc="Get notified when your code is judged"  checked={notifications.submissions}  onChange={() => setNotifications(n => ({ ...n, submissions: !n.submissions }))} />
+                  <Toggle isDark={isDark} textClass={textClass} subText={subText} label="Achievement Unlocked" desc="Celebrate your milestones"              checked={notifications.achievements} onChange={() => setNotifications(n => ({ ...n, achievements: !n.achievements }))} />
+                  <Toggle isDark={isDark} textClass={textClass} subText={subText} label="Contest Reminders"   desc="Reminders before contests start"        checked={notifications.contests}     onChange={() => setNotifications(n => ({ ...n, contests: !n.contests }))} />
+                  <Toggle isDark={isDark} textClass={textClass} subText={subText} label="Weekly Digest"       desc="Weekly summary of your activity"        checked={notifications.emailDigest}  onChange={() => setNotifications(n => ({ ...n, emailDigest: !n.emailDigest }))} />
+                  <Toggle isDark={isDark} textClass={textClass} subText={subText} label="Newsletter"          desc="Tips, new features, and updates"        checked={notifications.newsletter}   onChange={() => setNotifications(n => ({ ...n, newsletter: !n.newsletter }))} />
                 </div>
                 <div className="mt-6">
-                  <SaveBtn label="Save Preferences" loadLabel="Saving..." />
+                  <SaveBtn loading={loading} label="Save Preferences" loadLabel="Saving..." />
                 </div>
               </form>
             )}
@@ -429,7 +437,7 @@ const Settings = () => {
                   <label className={labelClass}>Default Language</label>
                   <select
                     value={preferences.defaultLanguage}
-                    onChange={e => setPreferences({ ...preferences, defaultLanguage: e.target.value })}
+                    onChange={e => setPreferences(p => ({ ...p, defaultLanguage: e.target.value }))}
                     className={`w-full px-4 py-2.5 ${inputClass} rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20`}
                   >
                     {['python', 'cpp', 'java', 'javascript'].map(lang => (
@@ -443,7 +451,7 @@ const Settings = () => {
                   <input
                     type="range" min="10" max="24"
                     value={preferences.editorFontSize}
-                    onChange={e => setPreferences({ ...preferences, editorFontSize: parseInt(e.target.value) })}
+                    onChange={e => setPreferences(p => ({ ...p, editorFontSize: parseInt(e.target.value) }))}
                     className="w-full accent-rose-500"
                   />
                   <div className={`flex justify-between text-xs ${subText} mt-1`}>
@@ -471,7 +479,7 @@ const Settings = () => {
                   </div>
                 </div>
 
-                <SaveBtn label="Save Preferences" loadLabel="Saving..." />
+                <SaveBtn loading={loading} label="Save Preferences" loadLabel="Saving..." />
               </form>
             )}
 
@@ -483,8 +491,8 @@ const Settings = () => {
                 </h2>
 
                 {[
-                  { label: 'Current Password', key: 'currentPassword', show: showCurrentPwd, toggle: () => setShowCurrentPwd(v => !v), placeholder: 'Enter current password' },
-                  { label: 'New Password',      key: 'newPassword',     show: showNewPwd,     toggle: () => setShowNewPwd(v => !v),     placeholder: 'At least 6 characters' },
+                  { label: 'Current Password',    key: 'currentPassword', show: showCurrentPwd, toggle: () => setShowCurrentPwd(v => !v), placeholder: 'Enter current password' },
+                  { label: 'New Password',         key: 'newPassword',     show: showNewPwd,     toggle: () => setShowNewPwd(v => !v),     placeholder: 'At least 6 characters' },
                   { label: 'Confirm New Password', key: 'confirmPassword', show: showConfirmPwd, toggle: () => setShowConfirmPwd(v => !v), placeholder: 'Repeat new password' },
                 ].map(({ label, key, show, toggle, placeholder }) => (
                   <div key={key} className="relative">
@@ -492,7 +500,7 @@ const Settings = () => {
                     <input
                       type={show ? 'text' : 'password'}
                       value={passwords[key]}
-                      onChange={e => setPasswords({ ...passwords, [key]: e.target.value })}
+                      onChange={e => setPasswords(p => ({ ...p, [key]: e.target.value }))}
                       placeholder={placeholder}
                       className={`w-full px-4 py-2.5 pr-10 ${inputClass} rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20`}
                     />
@@ -510,6 +518,7 @@ const Settings = () => {
                 )}
 
                 <SaveBtn
+                  loading={loading}
                   label="Change Password"
                   loadLabel="Changing..."
                   disabled={!passwords.currentPassword || !passwords.newPassword || passwords.newPassword !== passwords.confirmPassword}

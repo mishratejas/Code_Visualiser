@@ -150,9 +150,10 @@ export const requestPasswordReset = async (email) => {
  * @param {string} data.password - New password
  * @returns {Promise} - Response confirming password reset
  */
-export const resetPassword = async (data) => {
+export const resetPassword = async ({ token, password }) => {
   try {
-    const response = await api.post('/auth/reset-password', data);
+    if (!token) throw new Error('Reset token is required');
+    const response = await api.post(`/auth/reset-password/${token}`, { password });
     return response;
   } catch (error) {
     throw error;

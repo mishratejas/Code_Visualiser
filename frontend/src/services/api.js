@@ -47,11 +47,13 @@ api.interceptors.response.use(
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 export const authApi = {
-  login:    (data)  => api.post('/auth/login', data),
-  register: (data)  => api.post('/auth/register', data),
-  logout:   ()      => api.post('/auth/logout'),
-  me:       ()      => api.get('/auth/me'),
-  refresh:  ()      => api.post('/auth/refresh'),
+  login:          (data)          => api.post('/auth/login', data),
+  register:       (data)          => api.post('/auth/register', data),
+  logout:         ()              => api.post('/auth/logout'),
+  me:             ()              => api.get('/auth/me'),
+  refresh:        ()              => api.post('/auth/refresh'),
+  forgotPassword: (email)         => api.post('/auth/forgot-password', { email }),
+  resetPassword:  (token, password) => api.post(`/auth/reset-password/${token}`, { password }),
 };
 
 // ── Problems ─────────────────────────────────────────────────────────────────

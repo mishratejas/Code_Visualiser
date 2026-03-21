@@ -19,6 +19,7 @@ class AnalyzeRequest(BaseModel):
     runtime_ms: Optional[int] = 0
     test_cases_passed: Optional[int] = 0
     total_test_cases: Optional[int] = 0
+    force_refresh: Optional[bool] = False   # skip Redis cache and re-analyze
 
 
 @router.post("/code")
@@ -36,6 +37,7 @@ async def analyze_code(req: AnalyzeRequest):
         test_cases_passed=req.test_cases_passed,
         total_test_cases=req.total_test_cases,
         submission_id=req.submission_id,
+        force_refresh=req.force_refresh,
     )
     return {"success": True, "data": result}
 

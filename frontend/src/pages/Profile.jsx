@@ -99,7 +99,7 @@ const Profile = () => {
 
   // Build synthetic 2-point chart when real history endpoint is unavailable
   const buildSynthetic = (userDoc, currentRating) => {
-    const banUntil = userDoc?.contestBannedUntil;
+    const banUntil = userDoc?.security?.contestBannedUntil || userDoc?.contestBannedUntil;
     const isBanned = banUntil && new Date(banUntil) > new Date();
     if (isBanned) {
       setRatingHistory([
@@ -435,9 +435,9 @@ const Profile = () => {
                 <div className="flex items-center gap-3 mb-4">
                   <BsTrophyFill className="h-5 w-5 text-yellow-400" />
                   <h3 className={`text-sm font-bold ${txt}`}>Contest Rating</h3>
-                  {profileData?.contestBannedUntil && new Date(profileData.contestBannedUntil) > new Date() && (
+                  {(profileData?.security?.contestBannedUntil || profileData?.contestBannedUntil) && new Date(profileData?.security?.contestBannedUntil || profileData?.contestBannedUntil) > new Date() && (
                     <span className="ml-auto text-xs px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 font-semibold">
-                      🚫 Banned until {new Date(profileData.contestBannedUntil).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      🚫 Banned until {new Date(profileData?.security?.contestBannedUntil || profileData?.contestBannedUntil).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </span>
                   )}
                 </div>

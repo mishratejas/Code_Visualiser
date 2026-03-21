@@ -29,6 +29,10 @@ const Problem = () => {
   const [language, setLanguage] = useState('javascript');
   const [testResults, setTestResults] = useState([]);
   const [submissionResult, setSubmissionResult] = useState(null);
+  // Track the exact code+language that was submitted so AnalysisPanel
+  // always analyzes what was actually judged, not current editor state.
+  const [submittedCode, setSubmittedCode] = useState('');
+  const [submittedLanguage, setSubmittedLanguage] = useState('');
   const [userInput, setUserInput] = useState('');
   const [customOutput, setCustomOutput] = useState('');
   const [showCustomTest, setShowCustomTest] = useState(false);
@@ -228,6 +232,9 @@ int main() {
       const submission = responseData?.data?.submission || responseData?.submission || responseData;
       const executionResults = responseData?.data?.executionResults || responseData?.executionResults || [];
 
+      // Snapshot the code and language at the moment of submission
+      setSubmittedCode(code);
+      setSubmittedLanguage(language);
       setSubmissionResult(submission);
 
       if (submission.isAccepted || submission.verdict === 'accepted') {
@@ -668,8 +675,8 @@ int main() {
             {(submissionResult || testResults.length > 0) && code && (
               <div className={`rounded-xl border ${isDark ? 'border-gray-800 bg-gray-900/50' : 'border-gray-200 bg-white'}`}>
                 <AnalysisPanel
-                  code={code}
-                  language={language}
+                  code={submittedCode || code}
+                  language={submittedLanguage || language}
                   submissionId={submissionResult?._id || submissionResult?.submission?._id || ''}
                   runtimeMs={submissionResult?.runtime || 0}
                   testCasesPassed={submissionResult?.testCasesPassed || testResults.filter(r => r.passed).length}

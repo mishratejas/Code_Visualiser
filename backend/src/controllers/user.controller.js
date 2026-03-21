@@ -7,6 +7,14 @@ import ApiError from '../utils/ApiError.js';
 import mongoose from 'mongoose';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
+
+// Must configure here — this controller imports cloudinary directly
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+  secure:     true,
+});
 import streakService from '../services/streak.service.js';
 
 // Configure multer for memory storage
@@ -42,12 +50,11 @@ export const uploadAvatar = asyncHandler(async (req, res) => {
     await cloudinary.uploader.destroy(publicId);
   }
 
-  // Update user
-  req.user.avatar = result.secure_url;
-  await req.user.save();
+  // Update user in DB directly — req.user is a plain object (toObject()), not a Mongoose doc
+  await User.findByIdAndUpdate(req.user._id, { 'profile.avatar': result.secure_url });
 
   res.status(200).json(
-    new ApiResponse(200, { avatarUrl: result.secure_url }, 'Avatar uploaded successfully')
+    ApiResponse.success({ avatarUrl: result.secure_url }, 'Avatar uploaded successfully')
   );
 });
 
@@ -58,11 +65,10 @@ export const deleteAvatar = asyncHandler(async (req, res) => {
     await cloudinary.uploader.destroy(publicId);
   }
 
-  req.user.avatar = null;
-  await req.user.save();
+  await User.findByIdAndUpdate(req.user._id, { 'profile.avatar': '' });
 
   res.status(200).json(
-    new ApiResponse(200, {}, 'Avatar deleted successfully')
+    ApiResponse.success({}, 'Avatar deleted successfully')
   );
 });
 
@@ -70,14 +76,14 @@ export const deleteAvatar = asyncHandler(async (req, res) => {
 export const updatePreferences = asyncHandler(async (req, res) => {
   const { emailPreferences } = req.body;
 
-  req.user.emailPreferences = {
-    ...req.user.emailPreferences,
-    ...emailPreferences
-  };
-  await req.user.save();
+  const updatedUser = await User.findByIdAndUpdate(
+    req.user._id,
+    { $set: { emailPreferences: { ...req.user.emailPreferences, ...emailPreferences } } },
+    { new: true }
+  ).select('emailPreferences');
 
   res.status(200).json(
-    new ApiResponse(200, { emailPreferences: req.user.emailPreferences }, 'Preferences updated')
+    ApiResponse.success({ emailPreferences: updatedUser.emailPreferences }, 'Preferences updated')
   );
 });
 
@@ -86,7 +92,7 @@ export const getStreak = asyncHandler(async (req, res) => {
   const streak = await streakService.getStreak(req.user._id);
   
   res.status(200).json(
-    new ApiResponse(200, { streak }, 'Streak fetched successfully')
+    ApiResponse.success({ streak }, 'Streak fetched successfully')
   );
 });
 
@@ -94,21 +100,24 @@ export const getStreak = asyncHandler(async (req, res) => {
 // @route   GET /api/v1/users/:identifier
 // @access  Public (with limited info) / Private (full info for self)
 export const getUserProfile = asyncHandler(async (req, res) => {
+  // When called from GET /me/profile there is no :identifier param — fall back to
+  // the authenticated user's own ID so the route doesn't 404.
   const { identifier } = req.params;
-  
-  console.log('🔍 Getting user profile for:', identifier);
-  
-  // Determine if identifier is ObjectId or username
-  const isObjectId = mongoose.Types.ObjectId.isValid(identifier);
-  const query = isObjectId ? { _id: identifier } : { username: identifier };
+  const resolvedId = identifier || req.user?._id?.toString();
+
+  console.log('\u{1F50D} Getting user profile for:', resolvedId);
+
+  const isObjectId = mongoose.Types.ObjectId.isValid(resolvedId);
+  const query = isObjectId ? { _id: resolvedId } : { username: resolvedId };
   
   console.log('Query:', query);
   
   // Select fields based on who's viewing
-  const isSelfViewing = req.user && (
-    (isObjectId && req.user._id.toString() === identifier) ||
-    (!isObjectId && req.user?.username === identifier)
-  );
+  // If no :identifier param (e.g. /me/profile), viewer is always viewing themselves
+  const isSelfViewing = !identifier || (req.user && (
+    (isObjectId && req.user._id.toString() === resolvedId) ||
+    (!isObjectId && req.user?.username === resolvedId)
+  ));
   
   const selectFields = isSelfViewing 
     ? '-password -security.twoFactorSecret'
@@ -542,13 +551,13 @@ export const getSolvedProblems = asyncHandler(async (req, res) => {
 // @route   GET /api/v1/users/:userId/attempted
 // @access  Private (only self)
 export const getAttemptedProblems = asyncHandler(async (req, res) => {
-  const { userId } = req.params;
-  
-  // Check if user is viewing their own data
-  if (req.user._id.toString() !== userId) {
+  // Route is /me/attempted — no :userId param. Always uses the authenticated user.
+  const userId = req.params.userId || req.user._id.toString();
+
+  if (userId !== req.user._id.toString()) {
     throw ApiError.forbidden('You can only view your own attempted problems');
   }
-  
+
   const user = await User.findById(userId).populate({
     path: 'attemptedProblems.problem',
     select: 'title slug difficulty tags metadata.acceptanceRate'
@@ -769,17 +778,23 @@ export const searchUsers = asyncHandler(async (req, res) => {
 // @route   DELETE /api/v1/users/account
 // @access  Private
 export const deleteAccount = asyncHandler(async (req, res) => {
-  const { confirmPassword } = req.body;
-  
-  if (!confirmPassword) {
-    throw ApiError.badRequest('Please confirm your password');
-  }
-  
+  // Frontend sends { confirmation: username } — user types their username to confirm.
+  const { confirmation, confirmPassword } = req.body;
+
   const user = await User.findById(req.user._id).select('+password');
-  
-  const isPasswordValid = await user.comparePassword(confirmPassword);
-  if (!isPasswordValid) {
-    throw ApiError.unauthorized('Incorrect password');
+  if (!user) throw ApiError.notFound('User not found');
+
+  if (confirmation) {
+    // Username-based confirmation (current UI)
+    if (confirmation !== user.username) {
+      throw ApiError.badRequest(`Please type your username "${user.username}" to confirm`);
+    }
+  } else if (confirmPassword) {
+    // Legacy password-based confirmation
+    const isPasswordValid = await user.comparePassword(confirmPassword);
+    if (!isPasswordValid) throw ApiError.unauthorized('Incorrect password');
+  } else {
+    throw ApiError.badRequest('Please confirm by typing your username');
   }
   
   // Instead of deleting, deactivate the account

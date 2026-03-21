@@ -108,7 +108,10 @@ const Submissions = () => {
     try {
       setCodeLoading(true);
       const res = await api.get(`/submissions/${submission._id}`);
-      const full = res.data || res;
+      // Axios interceptor unwraps response.data → res is ApiResponse:
+      // { success, data: { submission: { code, ... } }, message }
+      // So we need to unwrap one more level.
+      const full = res?.data?.submission || res?.submission || res?.data || res;
       setSelectedSubmission({ ...submission, ...full });
     } catch {
       toast.error('Failed to load submission code');

@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 
 from src.config import Config, GEMINI_READY
-from src.cache import get_cache, set_cache
+from src.cache import get_cache, set_cache, delete_cache
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ def _python_metrics(code: str, m: StructuralMetrics, lines: list) -> StructuralM
     code_lower = code.lower()
     m.uses_sorting      = bool(re.search(r'\bsort(ed)?\b', code_lower))
     m.uses_hashmap      = bool(re.search(r'\bdict\b|\bdefaultdict\b|\bCounter\b', code))
-    m.uses_binary_search= bool(re.search(r'bisect|binary.search|mid\s*=', code_lower))
+    m.uses_binary_search= bool(re.search(r'bisect|binary.search|\bmid\b\s*=|\bmid\s*=', code_lower))
     m.uses_dp           = bool(re.search(r'dp\[|memo|lru_cache|@cache', code_lower))
     m.max_nesting_depth = _calc_nesting(code)
     return m
@@ -127,7 +127,7 @@ def _regex_metrics(code: str, language: str, m: StructuralMetrics, lines: list) 
     code_lower = code.lower()
     m.uses_sorting      = bool(re.search(r'\.sort\(|Arrays\.sort|Collections\.sort', code))
     m.uses_hashmap      = bool(re.search(r'HashMap|unordered_map|Map\(\)', code))
-    m.uses_binary_search= bool(re.search(r'binarySearch|binary_search|mid\s*=', code_lower))
+    m.uses_binary_search= bool(re.search(r'binarySearch|binary_search|\bmid\b\s*=|\bmid\s*=', code_lower))
     m.uses_dp           = bool(re.search(r'\bdp\[|\bmemo\[', code_lower))
     m.uses_recursion    = len(re.findall(r'\b(\w+)\s*\(', code)) > len(set(re.findall(r'\b(\w+)\s*\(', code)))
     m.nested_loop_depth = m.max_nesting_depth  # _calc_nesting now tracks loop depth
@@ -184,7 +184,10 @@ async def _call_gemini(prompt: str, fallback: dict) -> dict:
     """Try each Gemini key in round-robin; fall back to rule-based on all failures."""
     global _current_key_index
     if not _gemini_models:
+        logger.warning("⚠️  No Gemini models configured — returning rule-based fallback")
         return fallback
+
+    logger.info(f"🤖  Calling Gemini ({len(_gemini_models)} key(s) available)...")
 
     import asyncio
     import google.generativeai as _genai_sdk
@@ -204,14 +207,19 @@ async def _call_gemini(prompt: str, fallback: dict) -> dict:
             text = response.text.strip()
             text = re.sub(r'^```(?:json)?\s*', '', text)
             text = re.sub(r'\s*```$', '', text)
+            logger.info(f"🔍 Gemini raw response (first 300 chars): {text[:300]}")
             result = json.loads(text)
             _current_key_index = idx
+            logger.info(f"✅ Gemini analysis SUCCESS (key ...{key[-6:]}) — algorithm: {result.get('algorithm_detected','?')}, time: {result.get('time_complexity','?')}")
             return result
+        except json.JSONDecodeError as e:
+            logger.warning(f"Gemini key ...{key[-6:]} returned non-JSON (attempt {attempt+1}/{num_keys}): {e}\nRaw text: {text[:500]}")
+            _current_key_index = (idx + 1) % num_keys
         except Exception as e:
-            logger.warning(f"Gemini key ...{key[-6:]} failed (attempt {attempt+1}/{num_keys}): {e}")
+            logger.warning(f"Gemini key ...{key[-6:]} failed (attempt {attempt+1}/{num_keys}): {type(e).__name__}: {e}")
             _current_key_index = (idx + 1) % num_keys
 
-    logger.error("All Gemini keys exhausted — using rule-based fallback")
+    logger.error("❌ All Gemini keys exhausted — using rule-based fallback. Check API keys/quota.")
     return fallback
 
 
@@ -221,57 +229,80 @@ class AnalysisService:
                            runtime_ms: int = 0,
                            test_cases_passed: int = 0,
                            total_test_cases: int = 0,
-                           submission_id: str = "") -> Dict:
+                           submission_id: str = "",
+                           force_refresh: bool = False) -> Dict:
 
         cache_key = f"analysis:{submission_id}" if submission_id else None
-        if cache_key:
+
+        # Read cache only when not force_refresh
+        if cache_key and not force_refresh:
             cached = await get_cache(cache_key)
             if cached:
+                logger.info(f"📦 Cache hit for {cache_key}")
                 return cached
+        elif cache_key and force_refresh:
+            # Delete stale entry so fresh result overwrites it properly
+            await delete_cache(cache_key)
+            logger.info(f"🔄 force_refresh=True — deleted stale cache for {cache_key}")
 
         metrics = extract_structural_metrics(code, language)
 
-        prompt = f"""Analyze this {language} code and return ONLY valid JSON, no markdown fences.
+        # Detailed prompt that forces Gemini to read and understand the actual code
+        prompt = f"""You are an expert competitive-programming code reviewer.
+Carefully READ the entire code below, understand its algorithm, then return ONLY
+a single valid JSON object (no markdown fences, no extra text).
 
-Code (first 2000 chars):
-{code[:2000]}
+=== CODE ({language}) ===
+{code[:4000]}
 
-Already computed metrics:
-- lines_of_code: {metrics.lines_of_code}
-- function_count: {metrics.function_count}
-- loop_count: {metrics.loop_count}
-- max_nesting_depth: {metrics.max_nesting_depth}
-- cyclomatic_complexity: {metrics.cyclomatic_complexity}
-- uses_recursion: {metrics.uses_recursion}
-- uses_dp: {metrics.uses_dp}
-- uses_sorting: {metrics.uses_sorting}
-- runtime_ms: {runtime_ms}, passed: {test_cases_passed}/{total_test_cases}
+=== RUNTIME CONTEXT ===
+- runtime_ms: {runtime_ms}
+- test_cases_passed: {test_cases_passed}/{total_test_cases}
 
-Return this exact JSON structure:
+=== INSTRUCTIONS ===
+1. READ the code carefully top to bottom. Identify the EXACT algorithm implemented.
+2. Derive time_complexity ONLY from the algorithmic logic — loops, recursion, and data structure ops:
+   - Two pointers / merge over m+n elements → O(m+n)
+   - Single loop over n elements → O(n)
+   - Binary search (while low<=high, mid=(low+high)/2) → O(log n)
+   - Nested loops over n → O(n^2)
+   - Sorting n elements → O(n log n)
+   - IGNORE cin/cout/input/output — I/O is NOT part of algorithmic complexity
+   - NEVER say O(L) unless the only work is reading a single string character by character with no other logic
+   Express complexity in terms of the meaningful input variables (n, m, etc.), NOT L.
+3. Leave anti_patterns as [] if the code is clean and correct.
+4. Give concrete, code-specific suggestions. Empty array [] is fine if no improvements needed.
+5. quality_score: float 0.0-1.0. quality_label: "poor"|"fair"|"good"|"excellent".
+6. performance_rating: "optimized"|"acceptable"|"inefficient".
+
+Return exactly this JSON shape (no other keys, no markdown):
 {{
-  "time_complexity": "O(?)",
-  "space_complexity": "O(?)",
-  "quality_label": "poor",
-  "quality_score": 0.5,
-  "performance_rating": "acceptable",
-  "anti_patterns": [{{"type": "...", "description": "...", "severity": "low"}}],
-  "suggestions": ["suggestion1"],
-  "bottleneck_analysis": ["bottleneck1"],
-  "algorithm_detected": "brute force",
-  "explanation": "one sentence"
+  "time_complexity": "O(...)",
+  "space_complexity": "O(...)",
+  "quality_label": "good",
+  "quality_score": 0.75,
+  "performance_rating": "optimized",
+  "anti_patterns": [{{"type": "...", "description": "...", "severity": "low|medium|high"}}],
+  "suggestions": ["specific suggestion about this code"],
+  "bottleneck_analysis": ["specific bottleneck in this code"],
+  "algorithm_detected": "binary search",
+  "explanation": "One sentence summarising what this code does and its complexity."
 }}"""
 
+        # Gemini-only: fallback only used when ALL keys fail (quota exhausted).
+        # Returns honest "unavailable" instead of wrong rule-based guesses.
         fallback = {
-            "time_complexity":    self._complexity_fallback(metrics),
-            "space_complexity":   "O(n)" if (metrics.uses_hashmap or metrics.uses_dp) else "O(1)",
-            "quality_label":      self._quality_label(metrics, test_cases_passed, total_test_cases),
-            "quality_score":      self._quality_score(metrics, test_cases_passed, total_test_cases),
-            "performance_rating": "optimized" if runtime_ms < 200 else "acceptable",
-            "anti_patterns":      self._antipatterns(metrics, code),
-            "suggestions":        self._suggestions(metrics),
+            "time_complexity":    "N/A (Gemini unavailable)",
+            "space_complexity":   "N/A (Gemini unavailable)",
+            "quality_label":      "fair",
+            "quality_score":      0.5,
+            "performance_rating": "acceptable",
+            "anti_patterns":      [],
+            "suggestions":        ["Enable Gemini API keys for full analysis."],
             "bottleneck_analysis": [],
-            "algorithm_detected": self._algorithm(metrics),
-            "explanation":        "Analysis based on structural metrics (Gemini not configured)",
+            "algorithm_detected": "unknown (Gemini unavailable)",
+            "explanation":        "Gemini API unavailable. Check API key quota and restart the AI service.",
+            "ai_powered":         False,
         }
 
         ai_result = await _call_gemini(prompt, fallback)
@@ -303,57 +334,7 @@ Return this exact JSON structure:
             await set_cache(cache_key, result, expire=3600)
         return result
 
-    def _complexity_fallback(self, m: StructuralMetrics) -> str:
-        # Use NESTING DEPTH not raw loop count — 2 sequential loops is O(n), not O(n²)
-        if m.uses_binary_search: return "O(log n)"
-        if m.nested_loop_depth >= 3 or m.loop_count >= 3: return "O(n³)"
-        if m.nested_loop_depth >= 2:  return "O(n²)"   # only nested loops → O(n²)
-        if m.uses_dp:                 return "O(n²)"   # DP usually O(n²)
-        if m.loop_count >= 1:         return "O(n)"    # sequential loops → O(n)
-        if m.uses_recursion:          return "O(n)"
-        return "O(1)"
-
-    def _quality_score(self, m: StructuralMetrics, passed: int, total: int) -> float:
-        score = 0.5
-        if m.comment_density > 0.1: score += 0.1
-        if m.function_count > 0:    score += 0.1
-        if m.cyclomatic_complexity < 10: score += 0.1
-        if total > 0 and passed == total: score += 0.2
-        return round(min(1.0, score), 2)
-
-    def _quality_label(self, m: StructuralMetrics, passed: int, total: int) -> str:
-        s = self._quality_score(m, passed, total)
-        if s >= 0.8: return "excellent"
-        if s >= 0.6: return "good"
-        if s >= 0.4: return "fair"
-        return "poor"
-
-    def _antipatterns(self, m: StructuralMetrics, code: str) -> List[Dict]:
-        out = []
-        if m.loop_count >= 3:
-            out.append({"type": "brute_force", "description": "Multiple nested loops", "severity": "medium"})
-        if m.max_nesting_depth > 4:
-            out.append({"type": "deep_nesting", "description": f"Nesting depth {m.max_nesting_depth}", "severity": "medium"})
-        if re.search(r'len\(.*\).*len\(.*\)', code):
-            out.append({"type": "repeated_computation", "description": "Computing len() multiple times", "severity": "low"})
-        return out
-
-    def _suggestions(self, m: StructuralMetrics) -> List[str]:
-        out = []
-        if m.comment_density < 0.05:     out.append("Add comments to explain your logic.")
-        if m.loop_count >= 3:            out.append("Consider reducing nested loops.")
-        if m.cyclomatic_complexity > 10: out.append(f"Cyclomatic complexity {m.cyclomatic_complexity} is high — refactor.")
-        if m.max_nesting_depth > 4:      out.append("Flatten deep nesting with early returns.")
-        return out[:4]
-
-    def _algorithm(self, m: StructuralMetrics) -> str:
-        if m.uses_dp:            return "dynamic programming"
-        if m.uses_binary_search: return "binary search"
-        if m.uses_sorting:       return "sorting-based"
-        if m.uses_hashmap:       return "hash map"
-        if m.uses_recursion:     return "recursive"
-        if m.loop_count >= 2:    return "brute force"
-        return "iterative"
+    # Rule-based methods removed — Gemini handles all analysis
 
 
 analysis_service = AnalysisService()

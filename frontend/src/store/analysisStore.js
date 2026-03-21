@@ -1,32 +1,32 @@
 /**
  * analysisStore.js — Zustand store for code analysis state
- *
- * WHERE ZUSTAND IS USED IN THIS PROJECT:
- *   - This file: code analysis results per submission (replaces prop-drilling)
- *   - CodeEditor state is managed locally with React context (EditorContext.jsx)
- *   - Auth state is in AuthContext (React context) — could migrate to Zustand later
- *
- * WHY ZUSTAND HERE:
- *   The analysis panel in Problem.jsx needs results from the AI service.
- *   Multiple components (AnalysisPanel, SubmissionItem) need to read the same
- *   analysis result. Zustand avoids passing it through props across levels.
  */
 import { create } from 'zustand';
 import api from '../services/api';
 
 const useAnalysisStore = create((set, get) => ({
   // State
-  analyses: {},          // submissionId → analysis result
-  loading: {},           // submissionId → boolean
-  error: {},             // submissionId → error message
-  currentAnalysis: null, // Most recently requested analysis
+  analyses: {},          // key → analysis result
+  loading: {},           // key → boolean
+  error: {},             // key → error message
+  currentAnalysis: null,
 
   // Actions
-  analyzeCode: async ({ code, language, submissionId = '', runtimeMs = 0, testCasesPassed = 0, totalTestCases = 0 }) => {
-    const key = submissionId || `${language}:${code.slice(0, 20)}`;
+  analyzeCode: async ({
+    code, language, submissionId = '',
+    runtimeMs = 0, testCasesPassed = 0, totalTestCases = 0,
+    forceRefresh = false,
+  }) => {
+    // Build a collision-resistant cache key.
+    // Old code used code.slice(0,20) which causes collisions across different
+    // problems that share the same boilerplate opening lines (e.g. #include, import).
+    const codeHash = code
+      ? [...code].reduce((h, c) => (Math.imul(31, h) + c.charCodeAt(0)) | 0, 0).toString(36)
+      : 'empty';
+    const key = submissionId ? `sub:${submissionId}` : `code:${language}:${codeHash}`;
 
-    // Return cached if available
-    if (get().analyses[key]) {
+    // Return cached result only if not forcing a re-analysis
+    if (!forceRefresh && get().analyses[key]) {
       set({ currentAnalysis: get().analyses[key] });
       return get().analyses[key];
     }
@@ -41,9 +41,13 @@ const useAnalysisStore = create((set, get) => ({
         runtime_ms: runtimeMs,
         test_cases_passed: testCasesPassed,
         total_test_cases: totalTestCases,
+        force_refresh: forceRefresh,
       });
-      // Handle both wrapped and unwrapped response (axios interceptor already unwraps data)
-      const data = res?.data || res;
+
+      // Axios interceptor unwraps response.data → res is ApiResponse:
+      // { success: true, data: { time_complexity, ... } }
+      const data = res?.data ?? res;
+
       set(s => ({
         analyses: { ...s.analyses, [key]: data },
         currentAnalysis: data,

@@ -7,13 +7,16 @@ import asyncHandler from '../utils/asyncHandler.js';
 // @route   GET /api/v1/notifications
 // @access  Private
 export const getNotifications = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20, unread } = req.query;
+  const { page = 1, limit = 20, unread, read } = req.query;
   
   const query = { user: req.user._id };
   
   if (unread === 'true') {
-    query.read = false;
+    query.read = false;   // Unread tab → only unread
+  } else if (read === 'true') {
+    query.read = true;    // Read tab → only read
   }
+  // else: all tab → no read filter, return everything
   
   const skip = (page - 1) * limit;
   
@@ -34,7 +37,7 @@ export const getNotifications = asyncHandler(async (req, res) => {
   }));
   
   res.status(200).json(
-    new ApiResponse(200, {
+    ApiResponse.success({
       notifications: notificationsWithTimeAgo,
       pagination: {
         page: parseInt(page),
@@ -54,7 +57,7 @@ export const getUnreadCount = asyncHandler(async (req, res) => {
   const count = await Notification.getUnreadCount(req.user._id);
   
   res.status(200).json(
-    new ApiResponse(200, { count }, 'Unread count fetched successfully')
+    ApiResponse.success({ count }, 'Unread count fetched successfully')
   );
 });
 
@@ -71,7 +74,7 @@ export const markAsRead = asyncHandler(async (req, res) => {
   }
   
   res.status(200).json(
-    new ApiResponse(200, { notification }, 'Notification marked as read')
+    ApiResponse.success({ notification }, 'Notification marked as read')
   );
 });
 
@@ -82,7 +85,7 @@ export const markAllAsRead = asyncHandler(async (req, res) => {
   await Notification.markAllAsRead(req.user._id);
   
   res.status(200).json(
-    new ApiResponse(200, {}, 'All notifications marked as read')
+    ApiResponse.success({}, 'All notifications marked as read')
   );
 });
 
@@ -102,7 +105,7 @@ export const deleteNotification = asyncHandler(async (req, res) => {
   }
   
   res.status(200).json(
-    new ApiResponse(200, {}, 'Notification deleted successfully')
+    ApiResponse.success({}, 'Notification deleted successfully')
   );
 });
 
@@ -116,7 +119,7 @@ export const clearReadNotifications = asyncHandler(async (req, res) => {
   });
   
   res.status(200).json(
-    new ApiResponse(200, { deletedCount: result.deletedCount }, 'Read notifications cleared')
+    ApiResponse.success({ deletedCount: result.deletedCount }, 'Read notifications cleared')
   );
 });
 

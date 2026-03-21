@@ -282,7 +282,36 @@ class PlagiarismService {
         ? allSimilarities.reduce((a, b) => a + b, 0) / allSimilarities.length
         : 0;
 
-      // Step 6 — save report (replace any existing for this contest)
+      // Step 6 — save report, preserving verdicts already reviewed by admin.
+      // Without this, every re-run wipes confirmed plagiarism decisions.
+      const existingReport = await PlagiarismReport.findOne({ contest: contestId }).lean();
+      const existingVerdictMap = new Map();
+      if (existingReport?.suspiciousPairs) {
+        for (const ep of existingReport.suspiciousPairs) {
+          if (ep.verdict && ep.verdict !== 'pending') {
+            const key = [ep.submission1?.toString(), ep.submission2?.toString()].sort().join('|');
+            existingVerdictMap.set(key, {
+              verdict:     ep.verdict,
+              reviewed:    ep.reviewed,
+              reviewedBy:  ep.reviewedBy,
+              reviewNotes: ep.reviewNotes,
+            });
+          }
+        }
+      }
+
+      // Merge preserved verdicts into freshly computed pairs
+      for (const pair of suspiciousPairs) {
+        const key = [pair.submission1?.toString(), pair.submission2?.toString()].sort().join('|');
+        const saved = existingVerdictMap.get(key);
+        if (saved) {
+          pair.verdict     = saved.verdict;
+          pair.reviewed    = saved.reviewed;
+          pair.reviewedBy  = saved.reviewedBy;
+          pair.reviewNotes = saved.reviewNotes;
+        }
+      }
+
       await PlagiarismReport.deleteOne({ contest: contestId });
       const report = await PlagiarismReport.create({
         contest:           contestId,

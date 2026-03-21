@@ -265,54 +265,84 @@ const Dashboard = () => {
           <div className={`${card} rounded-2xl p-5 border`}>
             <h3 className={`text-sm font-bold mb-4 ${txt}`}>Weekly Activity</h3>
             {chartsReady ? (() => {
-              const W = 100, H = 160, PAD = 24;
+              const W = 500, H = 200, PAD_X = 40, PAD_Y = 28;
               const maxVal = Math.max(1, ...activityData.map(d => Math.max(d.submissions||0, d.solved||0)));
-              const xs = activityData.map((_, i) => PAD + i * ((W - PAD * 2) / Math.max(activityData.length - 1, 1)));
-              const ys = (key) => activityData.map(d => H - PAD - ((d[key]||0) / maxVal) * (H - PAD * 2));
-              const polyline = (key) => activityData.map((_, i) => `${xs[i]},${ys(key)[i]}`).join(' ');
+              const xs = activityData.map((_, i) =>
+                PAD_X + i * ((W - PAD_X * 2) / Math.max(activityData.length - 1, 1))
+              );
+              const yFor = (val) => H - PAD_Y - (val / maxVal) * (H - PAD_Y * 2);
+              const ys = (key) => activityData.map(d => yFor(d[key] || 0));
+              const polyline = (key) => activityData.map((_, i) => `${xs[i].toFixed(1)},${ys(key)[i].toFixed(1)}`).join(' ');
               const area = (key) => {
-                const pts = activityData.map((_, i) => `${xs[i]},${ys(key)[i]}`).join(' ');
-                const last = xs[xs.length - 1];
-                const first = xs[0];
-                return `${first},${H - PAD} ${pts} ${last},${H - PAD}`;
+                const pts = activityData.map((_, i) => `${xs[i].toFixed(1)},${ys(key)[i].toFixed(1)}`).join(' ');
+                return `${xs[0].toFixed(1)},${H - PAD_Y} ${pts} ${xs[xs.length-1].toFixed(1)},${H - PAD_Y}`;
               };
+              // Y-axis labels
+              const yTicks = [0, Math.ceil(maxVal/2), maxVal];
               return (
-                <div className="relative">
-                  <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{height: 180}}>
+                <div className="relative w-full">
+                  <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{height: 220}} preserveAspectRatio="xMidYMid meet">
                     <defs>
-                      <linearGradient id="gSub" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#F43F5E" stopOpacity="0.35"/><stop offset="100%" stopColor="#F43F5E" stopOpacity="0"/></linearGradient>
-                      <linearGradient id="gSol" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10B981" stopOpacity="0.35"/><stop offset="100%" stopColor="#10B981" stopOpacity="0"/></linearGradient>
+                      <linearGradient id="gSub" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#F43F5E" stopOpacity="0.4"/>
+                        <stop offset="100%" stopColor="#F43F5E" stopOpacity="0"/>
+                      </linearGradient>
+                      <linearGradient id="gSol" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#10B981" stopOpacity="0.4"/>
+                        <stop offset="100%" stopColor="#10B981" stopOpacity="0"/>
+                      </linearGradient>
                     </defs>
-                    {/* Grid lines */}
-                    {[0,0.25,0.5,0.75,1].map(pct => (
-                      <line key={pct} x1={PAD} x2={W-PAD} y1={PAD + pct*(H-PAD*2)} y2={PAD + pct*(H-PAD*2)}
-                        stroke={isDark?'#1f2937':'#e5e7eb'} strokeWidth="0.5"/>
-                    ))}
+                    {/* Horizontal grid lines + Y labels */}
+                    {[0, 0.25, 0.5, 0.75, 1].map((pct, i) => {
+                      const y = PAD_Y + pct * (H - PAD_Y * 2);
+                      const val = Math.round(maxVal * (1 - pct));
+                      return (
+                        <g key={i}>
+                          <line x1={PAD_X} x2={W - PAD_X / 2} y1={y} y2={y}
+                            stroke={isDark ? '#1f2937' : '#e5e7eb'} strokeWidth="1"/>
+                          <text x={PAD_X - 6} y={y + 4} textAnchor="end" fontSize="10"
+                            fill={isDark ? '#4b5563' : '#9ca3af'}>{val}</text>
+                        </g>
+                      );
+                    })}
                     {/* Area fills */}
                     <polygon points={area('submissions')} fill="url(#gSub)"/>
                     <polygon points={area('solved')} fill="url(#gSol)"/>
                     {/* Lines */}
-                    <polyline points={polyline('submissions')} fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    <polyline points={polyline('solved')} fill="none" stroke="#10B981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    {/* Dots */}
-                    {activityData.map((d,i) => (
+                    <polyline points={polyline('submissions')} fill="none" stroke="#F43F5E"
+                      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <polyline points={polyline('solved')} fill="none" stroke="#10B981"
+                      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    {/* Dots + tooltips */}
+                    {activityData.map((d, i) => (
                       <g key={i}>
-                        <circle cx={xs[i]} cy={ys('submissions')[i]} r="1.5" fill="#F43F5E"/>
-                        <circle cx={xs[i]} cy={ys('solved')[i]} r="1.5" fill="#10B981"/>
+                        <circle cx={xs[i]} cy={ys('submissions')[i]} r="4" fill="#F43F5E"
+                          stroke={isDark ? '#111827' : '#fff'} strokeWidth="2"/>
+                        <circle cx={xs[i]} cy={ys('solved')[i]} r="4" fill="#10B981"
+                          stroke={isDark ? '#111827' : '#fff'} strokeWidth="2"/>
+                        {/* Value label on hover via title */}
+                        <title>{d.day}: {d.submissions} submissions, {d.solved} solved</title>
                       </g>
                     ))}
-                    {/* X labels */}
-                    {activityData.map((d,i) => (
-                      <text key={i} x={xs[i]} y={H-6} textAnchor="middle" fontSize="5" fill={isDark?'#6b7280':'#9ca3af'}>{d.day}</text>
+                    {/* X-axis day labels */}
+                    {activityData.map((d, i) => (
+                      <text key={i} x={xs[i]} y={H - 8} textAnchor="middle" fontSize="11"
+                        fontWeight="500" fill={isDark ? '#6b7280' : '#9ca3af'}>{d.day}</text>
                     ))}
                   </svg>
-                  <div className="flex items-center gap-4 mt-1 justify-center">
-                    <span className="flex items-center gap-1 text-xs text-gray-400"><span className="w-3 h-0.5 bg-rose-500 inline-block rounded"/>Submissions</span>
-                    <span className="flex items-center gap-1 text-xs text-gray-400"><span className="w-3 h-0.5 bg-emerald-500 inline-block rounded"/>Solved</span>
+                  <div className="flex items-center gap-6 mt-2 justify-center">
+                    <span className="flex items-center gap-2 text-xs text-gray-400">
+                      <span className="w-4 h-0.5 bg-rose-500 inline-block rounded"/>
+                      Submissions
+                    </span>
+                    <span className="flex items-center gap-2 text-xs text-gray-400">
+                      <span className="w-4 h-0.5 bg-emerald-500 inline-block rounded"/>
+                      Solved
+                    </span>
                   </div>
                 </div>
               );
-            })() : <div className="h-[200px] flex items-center justify-center"><Loader /></div>}
+            })() : <div className="h-[220px] flex items-center justify-center"><Loader /></div>}
           </div>
 
           {/* Difficulty Breakdown */}
