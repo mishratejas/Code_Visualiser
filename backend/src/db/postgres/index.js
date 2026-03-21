@@ -60,6 +60,10 @@ const connectPostgreSQL = async () => {
     await defineAssociations();
 
     // ── Group & GroupMember ────────────────────────────────────────────────
+    // Drop slug unique constraint before alter — Sequelize generates invalid
+    // 'ADD UNIQUE' syntax on Neon/PostgreSQL; dropping first lets it recreate cleanly
+    await safeDropConstraint('groups', 'groups_slug_key');
+    await safeDropConstraint('groups', 'groups_slug_unique');
     await Group.sync({ alter: true });
     await GroupMember.sync({ alter: true });
     console.log('✅ Group & GroupMember tables synced');
