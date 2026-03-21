@@ -37,8 +37,8 @@ const ContestSubmission = sequelize.define('ContestSubmission', {
   submission_id: {
     type: DataTypes.STRING(255),
     allowNull: false,
-    unique: true,
     comment: 'Reference to MongoDB submission'
+    // unique enforced via named index below, not inline, to avoid Sequelize alter() SQL bug
   },
   
   language: {
