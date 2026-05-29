@@ -206,22 +206,7 @@ const Home = () => {
         ></div>
       </div>
 
-      {/* Theme Toggle Button */}
-      <button
-        onClick={toggleTheme}
-        className={`fixed top-24 right-4 z-50 p-3 rounded-full ${
-          isDark
-            ? "bg-gray-800 text-yellow-400 hover:bg-gray-700"
-            : "bg-white text-gray-700 hover:bg-gray-100 shadow-lg"
-        } transition-all duration-300`}
-        aria-label="Toggle theme"
-      >
-        {isDark ? (
-          <FiSun className="w-5 h-5" />
-        ) : (
-          <FiMoon className="w-5 h-5" />
-        )}
-      </button>
+  
 
       {/* Main Content */}
       <div className="relative z-10">
