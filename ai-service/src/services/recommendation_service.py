@@ -62,13 +62,27 @@ class RecommendationService:
         strong = sorted(topic_counts, key=lambda t: -topic_counts[t])[:5]
         weak   = [t for t in topic_counts if topic_counts[t] <= 1]
 
+        # Build the problem list outside the f-string.
+        # Putting json.dumps([{"key": val} for ...]) inside an f-string causes
+        # Python to parse the inner {{ }} as a set literal containing a dict,
+        # raising TypeError: unhashable type: 'dict' before any logic runs.
+        problems_json = json.dumps([
+            {
+                "id": str(p.get("_id", "")),
+                "title": p.get("title", ""),
+                "difficulty": p.get("difficulty", ""),
+                "tags": p.get("tags", []),
+            }
+            for p in unsolved[:30]
+        ])
+
         prompt = f"""Recommend {limit} problems for this user.
 Easy solved: {user_stats.get('easySolved', 0)}, Medium: {user_stats.get('mediumSolved', 0)}, Hard: {user_stats.get('hardSolved', 0)}
 Strong topics: {strong}
 Weak topics: {weak}
 
 Available problems (first 30):
-{json.dumps([{{"id": str(p.get("_id","")), "title": p.get("title",""), "difficulty": p.get("difficulty",""), "tags": p.get("tags",[])}} for p in unsolved[:30]])}
+{problems_json}
 
 Return ONLY a JSON array:
 [{{"problem_id": "...", "title": "...", "reason": "why this helps", "priority": "high"}}]"""

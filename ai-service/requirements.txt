@@ -13,6 +13,3 @@ redis==5.0.1
 
 # HTTP client
 httpx==0.25.1
-
-# Security
-python-jose[cryptography]==3.3.0

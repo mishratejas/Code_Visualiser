@@ -132,6 +132,52 @@ const runInDocker = async ({ execCmd, execArgs, inputData, timeoutMs, language }
 };
 
 
+// ─── Sandboxed compilation ────────────────────────────────────────────────────
+// H6 fix: g++/javac used to run via raw execAsync() directly on the host, with
+// only a wall-clock timeout — no memory/pid limit. A submission could allocate
+// unbounded memory or fork during compilation (e.g. template metaprogramming
+// bombs, huge macro expansion) and exhaust the host before the timeout fired,
+// completely bypassing the Docker/ulimit sandbox that protects the *execution*
+// step. This wraps the compiler invocation with the same ulimit bounds used for
+// running submitted code (256MB virtual memory, 32MB output file size, 50 procs)
+// on Linux/Mac. On Windows (no ulimit) it falls back to the previous behaviour,
+// same as the "basic" execution sandbox — documented dev-only, not for production.
+const compileSandboxed = (compileCmd, timeoutMs = 10000) => {
+  if (process.platform === 'win32') {
+    return execAsync(compileCmd, { timeout: timeoutMs });
+  }
+  return new Promise((resolve, reject) => {
+    let stdout = '';
+    let stderr = '';
+    const proc = spawn('bash', [
+      '-c',
+      `ulimit -v 262144 -f 32768 -u 50; ${compileCmd}`,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    const timer = setTimeout(() => killProc(proc), timeoutMs);
+
+    proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        const err = new Error(stderr || `Compilation exited with code ${code}`);
+        err.stderr = stderr;
+        reject(err);
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+
+    proc.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+  });
+};
+
+
 // ─── ulimit sandbox (Linux/Mac) ───────────────────────────────────────────────
 const runWithUlimit = ({ execCmd, execArgs, inputData, timeoutMs }) => {
   return new Promise((resolve) => {
@@ -262,7 +308,7 @@ const executeCode = async (code, language, testCases, timeLimit, memoryLimit) =>
         // Compile C++ with optimizations
         try {
           const compileCmd = `g++ -std=c++17 -O2 "${filePath}" -o "${executablePath}"`;
-          const { stderr } = await execAsync(compileCmd, { timeout: 10000 });
+          const { stderr } = await compileSandboxed(compileCmd, 10000);
           if (stderr && !stderr.includes("warning")) {
             return {
               verdict: VERDICT.COMPILATION_ERROR,
@@ -304,7 +350,7 @@ const executeCode = async (code, language, testCases, timeLimit, memoryLimit) =>
         // Compile Java
         try {
           const compileCmd = `javac "${filePath}"`;
-          const { stderr } = await execAsync(compileCmd, { timeout: 10000 });
+          const { stderr } = await compileSandboxed(compileCmd, 10000);
           if (stderr) {
             return {
               verdict: VERDICT.COMPILATION_ERROR,
@@ -449,18 +495,6 @@ const executeCode = async (code, language, testCases, timeLimit, memoryLimit) =>
       if (result.passed) testCasesPassed++;
     }
 
-    // Clean up compiled files
-    try {
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      if (language === "cpp" && fs.existsSync(executablePath)) fs.unlinkSync(executablePath);
-      if (language === "java") {
-        const classFile = path.join(tempDir, `${fileName}.class`);
-        if (fs.existsSync(classFile)) fs.unlinkSync(classFile);
-      }
-    } catch (cleanupError) {
-      console.error('Cleanup error:', cleanupError);
-    }
-
     // Determine verdict based on what actually failed
     let verdict = VERDICT.ACCEPTED;
     if (testCasesPassed < testCases.length) {
@@ -498,6 +532,17 @@ const executeCode = async (code, language, testCases, timeLimit, memoryLimit) =>
         error: "Execution failed",
       })),
     };
+  } finally {
+    try {
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      if (executablePath && fs.existsSync(executablePath)) fs.unlinkSync(executablePath);
+      if (language === "java" && fileName) {
+        const classFile = path.join(tempDir, `${fileName}.class`);
+        if (fs.existsSync(classFile)) fs.unlinkSync(classFile);
+      }
+    } catch (cleanupError) {
+      console.error("Cleanup error:", cleanupError);
+    }
   }
 };
 

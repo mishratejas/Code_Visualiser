@@ -4,7 +4,7 @@ import {
   getContestReport,
   compareSubmissions,
   reviewPair,
-} from '../controllers/palgiarism.controller.js';
+} from '../controllers/plagiarism.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();

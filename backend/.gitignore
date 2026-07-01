@@ -18,6 +18,13 @@ ehthumbs.db
 *.temp
 
 # -------------------------
+# Judge execution artifacts
+# -------------------------
+temp/
+*.class
+*.exe
+
+# -------------------------
 # Secrets / env
 # -------------------------
 # dotenv environment variables

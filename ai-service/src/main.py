@@ -16,7 +16,6 @@ from src.cache import cache_manager
 
 # Routes — imported AFTER config so GEMINI_READY is set
 from src.api.routes.analysis import router as analysis_router
-from src.api.routes.plagiarism import router as plagiarism_router
 from src.api.routes.interview import router as interview_router
 from src.api.routes.recommendations import router as recommendations_router
 
@@ -55,10 +54,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(analysis_router,       prefix="/api/v1/analyze",          tags=["Analysis"])
-app.include_router(plagiarism_router,     prefix="/api/v1/plagiarism",        tags=["Plagiarism"])
-app.include_router(interview_router,      prefix="/api/v1/interview",         tags=["Interview"])
-app.include_router(recommendations_router,prefix="/api/v1/recommendations",   tags=["Recommendations"])
+app.include_router(analysis_router,        prefix="/api/v1/analyze",         tags=["Analysis"])
+app.include_router(interview_router,       prefix="/api/v1/interview",        tags=["Interview"])
+app.include_router(recommendations_router, prefix="/api/v1/recommendations",  tags=["Recommendations"])
 
 
 @app.get("/health")

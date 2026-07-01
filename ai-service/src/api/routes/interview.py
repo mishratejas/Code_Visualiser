@@ -40,7 +40,9 @@ class ExplainRequest(BaseModel):
 
 @router.post("/question")
 async def get_question(req: QuestionRequest):
-    result = await interview_service.get_question(req.difficulty, req.topic, req.user_id)
+    # Service expects topics as a list (or None), and the method is named generate_question
+    topics = [req.topic] if req.topic else None
+    result = await interview_service.generate_question(req.difficulty, topics, req.user_id)
     return {"success": True, "data": result}
 
 
@@ -48,17 +50,20 @@ async def get_question(req: QuestionRequest):
 async def evaluate(req: EvaluateRequest):
     if not req.code.strip():
         raise HTTPException(400, "Code is required")
-    result = await interview_service.evaluate_solution(req.code, req.language, req.question, req.explanation)
+    # Service signature: evaluate_solution(question, code, language)
+    result = await interview_service.evaluate_solution(req.question, req.code, req.language)
     return {"success": True, "data": result}
 
 
 @router.post("/hint")
 async def get_hint(req: HintRequest):
-    result = await interview_service.get_hint(req.code, req.question, req.hint_level)
+    # Service signature: get_hint(question, current_code, hint_level)
+    result = await interview_service.get_hint(req.question, req.code, req.hint_level)
     return {"success": True, "data": result}
 
 
 @router.post("/check-explanation")
 async def check_explanation(req: ExplainRequest):
-    result = await interview_service.check_explanation(req.explanation, req.question)
+    # Method is named evaluate_explanation; signature is (question, explanation)
+    result = await interview_service.evaluate_explanation(req.question, req.explanation)
     return {"success": True, "data": result}
