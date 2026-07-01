@@ -231,7 +231,7 @@ export const googleAuthCallback = asyncHandler(async (req, res) => {
     username: req.user.username,
     email: req.user.email,
     role: req.user.role,
-    avatar: req.user.avatar,
+    avatar: req.user.profile?.avatar || '',
     isEmailVerified: req.user.isEmailVerified
   };
 

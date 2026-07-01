@@ -34,9 +34,36 @@ const userSchema = new mongoose.Schema(
 
     password: {
       type: String,
-      required: [true, "Password is required"],
+      // Only required for accounts that actually use a password. Google
+      // sign-in never sets one — this used to be unconditionally required,
+      // which broke Google auth two ways: (1) User.create() for a brand-new
+      // Google user threw a validation error immediately, and (2) for an
+      // existing user being linked to Google, password has `select: false`
+      // so it isn't loaded by a plain User.findOne(); calling .save() on
+      // that partially-loaded document re-validates the whole schema and
+      // saw password "missing", throwing the same error.
+      required: [
+        function () { return this.authProvider !== "google"; },
+        "Password is required",
+      ],
       minlength: [6, "Password must be at least 6 characters"],
       select: false,
+    },
+
+    // Set by Google OAuth (see src/config/passport.js). Previously written
+    // to by passport.js already, but silently dropped on every save because
+    // this field didn't exist on the schema — Mongoose strips unknown paths
+    // by default.
+    googleId: {
+      type: String,
+      index: true,
+      sparse: true, // allows many docs with no googleId without a unique-null conflict
+    },
+
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      default: "local",
     },
 
     role: {
@@ -413,6 +440,12 @@ userSchema.pre("save", async function () {
 
 // Methods
 userSchema.methods.comparePassword = async function (candidatePassword) {
+  // Google-only accounts have no password hash — bcrypt.compare() throws on
+  // a missing hash instead of returning false, which would otherwise surface
+  // as an unhandled 500 (not a clean "invalid credentials") if someone tries
+  // the password-login form for an account that was only ever created via
+  // Google sign-in.
+  if (!this.password) return false;
   return await bcrypt.compare(candidatePassword, this.password);
 };
 

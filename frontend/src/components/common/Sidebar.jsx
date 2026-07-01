@@ -7,6 +7,7 @@ import {
   FiUser, FiSettings, FiBell, FiAward,
   FiFileText, FiHelpCircle, FiLogOut,
   FiChevronLeft, FiChevronRight, FiChevronDown, FiZap, FiUsers,
+  FiTrendingUp,
 } from 'react-icons/fi';
 import api from '../../services/api';
 
@@ -42,6 +43,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }) => {
       ],
     },
     { title: 'Contests',      icon: <FiCalendar  className="w-5 h-5" />, path: '/contests' },
+    { title: 'Learning Path', icon: <FiTrendingUp className="w-5 h-5" />, path: '/learning-path' },
     { title: 'Submissions',   icon: <FiFileText  className="w-5 h-5" />, path: '/submissions' },
     { title: 'Leaderboard',   icon: <FiBarChart2 className="w-5 h-5" />, path: '/leaderboard' },
     { title: 'Groups',        icon: <FiUsers     className="w-5 h-5" />, path: '/groups' },

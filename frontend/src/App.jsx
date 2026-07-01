@@ -35,6 +35,7 @@ const ContestProblem = lazy(() => import("./pages/ContestProblem"));
 const GoogleAuthSuccess = lazy(() => import("./pages/GoogleAuthSuccess"));
 const ForgotPassword   = lazy(() => import("./pages/ForgotPassword"));
 const ResetPassword    = lazy(() => import("./pages/ResetPassword"));
+const OrganizerRegister = lazy(() => import("./pages/OrganizerRegister"));
 
 // Other pages
 const ProblemCategories = lazy(() => import("./pages/ProblemCategories"));
@@ -49,6 +50,7 @@ const Discuss = lazy(() => import("./pages/Discuss"));
 const Groups = lazy(() => import("./pages/Groups"));
 const GroupDetail = lazy(() => import("./pages/GroupDetail"));
 const PlagiarismPanel = lazy(() => import("./pages/PlagiarismPanel"));
+const LearningPath = lazy(() => import("./pages/LearningPath"));
 
 // Layout wrapper
 const Layout = ({ children, showSidebar = false }) => {
@@ -90,6 +92,7 @@ const App = () => {
                     <Route path="/" element={<Layout><Home /></Layout>} />
                     <Route path="/login" element={<Layout><Login /></Layout>} />
                     <Route path="/register" element={<Layout><Register /></Layout>} />
+                    <Route path="/register/organizer" element={<Layout><OrganizerRegister /></Layout>} />
                     <Route path="/forgot-password" element={<Layout><ForgotPassword /></Layout>} />
                     <Route path="/reset-password/:token" element={<Layout><ResetPassword /></Layout>} />
                     <Route path="/auth/google-success" element={<Layout><GoogleAuthSuccess /></Layout>} />
@@ -230,6 +233,13 @@ const App = () => {
                     <Route path="/interview" element={
                       <PrivateRoute>
                         <Layout showSidebar={false}><Interview /></Layout>
+                      </PrivateRoute>
+                    } />
+
+                    {/* Learning Path */}
+                    <Route path="/learning-path" element={
+                      <PrivateRoute>
+                        <Layout showSidebar={true}><LearningPath /></Layout>
                       </PrivateRoute>
                     } />
 

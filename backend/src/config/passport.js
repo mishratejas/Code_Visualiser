@@ -16,8 +16,17 @@ passport.use(
 
         if (user) {
           if (!user.googleId) {
-            user.googleId = profile.id;
-            await user.save();
+            // Use findOneAndUpdate rather than fetch+mutate+save: `.save()`
+            // re-validates the WHOLE document, and password has
+            // `select: false` so it wasn't loaded by the findOne above —
+            // Mongoose would see password as "missing" and throw, even
+            // though it's untouched. findOneAndUpdate only touches the
+            // given paths.
+            user = await User.findOneAndUpdate(
+              { _id: user._id },
+              { $set: { googleId: profile.id } },
+              { new: true },
+            );
           }
           return done(null, user);
         }
@@ -27,9 +36,11 @@ passport.use(
                    Math.floor(Math.random() * 1000),
           email: profile.emails[0].value,
           googleId: profile.id,
-          avatar: profile.photos[0]?.value,
+          authProvider: 'google', // makes the schema's conditional password requirement skip password
+          profile: {
+            avatar: profile.photos[0]?.value || '',
+          },
           isEmailVerified: true,
-          authProvider: 'google'
         });
 
         done(null, user);

@@ -54,6 +54,8 @@ const connectPostgreSQL = async () => {
     const User             = (await import('../../models/postgres/User.models.js')).default;
     const ContestParticipant = (await import('../../models/postgres/ContestParticipant.models.js')).default;
     const ContestSubmission  = (await import('../../models/postgres/ContestSubmission.models.js')).default;
+    const ContestRatingHistory = (await import('../../models/postgres/ContestRatingHistory.models.js')).default;
+    const ContestRejudge      = (await import('../../models/postgres/ContestRejudge.models.js')).default;
     const Group            = (await import('../../models/postgres/Group.models.js')).default;
     const GroupMember      = (await import('../../models/postgres/GroupMember.models.js')).default;
 
@@ -85,6 +87,14 @@ const connectPostgreSQL = async () => {
     await safeDropConstraint('contest_submissions', 'contest_submissions_submission_id_key');
     await ContestSubmission.sync({ alter: true });
     console.log('✅ ContestSubmission table synced (time_from_start column ensured)');
+
+    // ── ContestRatingHistory & ContestRejudge (L6/L7) ──────────────────────
+    // Brand-new tables — no existing-constraint dance needed like the older
+    // tables above (that workaround is only for constraints Sequelize's
+    // alter:true tries to re-add on a table that already has them).
+    await ContestRatingHistory.sync({ alter: true });
+    await ContestRejudge.sync({ alter: true });
+    console.log('✅ ContestRatingHistory & ContestRejudge tables synced');
 
     // ── group_id column on contests ────────────────────────────────────────
     await addColumnIfMissing(

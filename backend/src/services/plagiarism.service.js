@@ -20,6 +20,7 @@ import Submission from '../models/submission.models.js';
 import ContestSubmission from '../models/postgres/ContestSubmission.models.js';
 import User from '../models/user.models.js';
 import logger from '../config/logger.js';
+import redis from '../config/redis.config.js';
 
 // ── Winnowing ─────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,50 @@ function winnowFingerprint(code, language, k = 7, w = 5) {
     }
   }
   return fingerprints;
+}
+
+// ── Fingerprint cache (L4 fix) ──────────────────────────────────────────────
+// A submission's code never changes after it's created, so its winnowing
+// fingerprint is a pure function of immutable data — safe to cache
+// indefinitely (long TTL, not a correctness concern; TTL just bounds Redis
+// memory). Follows the same try/catch-and-degrade pattern as redisService.js:
+// a cache failure should never break plagiarism checking, just make it
+// slower for that one call.
+const FINGERPRINT_CACHE_TTL = 60 * 60 * 24 * 30; // 30 days
+
+async function getCachedFingerprint(submissionId, language) {
+  try {
+    const raw = await redis.get(`plagiarism:fp:${submissionId}:${language}`);
+    if (!raw) return null;
+    return new Set(JSON.parse(raw));
+  } catch (error) {
+    logger.warn(`Fingerprint cache read failed for ${submissionId}: ${error.message}`);
+    return null;
+  }
+}
+
+async function cacheFingerprint(submissionId, language, fingerprintSet) {
+  try {
+    await redis.setex(
+      `plagiarism:fp:${submissionId}:${language}`,
+      FINGERPRINT_CACHE_TTL,
+      JSON.stringify(Array.from(fingerprintSet)),
+    );
+  } catch (error) {
+    logger.warn(`Fingerprint cache write failed for ${submissionId}: ${error.message}`);
+  }
+}
+
+// Cached wrapper around winnowFingerprint — checks Redis first, computes and
+// populates on miss. Falls back to plain (uncached) computation if Redis is
+// unavailable, same graceful-degrade philosophy as the rest of the codebase.
+async function getFingerprint(submissionId, code, language) {
+  const cached = await getCachedFingerprint(submissionId, language);
+  if (cached) return cached;
+
+  const fp = winnowFingerprint(code, language);
+  await cacheFingerprint(submissionId, language, fp);
+  return fp;
 }
 
 function jaccardSimilarity(setA, setB) {
@@ -208,9 +253,9 @@ class PlagiarismService {
 
       const subMap = Object.fromEntries(mongoSubs.map(s => [s._id.toString(), s]));
 
-      // Step 4 — merge metadata + code, pre-compute fingerprints
-      const submissions = bestSubs
-        .map(cs => {
+      // Step 4 — merge metadata + code, get fingerprints (cached where possible)
+      const submissions = (await Promise.all(
+        bestSubs.map(async (cs) => {
           const mongo = subMap[cs.submission_id];
           if (!mongo?.code) return null;
           const lang = (cs.language || mongo.language || 'python').toLowerCase();
@@ -221,10 +266,10 @@ class PlagiarismService {
             code:          mongo.code,
             language:      lang,
             username:      mongo.user?.username || cs.user_id,
-            _fp:           winnowFingerprint(mongo.code, lang),
+            _fp:           await getFingerprint(cs.submission_id, mongo.code, lang),
           };
         })
-        .filter(Boolean);
+      )).filter(Boolean);
 
       logger.info(`Plagiarism check contest ${contestId}: ${submissions.length} best submissions from ${new Set(submissions.map(s => s.user_id)).size} users`);
 

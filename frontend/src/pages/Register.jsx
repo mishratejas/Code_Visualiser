@@ -349,6 +349,15 @@ const Register = () => {
                   Sign in
                 </Link>
               </p>
+              <p className={`text-xs mt-1 ${subTextClass}`}>
+                Organizing a contest?{' '}
+                <Link
+                  to="/register/organizer"
+                  className={`font-medium ${isDark ? 'text-rose-400 hover:text-rose-300' : 'text-rose-600 hover:text-rose-500'}`}
+                >
+                  Register as an organizer
+                </Link>
+              </p>
             </div>
           </Card>
 
