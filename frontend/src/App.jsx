@@ -17,40 +17,40 @@ import Loader from "./components/common/Loader";
 
 // Lazy load pages
 const Home = lazy(() => import("./pages/Home"));
-const Login = lazy(() => import("./pages/Login"));
-const Register = lazy(() => import("./pages/Register"));
+const Login = lazy(() => import("./pages/auth/Login"));
+const Register = lazy(() => import("./pages/auth/Register"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Problems = lazy(() => import("./pages/Problems"));
-const Problem = lazy(() => import("./pages/Problem"));
-const Submit = lazy(() => import("./pages/Submit"));
-const Submissions = lazy(() => import("./pages/Submissions"));
-const Contests = lazy(() => import("./pages/Contests"));
-const CreateContest = lazy(() => import("./pages/CreateContest"));
-const ContestDetail = lazy(() => import("./pages/ContestDetail"));
-const LiveContest = lazy(() => import("./pages/LiveContest"));
-const AddProblemsToContest = lazy(() => import("./pages/AddProblemsToContest"));
-const Profile = lazy(() => import("./pages/Profile"));
-const Settings = lazy(() => import("./pages/Settings"));
-const ContestProblem = lazy(() => import("./pages/ContestProblem"));
-const GoogleAuthSuccess = lazy(() => import("./pages/GoogleAuthSuccess"));
-const ForgotPassword   = lazy(() => import("./pages/ForgotPassword"));
-const ResetPassword    = lazy(() => import("./pages/ResetPassword"));
-const OrganizerRegister = lazy(() => import("./pages/OrganizerRegister"));
+const Problems = lazy(() => import("./pages/problem/Problems"));
+const Problem = lazy(() => import("./pages/problem/Problem"));
+const Submit = lazy(() => import("./pages/problem/Submit"));
+const Submissions = lazy(() => import("./pages/problem/Submissions"));
+const Contests = lazy(() => import("./pages/contest/Contests"));
+const CreateContest = lazy(() => import("./pages/contest/CreateContest"));
+const ContestDetail = lazy(() => import("./pages/contest/ContestDetail"));
+const LiveContest = lazy(() => import("./pages/contest/LiveContest"));
+const AddProblemsToContest = lazy(() => import("./pages/contest/AddProblemsToContest"));
+const Profile = lazy(() => import("./pages/user/Profile"));
+const Settings = lazy(() => import("./pages/user/Settings"));
+const ContestProblem = lazy(() => import("./pages/contest/ContestProblem"));
+const GoogleAuthSuccess = lazy(() => import("./pages/auth/GoogleAuthSuccess"));
+const ForgotPassword = lazy(() => import("./pages/auth/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
+const OrganizerRegister = lazy(() => import("./pages/auth/OrganizerRegister"));
 
 // Other pages
-const ProblemCategories = lazy(() => import("./pages/ProblemCategories"));
-const FavoriteProblems = lazy(() => import("./pages/FavoriteProblems"));
-const PracticePage = lazy(() => import("./pages/PracticePage"));
-const Leaderboard = lazy(() => import("./pages/Leaderboard"));
-const Achievements = lazy(() => import("./pages/Achievements"));
+const ProblemCategories = lazy(() => import("./pages/problem/ProblemCategories"));
+const FavoriteProblems = lazy(() => import("./pages/problem/FavoriteProblems"));
+const PracticePage = lazy(() => import("./pages/problem/PracticePage"));
+const Leaderboard = lazy(() => import("./pages/social/Leaderboard"));
+const Achievements = lazy(() => import("./pages/user/Achievements"));
 const Help = lazy(() => import("./pages/Help"));
-const Notifications = lazy(() => import("./pages/Notifications"));
-const Interview = lazy(() => import("./pages/Interview"));
-const Discuss = lazy(() => import("./pages/Discuss"));
-const Groups = lazy(() => import("./pages/Groups"));
-const GroupDetail = lazy(() => import("./pages/GroupDetail"));
-const PlagiarismPanel = lazy(() => import("./pages/PlagiarismPanel"));
-const LearningPath = lazy(() => import("./pages/LearningPath"));
+const Notifications = lazy(() => import("./pages/user/Notifications"));
+const Interview = lazy(() => import("./pages/ai/Interview"));
+const Discuss = lazy(() => import("./pages/social/Discuss"));
+const Groups = lazy(() => import("./pages/social/Groups"));
+const GroupDetail = lazy(() => import("./pages/social/GroupDetail"));
+const PlagiarismPanel = lazy(() => import("./pages/ai/PlagiarismPanel"));
+const LearningPath = lazy(() => import("./pages/ai/LearningPath"));
 
 // Layout wrapper
 const Layout = ({ children, showSidebar = false }) => {

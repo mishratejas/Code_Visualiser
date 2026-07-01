@@ -58,7 +58,7 @@ const ContestCard = ({ contest }) => {
       bg: 'bg-gray-500/20',
       text: 'text-gray-400',
       label: 'Ended',
-      icon: FiTrophy
+      icon: FaTrophy
     }
   };
 
