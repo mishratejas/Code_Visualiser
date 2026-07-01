@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { FiFilter, FiChevronDown, FiChevronUp, FiCode, FiClock, FiCpu, FiX, FiCopy, FiEye } from 'react-icons/fi';
 import { BsCheckCircleFill, BsXCircleFill, BsClock } from 'react-icons/bs';
@@ -84,10 +85,7 @@ const CodeModal = ({ submission, onClose }) => {
 
 const Submissions = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [submissions, setSubmissions] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
-  const [totalPages, setTotalPages] = useState(1);
 
   // Filter states
   const [status, setStatus] = useState(searchParams.get('status') || '');
@@ -137,51 +135,62 @@ const Submissions = () => {
     { value: 'memory', label: 'Low Memory' },
   ];
 
-  useEffect(() => {
-    fetchSubmissions();
-  }, [page, status, language, problem, sortBy]);
-
-  const fetchSubmissions = async () => {
-    try {
-      setLoading(true);
-      const params = {
-        page,
-        limit,
-        status: status || undefined,
-        language: language && language !== 'All' ? language : undefined,
-        problem: problem || undefined,
-        sort: sortBy,
-      };
-
-      const response = await api.get('/submissions', { params });
-      
-      // FIXED: Handle different response structures
-      const submissionsData = response.submissions || 
-                             response.data?.submissions || 
-                             response.data || 
-                             [];
-      const totalPagesData = response.totalPages || 
-                            response.data?.totalPages || 
-                            1;
-      
-      setSubmissions(submissionsData);
-      setTotalPages(totalPagesData);
-
-      // Update URL params
-      const newParams = new URLSearchParams();
-      if (status) newParams.set('status', status);
-      if (language && language !== 'All') newParams.set('language', language);
-      if (problem) newParams.set('problem', problem);
-      if (sortBy) newParams.set('sort', sortBy);
-      if (page > 1) newParams.set('page', page.toString());
-
-      setSearchParams(newParams);
-    } catch (error) {
-      toast.error('Failed to fetch submissions');
-    } finally {
-      setLoading(false);
-    }
+  // M5 fix — this used to be fetchSubmissions() called from a useEffect on
+  // [page, status, language, problem, sortBy]. Replaced with useQuery: same
+  // trigger (the query key includes every filter), but now results are
+  // cached per filter combination, concurrent mounts/re-renders don't fire
+  // duplicate requests, and navigating back to a previously-seen filter
+  // combination is instant instead of a full re-fetch.
+  const queryParams = {
+    page,
+    limit,
+    status: status || undefined,
+    language: language && language !== 'All' ? language : undefined,
+    problem: problem || undefined,
+    sort: sortBy,
   };
+
+  const { data: queryData, isLoading: loading, isError } = useQuery({
+    queryKey: ['submissions', queryParams],
+    queryFn: async () => {
+      const response = await api.get('/submissions', { params: queryParams });
+      // FIXED: Handle different response structures
+      const submissionsData = response.submissions ||
+                             response.data?.submissions ||
+                             response.data ||
+                             [];
+      const totalPagesData = response.totalPages ||
+                            response.data?.totalPages ||
+                            1;
+      return { submissions: submissionsData, totalPages: totalPagesData };
+    },
+    // v5's replacement for keepPreviousData: true — keeps the previous
+    // page's list on screen while the next page loads instead of flashing
+    // an empty state, then swaps once the new data arrives.
+    placeholderData: (previousData) => previousData,
+  });
+
+  const submissions = queryData?.submissions || [];
+  const totalPages = queryData?.totalPages || 1;
+
+  // useQuery (v5) no longer has an onError callback — surface fetch
+  // failures as a toast the same way the old catch block did.
+  useEffect(() => {
+    if (isError) toast.error('Failed to fetch submissions');
+  }, [isError]);
+
+  // URL param syncing is a separate concern from the actual data fetch —
+  // keeps the URL reflecting current filters without coupling it to the
+  // query lifecycle.
+  useEffect(() => {
+    const newParams = new URLSearchParams();
+    if (status) newParams.set('status', status);
+    if (language && language !== 'All') newParams.set('language', language);
+    if (problem) newParams.set('problem', problem);
+    if (sortBy) newParams.set('sort', sortBy);
+    if (page > 1) newParams.set('page', page.toString());
+    setSearchParams(newParams);
+  }, [status, language, problem, sortBy, page, setSearchParams]);
 
   const handleResetFilters = () => {
     setStatus('');
