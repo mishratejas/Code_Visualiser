@@ -159,6 +159,11 @@ class App {
     const apiPrefix = `${apiBase}/${apiVersion}`;
 
     // Health check endpoint
+    // NOTE: `routes` below is populated from `mountedRoutePrefixes`, which is
+    // filled in as routers are actually registered further down (see the
+    // `mount()` helper). Previously this was a hardcoded array of 6 paths that
+    // silently went stale — notifications/achievements/ai/discuss/groups/
+    // plagiarism were all missing despite being live, mounted routes.
     this.app.get(`${apiPrefix}/health`, (req, res) => {
       const uptime = process.uptime();
       const memoryUsage = process.memoryUsage();
@@ -174,14 +179,7 @@ class App {
         },
         environment: config.server.nodeEnv,
         version: process.env.npm_package_version || "1.0.0",
-        routes: [
-          `${apiPrefix}/auth`,
-          `${apiPrefix}/contests`,
-          `${apiPrefix}/problems`,
-          `${apiPrefix}/submissions`,
-          `${apiPrefix}/users`,
-          `${apiPrefix}/leaderboard`,
-        ],
+        routes: this.mountedRoutePrefixes,
       });
     });
 
@@ -233,21 +231,27 @@ class App {
     // API ROUTES WITH VERSION PREFIX
     // ============================================
 
-    this.app.use(`${apiPrefix}/auth`, authRoutes);
-    this.app.use(`${apiPrefix}/contests`, contestRoutes);
-    this.app.use(`${apiPrefix}/problems`, problemRoutes);
-    this.app.use(`${apiPrefix}/submissions`, submissionRoutes);
-    this.app.use(`${apiPrefix}/users`, userRoutes);
-    this.app.use(`${apiPrefix}/leaderboard`, leaderboardRoutes);
+    this.mountedRoutePrefixes = [];
+    const mount = (prefix, router) => {
+      this.app.use(prefix, router);
+      this.mountedRoutePrefixes.push(prefix);
+    };
+
+    mount(`${apiPrefix}/auth`, authRoutes);
+    mount(`${apiPrefix}/contests`, contestRoutes);
+    mount(`${apiPrefix}/problems`, problemRoutes);
+    mount(`${apiPrefix}/submissions`, submissionRoutes);
+    mount(`${apiPrefix}/users`, userRoutes);
+    mount(`${apiPrefix}/leaderboard`, leaderboardRoutes);
 
     // For backward compatibility, also register routes without version
     this.app.use(`${apiBase}/auth`, authRoutes);
-    this.app.use(`${apiPrefix}/notifications`, notificationRoutes);
-    this.app.use(`${apiPrefix}/achievements`, achievementRoutes);
-    this.app.use(`${apiPrefix}/ai`,           aiRoutes);
-    this.app.use(`${apiPrefix}/discuss`,       discussRoutes);
-    this.app.use(`${apiPrefix}/groups`,        groupRoutes);
-    this.app.use(`${apiPrefix}/plagiarism`,    plagiarismRoutes);
+    mount(`${apiPrefix}/notifications`, notificationRoutes);
+    mount(`${apiPrefix}/achievements`, achievementRoutes);
+    mount(`${apiPrefix}/ai`,           aiRoutes);
+    mount(`${apiPrefix}/discuss`,       discussRoutes);
+    mount(`${apiPrefix}/groups`,        groupRoutes);
+    mount(`${apiPrefix}/plagiarism`,    plagiarismRoutes);
 
     // Test endpoint to verify all routes
     this.app.get(`${apiPrefix}/routes`, (req, res) => {

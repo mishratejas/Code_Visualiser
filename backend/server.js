@@ -13,8 +13,13 @@ import App from './src/app.js';
 import dbManager from './src/db/index.js';
 
 // Connect to all databases
-dbManager.connectAll().then(() => {
+dbManager.connectAll().then(async () => {
   console.log('✅ All database connections established');
+
+  // Register the judge queue processor. Must happen after DB connect since
+  // job processing reads/writes Submission and Problem documents. Importing
+  // the module runs judgeQueue.process(...) as a side effect (see file).
+  await import('./src/jobs/judge.worker.js');
   
   // Auto-seed achievements if empty
   import('./src/models/achievement.models.js').then(async m => {
@@ -79,6 +84,8 @@ dbManager.connectAll().then(() => {
     console.log('Received shutdown signal, closing server...');
     
     httpServer.close(async () => {
+      const { default: judgeQueue } = await import('./src/jobs/judge.queue.js');
+      await judgeQueue.close().catch(() => {});
       await dbManager.disconnectAll();
       console.log('Server closed gracefully');
       process.exit(0);

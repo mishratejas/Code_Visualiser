@@ -1,550 +1,26 @@
+/**
+ * submission.controller.js — HTTP route handlers for code submissions.
+ *
+ * M1 fix: this file used to be 1080 lines mixing three concerns — the judge
+ * engine (sandboxing, compiling, running untrusted code), DB side-effect
+ * helpers (user/problem stats updates), and Express route handling. Those
+ * are now split into dedicated files with no HTTP knowledge of their own:
+ *   - src/services/judgeEngine.service.js  → executeCode() + sandbox runners
+ *   - src/services/submissionStats.service.js → updateUserStats/updateProblemStats
+ * This file now only does what a controller should: parse the request,
+ * call the right service, shape the response.
+ */
 import Submission from "../models/submission.models.js";
 import Problem from "../models/problem.models.js";
-import User from "../models/user.models.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import notificationService from "../services/notification.service.js";
-import axios from "axios";
 import ApiError from "../utils/ApiError.js";
-import { exec, execFile, spawn } from "child_process";
-import { promisify } from "util";
-import fs from "fs";
-import os from "os";
-import path from "path";
-import { fileURLToPath } from "url";
 import { VERDICT } from "../constants.js";
-import { v4 as uuidv4 } from "uuid";
 import achievementService from "../services/achievement.service.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const execAsync = promisify(exec);
-const execFileAsync = promisify(execFile);
-
-const AI_SERVICE_URL = process.env.AI_SERVICE_URL || "http://localhost:8001";
-
-// ─── Output size limit: 2MB ───────────────────────────────────────────────────
-const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
-
-// ─── Sandbox configuration ────────────────────────────────────────────────────
-// Three modes: 'docker' (most secure), 'ulimit' (Linux only), 'basic' (Windows/dev)
-// Set SANDBOX_MODE in .env — defaults to 'basic' for local dev
-const SANDBOX_MODE = process.env.SANDBOX_MODE || 'basic';
-const DOCKER_IMAGE  = process.env.JUDGE_DOCKER_IMAGE || 'codearena-judge:latest';
-
-/**
- * Sandboxed code runner
- *
- * MODES:
- *  docker  → each submission runs in a disposable Docker container
- *            memory=256m, cpus=0.5, no network, read-only fs, pids=50
- *            → MOST SECURE — use in production
- *
- *  ulimit  → Linux ulimit restricts memory + file size
- *            → MEDIUM — use on Linux VPS without Docker
- *
- *  basic   → Only timeout SIGKILL + output size limit
- *            → DEVELOPMENT ONLY — never use in production
- */
-const runCodeSandboxed = async ({ execCmd, execArgs, inputData, timeoutMs, language }) => {
-  if (SANDBOX_MODE === 'docker') {
-    return runInDocker({ execCmd, execArgs, inputData, timeoutMs, language });
-  }
-  if (SANDBOX_MODE === 'ulimit' && os.platform() !== 'win32') {
-    return runWithUlimit({ execCmd, execArgs, inputData, timeoutMs });
-  }
-  return runBasic({ execCmd, execArgs, inputData, timeoutMs });
-};
-
-
-// ─── Docker sandbox ───────────────────────────────────────────────────────────
-const runInDocker = async ({ execCmd, execArgs, inputData, timeoutMs, language }) => {
-  const containerName = `judge_${uuidv4().replace(/-/g, '')}`;
-
-  // Write input to temp file on host (Docker will mount it)
-  const hostTmp = path.join(os.tmpdir(), `input_${containerName}.txt`);
-  fs.writeFileSync(hostTmp, inputData || '');
-
-  const dockerArgs = [
-    'run', '--rm',
-    '--name', containerName,
-    '--memory', '256m',           // max RAM
-    '--memory-swap', '256m',      // disable swap
-    '--cpus', '0.5',              // 50% of one CPU
-    '--network', 'none',          // NO internet access
-    '--read-only',                // read-only filesystem
-    '--tmpfs', '/tmp:size=16m',   // only /tmp writable, RAM-based, 16MB
-    '--pids-limit', '50',         // prevents fork bombs
-    '--user', 'nobody',           // non-root
-    '-i',
-    DOCKER_IMAGE,
-    execCmd, ...execArgs,
-  ];
-
-  return new Promise((resolve) => {
-    let outData = '';
-    let errData = '';
-    const killed = { byTimeout: false, byOutput: false };
-
-    const docker = spawn('docker', dockerArgs, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    // Feed input
-    if (inputData) {
-      docker.stdin.write(inputData);
-      docker.stdin.end();
-    }
-
-    docker.stdout.on('data', (chunk) => {
-      outData += chunk.toString();
-      if (Buffer.byteLength(outData) > MAX_OUTPUT_BYTES) {
-        killed.byOutput = true;
-        docker.kill('SIGKILL');
-        execAsync(`docker kill ${containerName}`).catch(() => {});
-      }
-    });
-    docker.stderr.on('data', (chunk) => { errData += chunk.toString(); });
-
-    const timer = setTimeout(() => {
-      killed.byTimeout = true;
-      docker.kill('SIGKILL');
-      execAsync(`docker kill ${containerName}`).catch(() => {});
-    }, timeoutMs);
-
-    docker.on('close', (code) => {
-      clearTimeout(timer);
-      try { fs.unlinkSync(hostTmp); } catch {}
-      if (killed.byTimeout) {
-        resolve({ stdout: '', stderr: 'Time Limit Exceeded', timedOut: true, exitCode: -1 });
-      } else if (killed.byOutput) {
-        resolve({ stdout: outData.slice(0, 1000), stderr: 'Output Limit Exceeded', exitCode: -1 });
-      } else {
-        resolve({ stdout: outData, stderr: errData, exitCode: code });
-      }
-    });
-
-    docker.on('error', (err) => {
-      clearTimeout(timer);
-      resolve({ stdout: '', stderr: `Docker error: ${err.message}`, exitCode: -1 });
-    });
-  });
-};
-
-
-// ─── Sandboxed compilation ────────────────────────────────────────────────────
-// H6 fix: g++/javac used to run via raw execAsync() directly on the host, with
-// only a wall-clock timeout — no memory/pid limit. A submission could allocate
-// unbounded memory or fork during compilation (e.g. template metaprogramming
-// bombs, huge macro expansion) and exhaust the host before the timeout fired,
-// completely bypassing the Docker/ulimit sandbox that protects the *execution*
-// step. This wraps the compiler invocation with the same ulimit bounds used for
-// running submitted code (256MB virtual memory, 32MB output file size, 50 procs)
-// on Linux/Mac. On Windows (no ulimit) it falls back to the previous behaviour,
-// same as the "basic" execution sandbox — documented dev-only, not for production.
-const compileSandboxed = (compileCmd, timeoutMs = 10000) => {
-  if (process.platform === 'win32') {
-    return execAsync(compileCmd, { timeout: timeoutMs });
-  }
-  return new Promise((resolve, reject) => {
-    let stdout = '';
-    let stderr = '';
-    const proc = spawn('bash', [
-      '-c',
-      `ulimit -v 262144 -f 32768 -u 50; ${compileCmd}`,
-    ], { stdio: ['ignore', 'pipe', 'pipe'] });
-
-    const timer = setTimeout(() => killProc(proc), timeoutMs);
-
-    proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-    proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-
-    proc.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        const err = new Error(stderr || `Compilation exited with code ${code}`);
-        err.stderr = stderr;
-        reject(err);
-        return;
-      }
-      resolve({ stdout, stderr });
-    });
-
-    proc.on('error', (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
-  });
-};
-
-
-// ─── ulimit sandbox (Linux/Mac) ───────────────────────────────────────────────
-const runWithUlimit = ({ execCmd, execArgs, inputData, timeoutMs }) => {
-  return new Promise((resolve) => {
-    let outData = '';
-    let errData = '';
-
-    const proc = spawn('bash', [
-      '-c',
-      // ulimit: virtual memory 256MB, file size 32MB, processes 50
-      `ulimit -v 262144 -f 32768 -u 50; ${execCmd} ${execArgs.join(' ')}`,
-    ], { stdio: ['pipe', 'pipe', 'pipe'] });
-
-    if (inputData) { proc.stdin.write(inputData); proc.stdin.end(); }
-
-    proc.stdout.on('data', (chunk) => {
-      outData += chunk.toString();
-      if (Buffer.byteLength(outData) > MAX_OUTPUT_BYTES) proc.kill('SIGKILL');
-    });
-    proc.stderr.on('data', (chunk) => { errData += chunk.toString(); });
-
-    const timer = setTimeout(() => proc.kill('SIGKILL'), timeoutMs);
-    proc.on('close', (code) => {
-      clearTimeout(timer);
-      resolve({ stdout: outData, stderr: errData, exitCode: code });
-    });
-    proc.on('error', (e) => {
-      clearTimeout(timer);
-      resolve({ stdout: '', stderr: e.message, exitCode: -1 });
-    });
-  });
-};
-
-
-// ─── Safe kill helper (Windows-compatible) ───────────────────────────────────
-const killProc = (proc) => {
-  try {
-    if (process.platform === 'win32') {
-      proc.kill(); // Windows does not support signal names like SIGKILL
-    } else {
-      proc.kill('SIGKILL');
-    }
-  } catch (_) {}
-};
-
-// ─── Basic sandbox (Windows / dev only) ──────────────────────────────────────
-const runBasic = ({ execCmd, execArgs, inputData, timeoutMs }) => {
-  return new Promise((resolve) => {
-    let outData = '';
-    let errData = '';
-    let killed = false;
-
-    const proc = spawn(execCmd, execArgs, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-
-    // Always close stdin after writing — critical for fs.readFileSync(0) in JS submissions
-    try { if (inputData) proc.stdin.write(inputData); } catch (_) {}
-    try { proc.stdin.end(); } catch (_) {}
-
-    proc.stdout.on('data', (chunk) => {
-      outData += chunk.toString();
-      if (Buffer.byteLength(outData) > MAX_OUTPUT_BYTES) {
-        killed = true;
-        killProc(proc);
-      }
-    });
-    proc.stderr.on('data', (chunk) => { errData += chunk.toString(); });
-
-    const timer = setTimeout(() => {
-      killed = true;
-      killProc(proc);
-    }, timeoutMs);
-
-    proc.on('close', (code) => {
-      clearTimeout(timer);
-      resolve({ stdout: outData, stderr: errData, exitCode: code, killed, timedOut: killed });
-    });
-    proc.on('error', (e) => {
-      clearTimeout(timer);
-      resolve({ stdout: '', stderr: e.message, exitCode: -1, killed: true });
-    });
-  });
-};
-
-
-// Optimized code execution with better performance
-const executeCode = async (code, language, testCases, timeLimit, memoryLimit) => {
-  const results = [];
-  let maxRuntime = 0;  // wall-clock: parallel tests, max = actual slowest
-  let totalRuntime = 0; // sum of all test case runtimes
-  let testCasesPassed = 0;
-
-  // Create temp directory
-  const tempDir = path.join(__dirname, "../../temp");
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
-  }
-
-  const uniqueId = uuidv4().slice(0, 8);
-  const fileName = `solution_${uniqueId}`;
-  let filePath, executablePath, className;
-
-  try {
-    // Write code to file based on language
-    switch (language) {
-      case "python":
-        filePath = path.join(tempDir, `${fileName}.py`);
-        fs.writeFileSync(filePath, code);
-        break;
-      case "javascript": {
-        filePath = path.join(tempDir, `${fileName}.cjs`);
-        // Add global error handlers so unhandled exceptions appear as RuntimeError
-        // verdict instead of crashing the child Node process (which caused nodemon restarts)
-        const jsWrapper = [
-          "process.on('uncaughtException', (e) => { process.stderr.write(String(e.message || e) + '\\n'); process.exit(1); });",
-          "process.on('unhandledRejection', (e) => { process.stderr.write(String(e) + '\\n'); process.exit(1); });",
-          code
-        ].join('\n');
-        fs.writeFileSync(filePath, jsWrapper);
-        break;
-      }
-      case "cpp":
-        filePath = path.join(tempDir, `${fileName}.cpp`);
-        fs.writeFileSync(filePath, code);
-        executablePath = path.join(tempDir, fileName + (process.platform === "win32" ? ".exe" : ""));
-        
-        // Compile C++ with optimizations
-        try {
-          const compileCmd = `g++ -std=c++17 -O2 "${filePath}" -o "${executablePath}"`;
-          const { stderr } = await compileSandboxed(compileCmd, 10000);
-          if (stderr && !stderr.includes("warning")) {
-            return {
-              verdict: VERDICT.COMPILATION_ERROR,
-              runtime: 0,
-              testCasesPassed: 0,
-              errorMessage: stderr,
-              executionResults: testCases.map((tc, i) => ({
-                testCaseIndex: i,
-                passed: false,
-                input: tc.input,
-                expectedOutput: tc.expectedOutput,
-                actualOutput: "",
-                error: "Compilation Error",
-              })),
-            };
-          }
-        } catch (compileError) {
-          return {
-            verdict: VERDICT.COMPILATION_ERROR,
-            runtime: 0,
-            testCasesPassed: 0,
-            errorMessage: compileError.stderr || "Compilation failed",
-            executionResults: testCases.map((tc, i) => ({
-              testCaseIndex: i,
-              passed: false,
-              input: tc.input,
-              expectedOutput: tc.expectedOutput,
-              actualOutput: "",
-              error: "Compilation Error",
-            })),
-          };
-        }
-        break;
-      case "java":
-        filePath = path.join(tempDir, `${fileName}.java`);
-        className = code.match(/public\s+class\s+(\w+)/)?.[1] || "Solution";
-        fs.writeFileSync(filePath, code);
-        
-        // Compile Java
-        try {
-          const compileCmd = `javac "${filePath}"`;
-          const { stderr } = await compileSandboxed(compileCmd, 10000);
-          if (stderr) {
-            return {
-              verdict: VERDICT.COMPILATION_ERROR,
-              runtime: 0,
-              testCasesPassed: 0,
-              errorMessage: stderr,
-              executionResults: testCases.map((tc, i) => ({
-                testCaseIndex: i,
-                passed: false,
-                input: tc.input,
-                expectedOutput: tc.expectedOutput,
-                actualOutput: "",
-                error: "Compilation Error",
-              })),
-            };
-          }
-        } catch (compileError) {
-          return {
-            verdict: VERDICT.COMPILATION_ERROR,
-            runtime: 0,
-            testCasesPassed: 0,
-            errorMessage: compileError.stderr || "Compilation failed",
-            executionResults: testCases.map((tc, i) => ({
-              testCaseIndex: i,
-              passed: false,
-              input: tc.input,
-              expectedOutput: tc.expectedOutput,
-              actualOutput: "",
-              error: "Compilation Error",
-            })),
-          };
-        }
-        break;
-      default:
-        throw new Error(`Unsupported language: ${language}`);
-    }
-
-    // Process test cases in parallel for better performance
-    const testCasePromises = testCases.map(async (testCase, index) => {
-      const startTime = Date.now();
-      
-      // Prepare input
-      let input = testCase.input;
-      if (input.includes('\\n')) {
-        input = input.replace(/\\n/g, '\n');
-      }
-      if (!input.endsWith('\n')) {
-        input += '\n';
-      }
-      const inputFile = path.join(tempDir, `input_${uniqueId}_${index}.txt`);
-      fs.writeFileSync(inputFile, input);
-
-      try {
-        // ── Sandboxed execution ────────────────────────────────────────────
-        // Determine command based on language
-        let execCmd, execArgs;
-        switch (language) {
-          case "python":
-            execCmd = process.platform === "win32" ? "python" : "python3";
-            execArgs = [filePath];
-            break;
-          case "javascript":
-            execCmd = "node";
-            // --stack-size prevents infinite recursion from crashing the host process
-            execArgs = ["--stack-size=65536", filePath];
-            break;
-          case "cpp":
-            execCmd = executablePath;
-            execArgs = [];
-            break;
-          case "java":
-            execCmd = "java";
-            execArgs = ["-cp", tempDir, className];
-            break;
-        }
-
-        const sandboxResult = await runCodeSandboxed({
-          execCmd,
-          execArgs,
-          inputData: input,
-          timeoutMs: timeLimit,
-          language,
-        });
-
-        // Clean up input file
-        try { fs.unlinkSync(inputFile); } catch (e) {}
-
-        const { stdout, stderr } = sandboxResult;
-        if (sandboxResult.timedOut) {
-          throw { message: "Time Limit Exceeded", stderr: "" };
-        }
-        if (sandboxResult.exitCode !== 0 && stderr && !stdout) {
-          throw { message: `Runtime error`, stderr };
-        }
-
-        const runtime = Date.now() - startTime;
-        
-        // Clean outputs
-        const normalizeOutput = (s) =>
-          (s || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-            .split('\n').map(l => l.trimEnd()).join('\n').trim();
-
-        const actualOutput   = normalizeOutput(stdout);
-        const expectedOutput = normalizeOutput(testCase.expectedOutput);
-        const passed = actualOutput === expectedOutput;
-
-        return {
-          testCaseIndex: index,
-          passed,
-          input: testCase.input,
-          expectedOutput: testCase.expectedOutput,
-          actualOutput: actualOutput,
-          runtime,
-          memory: 0,
-          error: stderr || null,
-        };
-      } catch (execError) {
-        const runtime = Date.now() - startTime;
-        const errMsg = execError.message || execError.stderr || 'Execution error';
-
-        return {
-          testCaseIndex: index,
-          passed: false,
-          input: testCase.input,
-          expectedOutput: testCase.expectedOutput,
-          actualOutput: "",
-          runtime,
-          memory: 0,
-          error: errMsg,
-        };
-      }
-    });
-
-    // Execute all test cases in parallel
-    const executedResults = await Promise.all(testCasePromises);
-    
-    // Process results
-    for (const result of executedResults) {
-      results.push(result);
-      totalRuntime += result.runtime;
-      if (result.runtime > maxRuntime) maxRuntime = result.runtime;
-      if (result.passed) testCasesPassed++;
-    }
-
-    // Determine verdict based on what actually failed
-    let verdict = VERDICT.ACCEPTED;
-    if (testCasesPassed < testCases.length) {
-      const hasTLE = results.some(r => r.error && r.error.includes('Time Limit'));
-      const hasRE  = results.some(r => r.error && !r.error.includes('Time Limit') && r.actualOutput === '');
-      if (hasTLE)       verdict = VERDICT.TIME_LIMIT_EXCEEDED;
-      else if (hasRE)   verdict = VERDICT.RUNTIME_ERROR;
-      else              verdict = VERDICT.WRONG_ANSWER;
-    }
-
-    return {
-      verdict,
-      runtime: Math.max(0, maxRuntime - 150), // subtract spawn overhead (~150ms)
-      displayRuntime: Math.max(0, maxRuntime - 150), // reported to user (algorithm time only)
-      rawMaxRuntime: maxRuntime,               // wall-clock max (for debugging)
-      avgRuntime: testCases.length > 0 ? Math.round(totalRuntime / testCases.length) : 0,
-      testCasesPassed,
-      totalTestCases: testCases.length,
-      executionResults: results,
-    };
-
-  } catch (error) {
-    console.error("Execution error:", error);
-    return {
-      verdict: VERDICT.RUNTIME_ERROR,
-      runtime: 0,
-      testCasesPassed: 0,
-      errorMessage: error.message,
-      executionResults: testCases.map((tc, index) => ({
-        testCaseIndex: index,
-        passed: false,
-        input: tc.input,
-        expectedOutput: tc.expectedOutput,
-        actualOutput: "",
-        error: "Execution failed",
-      })),
-    };
-  } finally {
-    try {
-      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      if (executablePath && fs.existsSync(executablePath)) fs.unlinkSync(executablePath);
-      if (language === "java" && fileName) {
-        const classFile = path.join(tempDir, `${fileName}.class`);
-        if (fs.existsSync(classFile)) fs.unlinkSync(classFile);
-      }
-    } catch (cleanupError) {
-      console.error("Cleanup error:", cleanupError);
-    }
-  }
-};
+import judgeQueue from "../jobs/judge.queue.js";
+import { executeCode } from "../services/judgeEngine.service.js";
+import { updateUserStats, updateProblemStats } from "../services/submissionStats.service.js";
 
 // @desc    Submit code for execution
 // @route   POST /api/v1/submissions
@@ -595,51 +71,68 @@ export const submitCode = asyncHandler(async (req, res) => {
 
   await submission.save();
 
-  // Execute code asynchronously
-  const executionResult = await executeCode(
+  // ── M6 fix ──────────────────────────────────────────────────────────────
+  // This used to `await executeCode(...)` directly here, meaning every
+  // submission held the HTTP request open for the full compile+run time, and
+  // a burst of submissions (e.g. a contest going live) would try to spin up
+  // that many Docker containers concurrently with no ceiling. `bull` was
+  // already a dependency but never wired up — it's activated here: the job
+  // is queued, this request returns immediately with verdict "pending", and
+  // judge.worker.js (processing the same queue) does the actual judging and
+  // the side effects (stats/achievements/notifications) that used to run
+  // inline below.
+  const jobPayload = {
+    submissionId: submission._id.toString(),
     code,
     language,
-    problem.testCases || [],
-    problem.constraints?.timeLimit || 2000,
-    problem.constraints?.memoryLimit || 256,
-  );
-
-  // Update submission with results
-  submission.verdict = executionResult.verdict;
-  submission.runtime = executionResult.displayRuntime ?? executionResult.runtime;
-  submission.testCasesPassed = executionResult.testCasesPassed;
-  submission.executionResults = executionResult.executionResults;
-  submission.errorMessage = executionResult.errorMessage;
-  submission.executionTime = Date.now() - submission.createdAt;
-
-  await submission.save();
-
-  // Update user stats (run in background, don't await)
-  updateUserStats(userId, problem, executionResult.verdict, problemId, isResubmit)
-    .catch(err => console.error("Error updating user stats:", err));
-
-  // Check & unlock achievements (background, non-blocking)
-  achievementService.checkSubmissionAchievements(userId, {
-    verdict: executionResult.verdict,
-    executionTime: Date.now() - submission.createdAt,
-  }).catch(err => console.error("Achievement check error:", err));
-
-  // Update problem stats (run in background, don't await)
-  updateProblemStats(problemId, executionResult.verdict)
-    .catch(err => console.error("Error updating problem stats:", err));
-
-  // Send notification (background, non-blocking)
-  notificationService.notifySubmission(userId, {
-    status: executionResult.verdict,
+    testCases: problem.testCases || [],
+    timeLimit: problem.constraints?.timeLimit || 2000,
+    memoryLimit: problem.constraints?.memoryLimit || 256,
+    userId: userId.toString(),
+    problemId: problemId.toString(),
+    isResubmit,
     problemTitle: problem.title,
-    executionTime: executionResult.runtime || 0,
-    testCasesPassed: executionResult.testCasesPassed || 0,
-    totalTestCases: problem.testCases?.length || 0,
-    submissionId: submission._id,
-  }).catch(err => console.error("Notification error:", err));
+  };
 
-  // NOTE: AI analysis is triggered by the frontend after submission,
-  // not here. Doing it here caused stale Redis cache hits on the frontend.
+  let queued = true;
+  try {
+    await judgeQueue.add(jobPayload);
+  } catch (queueError) {
+    // Redis/queue unreachable — don't strand the submission at PENDING
+    // forever with nothing to ever pick it up. Fall back to the previous
+    // inline behaviour so submissions still work (degraded, not broken).
+    queued = false;
+    console.error("⚠️ Judge queue unavailable, falling back to inline execution:", queueError.message);
+
+    const executionResult = await executeCode(
+      code, language, jobPayload.testCases, jobPayload.timeLimit, jobPayload.memoryLimit,
+    );
+
+    submission.verdict = executionResult.verdict;
+    submission.runtime = executionResult.displayRuntime ?? executionResult.runtime;
+    submission.testCasesPassed = executionResult.testCasesPassed;
+    submission.executionResults = executionResult.executionResults;
+    submission.errorMessage = executionResult.errorMessage;
+    submission.executionTime = Date.now() - submission.createdAt;
+    await submission.save();
+
+    updateUserStats(userId, problem, executionResult.verdict, problemId, isResubmit)
+      .catch(err => console.error("Error updating user stats:", err));
+    achievementService.checkSubmissionAchievements(userId, {
+      verdict: executionResult.verdict,
+      executionTime: submission.executionTime,
+    }).catch(err => console.error("Achievement check error:", err));
+    updateProblemStats(problemId, executionResult.verdict)
+      .catch(err => console.error("Error updating problem stats:", err));
+    notificationService.notifySubmission(userId, {
+      status: executionResult.verdict,
+      problemTitle: problem.title,
+      executionTime: executionResult.runtime || 0,
+      testCasesPassed: executionResult.testCasesPassed || 0,
+      totalTestCases: problem.testCases?.length || 0,
+      submissionId: submission._id,
+    }).catch(err => console.error("Notification error:", err));
+  }
 
   const responseData = {
     submission: {
@@ -652,6 +145,7 @@ export const submitCode = asyncHandler(async (req, res) => {
       executedAt: submission.executedAt,
       isResubmit,
       isAccepted: submission.verdict === VERDICT.ACCEPTED,
+      isQueued: queued,
     },
   };
 
@@ -660,108 +154,22 @@ export const submitCode = asyncHandler(async (req, res) => {
     responseData.executionResults = submission.executionResults;
   }
 
-  res.status(201).json(
+  res.status(queued ? 202 : 201).json(
     ApiResponse.created(
       responseData,
-      executionResult.verdict === VERDICT.ACCEPTED
-        ? "🎉 Problem solved successfully!"
-        : "Code executed. Check results.",
+      queued
+        ? "Submission queued for judging. Poll GET /submissions/:id for the result."
+        : executionResult2Message(submission.verdict),
     ),
   );
 });
 
-// Helper function to update user stats
-async function updateUserStats(userId, problem, verdict, problemId, isResubmit) {
-  try {
-    const user = await User.findById(userId);
-    if (!user) return;
-
-    // Initialize stats if needed
-    user.stats = user.stats || {};
-    user.stats.totalSubmissions = (user.stats.totalSubmissions || 0) + 1;
-
-    if (verdict === VERDICT.ACCEPTED) {
-      user.stats.acceptedSubmissions = (user.stats.acceptedSubmissions || 0) + 1;
-
-      // Only increment solved count if it's a new problem
-      if (!isResubmit) {
-        user.stats.totalProblemsSolved = (user.stats.totalProblemsSolved || 0) + 1;
-
-        // Update difficulty counts
-        if (problem.difficulty === "easy") {
-          user.stats.easySolved = (user.stats.easySolved || 0) + 1;
-        } else if (problem.difficulty === "medium") {
-          user.stats.mediumSolved = (user.stats.mediumSolved || 0) + 1;
-        } else if (problem.difficulty === "hard") {
-          user.stats.hardSolved = (user.stats.hardSolved || 0) + 1;
-        }
-
-        // Add to solved problems array.
-        // Schema expects objects { problem, solvedAt, ... }, not bare IDs.
-        if (!user.solvedProblems) user.solvedProblems = [];
-        const alreadySolved = user.solvedProblems.some(
-          sp => sp.problem?.toString() === problemId.toString()
-        );
-        if (!alreadySolved) {
-          user.solvedProblems.push({
-            problem:          problemId,
-            solvedAt:         new Date(),
-            firstSolve:       true,
-            submissionsCount: 1,
-          });
-        }
-      }
-    }
-
-    // Add to attempted problems.
-    // Schema expects objects { problem, lastAttempt, attemptsCount, solved }, not bare IDs.
-    if (!user.attemptedProblems) user.attemptedProblems = [];
-    const existingAttempt = user.attemptedProblems.find(
-      ap => ap.problem?.toString() === problemId.toString()
-    );
-    if (!existingAttempt) {
-      user.attemptedProblems.push({
-        problem:       problemId,
-        lastAttempt:   new Date(),
-        attemptsCount: 1,
-        solved:        verdict === 'accepted',
-      });
-    } else {
-      existingAttempt.lastAttempt   = new Date();
-      existingAttempt.attemptsCount = (existingAttempt.attemptsCount || 0) + 1;
-      if (verdict === 'accepted') existingAttempt.solved = true;
-    }
-
-    await user.save();
-  } catch (error) {
-    console.error("Error in updateUserStats:", error);
-  }
-}
-
-// Helper function to update problem stats
-async function updateProblemStats(problemId, verdict) {
-  try {
-    const problem = await Problem.findById(problemId);
-    if (!problem) return;
-
-    problem.metadata = problem.metadata || {};
-    problem.metadata.submissions = (problem.metadata.submissions || 0) + 1;
-
-    if (verdict === VERDICT.ACCEPTED) {
-      problem.metadata.acceptedSubmissions = (problem.metadata.acceptedSubmissions || 0) + 1;
-    }
-
-    // Update acceptance rate
-    if (problem.metadata.submissions > 0) {
-      problem.metadata.acceptanceRate = Math.round(
-        ((problem.metadata.acceptedSubmissions || 0) / problem.metadata.submissions) * 100
-      );
-    }
-
-    await problem.save();
-  } catch (error) {
-    console.error("Error in updateProblemStats:", error);
-  }
+// Small helper kept local to submitCode's inline-fallback branch above —
+// mirrors the message the old synchronous path used to return.
+function executionResult2Message(verdict) {
+  return verdict === VERDICT.ACCEPTED
+    ? "🎉 Problem solved successfully!"
+    : "Code executed. Check results.";
 }
 
 // @desc    Run code without submission (sandbox)

@@ -14,24 +14,20 @@ const User = sequelize.define('User', {
     // Don't define unique here - it's already in database
   },
   
-  email: {
-    type: DataTypes.STRING(100),
-    allowNull: false,
-    validate: {
-      isEmail: true
-    }
-    // Don't define unique here - it's already in database
-  },
-  
-  password_hash: {
-    type: DataTypes.STRING(255),
-    allowNull: false,
-    field: 'password_hash'
-  },
-  
-  role: {
-    type: DataTypes.STRING(20),
-    defaultValue: 'user'
+  // ── mongo_id: links this stats-cache row back to the MongoDB user document. ──
+  // This table is NOT a second source of user identity/auth — it's a read
+  // replica for contest joins and rank queries. password_hash/email/role were
+  // previously defined here with no controller ever reading them (auth lives
+  // entirely in MongoDB via src/models/user.models.js + Passport/JWT). Storing
+  // password hashes in a table nothing reads is a pure liability, so they were
+  // removed. mongo_id was missing entirely despite syncService.js referencing
+  // it — added here so that (currently dead) sync path has a real column to
+  // upsert against instead of silently being dropped by Sequelize.
+  mongo_id: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    unique: true,
+    field: 'mongo_id'
   },
   
   name: {
