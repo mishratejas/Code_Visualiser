@@ -5,9 +5,9 @@
  * collection.insertMany() to bypass the pre-save hook (avoids double-hash).
  *
  * Login credentials after seeding:
- *   admin@codeforge.dev  /  Test1234!
- *   alice@example.com    /  Test1234!
- *   (all users same password)
+ *   admin@codeforge.com          /  123456
+ *   tejasmishra040907@gmail.com  /  Tejas#04
+ *   alice@example.com            /  Test1234!  (default for everyone else)
  */
 
 import mongoose from 'mongoose';
@@ -33,8 +33,8 @@ const toSlug  = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|
 const rand    = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
-const LANGUAGES    = ['python', 'cpp', 'java', 'javascript', 'go', 'rust'];
-const VERDICTS_BAD = ['wrong_answer', 'time_limit_exceeded', 'runtime_error', 'compilation_error'];
+export const LANGUAGES    = ['python', 'cpp', 'java', 'javascript', 'go', 'rust'];
+export const VERDICTS_BAD = ['wrong_answer', 'time_limit_exceeded', 'runtime_error', 'compilation_error'];
 const SKILL_LEVELS = ['beginner', 'intermediate', 'advanced', 'expert'];
 const SKILL_NAMES  = ['Arrays','Dynamic Programming','Graphs','Trees','Strings',
                       'Sorting','Binary Search','Recursion','Hash Tables','Two Pointers'];
@@ -43,8 +43,9 @@ const makeSkills = (n = 3) =>
   SKILL_NAMES.slice(0, n).map(name => ({ name, level: rand(SKILL_LEVELS) }));
 
 // ── User data ──────────────────────────────────────────────────────────────
-const USERS = [
-  { username: 'admin',       email: 'admin@codeforge.dev',  role: 'admin', bio: 'Platform administrator',  country: 'India',       university: 'CodeForge HQ' },
+export const USERS = [
+  { username: 'admin',       email: 'admin@codeforge.com',  password: '123456', role: 'admin', bio: 'Platform administrator',  country: 'India',       university: 'CodeForge HQ' },
+  { username: 'tejas',       email: 'tejasmishra040907@gmail.com', password: 'Tejas#04', bio: 'Building CodeForge 🚀', country: 'India', university: 'CodeForge HQ' },
   { username: 'alice_coder', email: 'alice@example.com',    bio: 'DSA enthusiast 🔥',          country: 'India',       university: 'IIT Delhi' },
   { username: 'bob_dev',     email: 'bob@example.com',      bio: 'CS undergrad, loves DP',     country: 'USA',         university: 'MIT' },
   { username: 'charlie_cs',  email: 'charlie@example.com',  bio: 'Competitive programmer',      country: 'Canada',      university: 'UBC' },
@@ -72,7 +73,7 @@ const USERS = [
 ];
 
 // ── Problems ───────────────────────────────────────────────────────────────
-const PROBLEMS = [
+export const PROBLEMS = [
   {
     title: 'Two Sum', difficulty: 'easy', tags: ['array', 'hash-table'],
     description: `Given an array of integers **nums** and an integer **target**, return indices of the two numbers that add up to target.\n\n**Input:**\n- Line 1: n\n- Line 2: n integers\n- Line 3: target\n\n**Output:** Two space-separated indices (smaller first)`,
@@ -387,7 +388,7 @@ const PROBLEMS = [
 ];
 
 // ── Sample code snippets ───────────────────────────────────────────────────
-const CODE = {
+export const CODE = {
   cpp:        `#include<bits/stdc++.h>\nusing namespace std;\nint main(){\n  // solution here\n  return 0;\n}`,
   python:     `import sys\ndata = sys.stdin.read().split()\n# solution here`,
   java:       `import java.util.*;\npublic class Solution {\n  public static void main(String[] args) {\n    Scanner sc = new Scanner(System.in);\n    // solution here\n  }\n}`,
@@ -417,13 +418,24 @@ async function seed() {
   ]);
   console.log('✅ Cleared');
 
-  // Hash password ONCE, manually, at rounds=10 (fast, secure enough for dev)
-  console.log('\n🔐 Hashing password (rounds=10)...');
-  const hash = bcrypt.hashSync(PASSWORD, 10);
-  // Verify immediately
-  const ok = bcrypt.compareSync(PASSWORD, hash);
-  if (!ok) { console.error('❌ Hash verification failed!'); process.exit(1); }
-  console.log('✅ Hash verified:', hash.substring(0, 20) + '...');
+  // Hash passwords, manually, at rounds=10 (fast, secure enough for dev).
+  // Most users share the default PASSWORD, but a few (admin, tejas) have an
+  // explicit `password` override in their USERS entry — hash each unique
+  // password once and cache it, rather than hashing the same string N times
+  // or (the bug this replaces) silently giving everyone the same hash
+  // regardless of what was specified per-user.
+  console.log('\n🔐 Hashing passwords (rounds=10)...');
+  const hashCache = new Map();
+  const hashFor = (plain) => {
+    if (!hashCache.has(plain)) {
+      const h = bcrypt.hashSync(plain, 10);
+      if (!bcrypt.compareSync(plain, h)) { console.error(`❌ Hash verification failed for a password!`); process.exit(1); }
+      hashCache.set(plain, h);
+    }
+    return hashCache.get(plain);
+  };
+  const hash = hashFor(PASSWORD); // kept for anything still referencing the old shared `hash` var
+  console.log(`✅ Hashed ${new Set(USERS.map(u => u.password || PASSWORD)).size} unique password(s)`);
 
   // ── Users — bypass pre-save hook with collection.insertMany ─────────────
   console.log('\n👥 Creating users...');
@@ -438,7 +450,7 @@ async function seed() {
       _id:               new mongoose.Types.ObjectId(),
       username:          u.username,
       email:             u.email,
-      password:          hash,
+      password:          hashFor(u.password || PASSWORD),
       role:              u.role || 'user',
       isEmailVerified:   true,
       isActive:          true,
@@ -572,17 +584,22 @@ async function seed() {
   console.log(`   📚 Problems:      ${createdProblems.length}`);
   console.log(`   📝 Submissions:   ${totalSubs}`);
   console.log(`   🔔 Notifications: ${notifCount}`);
-  console.log('\n🔑 Login with ANY of these:');
-  console.log(`   admin@codeforge.dev  /  ${PASSWORD}`);
-  console.log(`   alice@example.com    /  ${PASSWORD}`);
-  console.log(`   bob@example.com      /  ${PASSWORD}`);
+  console.log('\n🔑 Login with:');
+  console.log(`   admin@codeforge.com          /  123456`);
+  console.log(`   tejasmishra040907@gmail.com  /  Tejas#04`);
+  console.log(`   alice@example.com            /  ${PASSWORD}   (default for everyone else)`);
   console.log('════════════════════════════════════════\n');
 
   await mongoose.disconnect();
   process.exit(0);
 }
 
-seed().catch(err => {
-  console.error('❌ Seed failed:', err.message || err);
-  process.exit(1);
-});
+// Only auto-run when this file is executed directly (e.g. `node seedComplete.js`),
+// not when imported by another script (e.g. seedEverything.js reusing USERS/PROBLEMS).
+import { fileURLToPath } from 'url';
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  seed().catch(err => {
+    console.error('❌ Seed failed:', err.message || err);
+    process.exit(1);
+  });
+}

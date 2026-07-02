@@ -14,7 +14,11 @@ const sequelize = new Sequelize(
       timestamps: true,
       freezeTableName: true
     },
-    pool: { max: 10, min: 0, acquire: 30000, idle: 10000 }
+    dialectOptions: {
+      keepAlive: true,
+      connectionTimeoutMillis: 25000,
+    },
+    pool: { max: 10, min: 0, acquire: 30000, idle: 30000 }
   }
 );
 
@@ -60,6 +64,13 @@ const connectPostgreSQL = async () => {
     const GroupMember      = (await import('../../models/postgres/GroupMember.models.js')).default;
 
     await defineAssociations();
+
+    // ── User (Postgres sync-cache table) ────────────────────────────────────
+    // Was imported here but never synced — the table never actually existed,
+    // which is why any write to it failed with "relation users does not exist".
+    await safeDropConstraint('users', 'users_mongo_id_key');
+    await User.sync({ alter: true });
+    console.log('✅ User table synced');
 
     // ── Group & GroupMember ────────────────────────────────────────────────
     // Drop slug unique constraint before alter — Sequelize generates invalid
@@ -108,7 +119,12 @@ const connectPostgreSQL = async () => {
 
     return sequelize;
   } catch (error) {
-    console.error('❌ PostgreSQL Connection Failed:', error.message);
+    const detail = error.message
+      || error.original?.message
+      || error.parent?.code
+      || (error.errors && error.errors.map((e) => e.message || e.code).join(', '))
+      || error.name;
+    console.error(`❌ PostgreSQL Connection Failed: ${detail}`);
     if (process.env.NODE_ENV === 'development') {
       console.log('⚠️ Continuing without PostgreSQL');
       return null;

@@ -377,7 +377,7 @@ class PlagiarismService {
       return report;
 
     } catch (error) {
-      logger.error('Plagiarism check failed:', error.message);
+      logger.error(`Plagiarism check failed: ${error.message}`);
       throw new Error(`Plagiarism check failed: ${error.message}`);
     }
   }
@@ -390,7 +390,7 @@ class PlagiarismService {
       logger.info(`Auto plagiarism check done: ${suspicious} suspicious pair(s) for contest ${contestId}`);
       return report;
     } catch (err) {
-      logger.error(`Auto plagiarism check failed for contest ${contestId}:`, err.message);
+      logger.error(`Auto plagiarism check failed for contest ${contestId}: ${err.message}`);
     }
   }
 
@@ -463,7 +463,7 @@ class PlagiarismService {
         threshold:            this.threshold,
       };
     } catch (error) {
-      logger.error('Comparison failed:', error.message);
+      logger.error(`Comparison failed: ${error.message}`);
       throw new Error('Failed to compare submissions');
     }
   }

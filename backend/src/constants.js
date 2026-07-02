@@ -99,7 +99,9 @@ export const PROBLEM_TAGS = [
   'dynamic-programming', 'backtracking', 'greedy', 
   'binary-search', 'two-pointers', 'stack', 'queue', 
   'heap', 'hash-table', 'math', 'bit-manipulation', 
-  'sorting', 'recursion', 'divide-and-conquer'
+  'sorting', 'recursion', 'divide-and-conquer',
+  'bfs', 'dfs', 'trie', 'lcs', 'knapsack', 'matrix-dp', 'bitmask-dp',
+  'sliding-window', 'intervals', 'binary-search-tree'
 ];
 
 // ============ TEST CASE DEFAULTS ============

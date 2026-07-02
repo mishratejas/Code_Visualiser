@@ -24,7 +24,7 @@ const connectMongoDB = async () => {
     
     return conn;
   } catch (error) {
-    logger.error('❌ MongoDB Connection Failed:', error.message);
+    logger.error(`❌ MongoDB Connection Failed: ${error.message}`);
     
     if (process.env.NODE_ENV === 'development') {
       logger.warn('⚠️ Running in development mode without MongoDB');

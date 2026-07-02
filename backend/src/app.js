@@ -305,7 +305,7 @@ class App {
     // Unhandled promise rejection handler
     process.on("unhandledRejection", (err) => {
       logger.error("UNHANDLED REJECTION! 💥 Shutting down...");
-      logger.error(err.name, err.message);
+      logger.error(`${err.name}: ${err.message}`);
 
       if (config.server.isProduction) {
         if (this.server) {
@@ -343,11 +343,11 @@ class App {
               postgresState = "connected";
             } catch (pgError) {
               postgresState = "disconnected";
-              logger.warn("PostgreSQL health check failed:", pgError.message);
+              logger.warn(`PostgreSQL health check failed: ${pgError.message}`);
             }
           }
         } catch (error) {
-          logger.error("Health check failed:", error.message);
+          logger.error(`Health check failed: ${error.message}`);
         }
       }, 60000);
     }
