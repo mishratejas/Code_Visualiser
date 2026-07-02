@@ -104,7 +104,11 @@ const Header = () => {
 
   const markAllRead = async () => {
     try {
-      await api.patch('/notifications/read-all');
+      // Backend route is POST /notifications/mark-all-read (see notification.routes.js).
+      // This was previously calling api.patch('/notifications/read-all'), which is
+      // both the wrong HTTP method and the wrong path — every click 404'd silently
+      // (the catch swallows the error) so "Mark all read" appeared to do nothing.
+      await api.post('/notifications/mark-all-read');
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       setUnread(0);
     } catch { /* silent */ }
@@ -112,7 +116,9 @@ const Header = () => {
 
   const markOne = async (id) => {
     try {
-      await api.patch(`/notifications/${id}/read`);
+      // Same fix as markAllRead — backend route is POST /notifications/mark-read/:id,
+      // not PATCH /notifications/:id/read.
+      await api.post(`/notifications/mark-read/${id}`);
       setNotifications(prev => prev.map(n => n._id === id ? { ...n, read: true } : n));
       setUnread(prev => Math.max(0, prev - 1));
     } catch { /* silent */ }
@@ -322,9 +328,20 @@ function UserMenu({ user, logout, navigate }) {
     <div className="relative" ref={ref}>
       <button onClick={() => setOpen(v => !v)}
         className="flex items-center gap-2 p-1 rounded-xl hover:bg-gray-800 transition-colors">
-        <div className="h-8 w-8 rounded-full bg-gradient-to-r from-rose-600 to-red-600 flex items-center justify-center text-white font-bold text-sm">
-          {user?.username?.charAt(0).toUpperCase()}
-        </div>
+        {/* Previously this always showed the username initial, even after the
+            user uploaded a profile photo in Settings — the actual avatar URL
+            was never read here. */}
+        {(user?.avatar || user?.profile?.avatar) ? (
+          <img
+            src={user.avatar || user.profile.avatar}
+            alt={user?.username}
+            className="h-8 w-8 rounded-full object-cover"
+          />
+        ) : (
+          <div className="h-8 w-8 rounded-full bg-gradient-to-r from-rose-600 to-red-600 flex items-center justify-center text-white font-bold text-sm">
+            {user?.username?.charAt(0).toUpperCase()}
+          </div>
+        )}
         <span className="text-sm text-gray-300 hidden lg:block">{user?.username}</span>
       </button>
 

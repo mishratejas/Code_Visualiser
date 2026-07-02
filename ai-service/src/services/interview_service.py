@@ -24,20 +24,30 @@ if GEMINI_READY:
         _model = None
 
 
+GEMINI_CALL_TIMEOUT_SECONDS = 15  # hard ceiling so a hung Gemini call can never hang the request
+
+
 async def _gemini(prompt: str, fallback: dict) -> dict:
     if _model is None:
         return fallback
     try:
         import asyncio
         loop = asyncio.get_event_loop()
-        resp = await loop.run_in_executor(
-            None,
-            lambda: _model.generate_content(prompt)
+        # See recommendation_service.py for why this timeout matters: without it
+        # a hung Gemini call blocks forever and slowly starves the shared
+        # executor thread pool, which is why the Interview page and other
+        # AI-backed pages could appear to load "forever".
+        resp = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: _model.generate_content(prompt)),
+            timeout=GEMINI_CALL_TIMEOUT_SECONDS,
         )
         text = resp.text.strip()
         text = re.sub(r'^```(?:json)?\s*', '', text)
         text = re.sub(r'\s*```$', '', text)
         return json.loads(text)
+    except asyncio.TimeoutError:
+        logger.error(f"Gemini interview call timed out after {GEMINI_CALL_TIMEOUT_SECONDS}s — using fallback")
+        return fallback
     except Exception as e:
         logger.error(f"Gemini call failed: {e}")
         return fallback

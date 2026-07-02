@@ -4,6 +4,7 @@ import ContestSubmission from '../models/postgres/ContestSubmission.models.js';
 import Problem from '../models/problem.models.js';
 import User from '../models/user.models.js';
 import Submission from '../models/submission.models.js';
+import GroupMember from '../models/postgres/GroupMember.models.js';
 import { Op } from 'sequelize';
 import { sequelize } from '../db/postgres/index.js';
 import redis from '../config/redis.config.js';
@@ -302,6 +303,25 @@ export const createContest = async (req, res) => {
       return res.status(400).json({ success: false, message: 'title, start_time, end_time are required' });
     }
 
+    // If this contest is being hosted "for" a group, the requester must actually
+    // be an owner/admin/moderator of that group. Previously group_id was accepted
+    // with no ownership check at all — the frontend UI only shows the "Host
+    // Contest" button to group admins, but the API itself would let ANY logged-in
+    // user attach ANY group_id (including one they're not even a member of) since
+    // POST /contests is reachable by every role (see contest.routes.js). This is
+    // the server-side half of that check.
+    const resolvedGroupId = group_id || groupId || null;
+    if (resolvedGroupId) {
+      const membership = await GroupMember.findOne({
+        where: { group_id: resolvedGroupId, user_id: userId, status: 'active' }
+      });
+      const isGroupHost = membership && ['owner', 'admin', 'moderator'].includes(membership.role);
+      if (!isGroupHost) {
+        await t.rollback();
+        return res.status(403).json({ success: false, message: 'Only an owner, admin, or moderator of this group can host a contest for it' });
+      }
+    }
+
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g,'-') + '-' + Date.now();
 
     const contest = await Contest.create({
@@ -327,7 +347,7 @@ export const createContest = async (req, res) => {
       banner_url: banner_url || banner || null,
       tags: Array.isArray(tags) ? tags : [],
       created_by: userId,
-      group_id: group_id || groupId || null,
+      group_id: resolvedGroupId,
       status: new Date(resolvedStart) > new Date() ? 'upcoming' : 'live'
     }, { transaction: t });
 
@@ -421,10 +441,35 @@ export const registerForContest = async (req, res) => {
     if (contest.is_private && contest.registration_password !== password)
       return res.status(400).json({ success: false, message: 'Invalid password' });
 
+    // Group-restricted contest: comment on Contest.models.js says "only members
+    // of this group can participate" but nothing was ever enforcing it — anyone
+    // could register regardless of group membership. Enforce it here.
+    if (contest.group_id) {
+      const membership = await GroupMember.findOne({
+        where: { group_id: contest.group_id, user_id: userId, status: 'active' }
+      });
+      if (!membership) {
+        return res.status(403).json({ success: false, message: 'This contest is restricted to members of its host group' });
+      }
+    }
+
+    // Contest ban check. Previously `security.contestBannedUntil` (set by the
+    // plagiarism-review flow) was only ever read for display on the Profile /
+    // Contests pages — nothing server-side actually blocked a banned user from
+    // registering via a direct API call, only the disabled frontend button did.
+    const banCheckUser = await User.findById(userId).select('stats.rating security.contestBannedUntil').lean();
+    const bannedUntil = banCheckUser?.security?.contestBannedUntil;
+    if (bannedUntil && new Date(bannedUntil) > new Date()) {
+      return res.status(403).json({
+        success: false,
+        message: `You are banned from contests until ${new Date(bannedUntil).toLocaleDateString()}`,
+      });
+    }
+
     const existing = await ContestParticipant.findOne({ where: { contest_id: id, user_id: userId } });
     if (existing) return res.status(400).json({ success: false, message: 'Already registered' });
 
-    const mongoUser = await User.findById(userId).select('stats.rating').lean();
+    const mongoUser = banCheckUser || await User.findById(userId).select('stats.rating').lean();
     const participant = await ContestParticipant.create({
       contest_id: id,
       user_id: userId,
@@ -453,6 +498,13 @@ export const submitContestSolution = async (req, res) => {
 
     const participant = await ContestParticipant.findOne({ where: { contest_id: contestId, user_id: userId } });
     if (!participant) return res.status(403).json({ success: false, message: 'Not registered for this contest' });
+    // A user disqualified for confirmed plagiarism (see plagiarism.controller.js
+    // reviewPair) was still able to keep submitting after disqualification —
+    // registration blocked new joins but nothing stopped further submissions
+    // from an already-registered, now-disqualified participant.
+    if (participant.is_disqualified) {
+      return res.status(403).json({ success: false, message: 'You are disqualified from this contest' });
+    }
 
     let verdict = 'pending', runtime = 0, memory = 0, passed = 0, total = 0;
     if (submissionId) {

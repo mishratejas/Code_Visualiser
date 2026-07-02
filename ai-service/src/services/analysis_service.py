@@ -192,6 +192,8 @@ async def _call_gemini(prompt: str, fallback: dict) -> dict:
     import asyncio
     import google.generativeai as _genai_sdk
 
+    GEMINI_CALL_TIMEOUT_SECONDS = 15  # per-key ceiling
+
     num_keys = len(_gemini_models)
     for attempt in range(num_keys):
         idx = (_current_key_index + attempt) % num_keys
@@ -200,9 +202,12 @@ async def _call_gemini(prompt: str, fallback: dict) -> dict:
             # Configure the key for this attempt, then call
             _genai_sdk.configure(api_key=key)
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: model.generate_content(prompt)
+            # Bounded wait: previously run_in_executor() had no timeout, so a
+            # single hung key blocked the whole request (and with multiple keys,
+            # could hang num_keys times over — worst case several minutes).
+            response = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: model.generate_content(prompt)),
+                timeout=GEMINI_CALL_TIMEOUT_SECONDS,
             )
             text = response.text.strip()
             text = re.sub(r'^```(?:json)?\s*', '', text)

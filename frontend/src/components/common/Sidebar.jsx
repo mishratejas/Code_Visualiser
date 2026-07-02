@@ -85,7 +85,7 @@ const Sidebar = ({ mobileOpen, onMobileClose }) => {
               if (item.path === '/notifications') setUnreadCount(0);
             }
           }}
-          className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all ${groupActive ? active : `${sub} ${hover}`}`}
+          className={`flex items-center gap-3 px-3 py-1.5 rounded-xl text-sm transition-all ${groupActive ? active : `${sub} ${hover}`}`}
         >
           <span className={`flex-shrink-0 ${collapsed ? 'mx-auto' : ''}`}>{item.icon}</span>
           {!collapsed && (
@@ -116,18 +116,15 @@ const Sidebar = ({ mobileOpen, onMobileClose }) => {
 
   const SidebarBody = () => (
     <div className="flex flex-col h-full">
-      {/* Logo / Collapse toggle — no text name, icon only */}
-      <div className={`flex-shrink-0 px-3 py-3 border-b ${border} flex items-center ${collapsed ? 'justify-center' : 'justify-between'}`}>
+      {/* Logo / Collapse toggle — icon only, no redundant username (it's already
+          shown in the header's account menu, so repeating it here just ate
+          vertical space and pushed the nav list into a scrollbar). */}
+      <div className={`flex-shrink-0 px-3 py-2.5 border-b ${border} flex items-center justify-between`}>
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 flex items-center justify-center shadow flex-shrink-0">
             <FiZap className="h-4 w-4 text-white" />
           </div>
-          {!collapsed && (
-            <div className="min-w-0">
-              <p className={`font-bold text-sm truncate ${txt}`}>{user?.username || 'User'}</p>
-              <p className={`text-xs truncate ${sub}`}>{user?.role === 'admin' ? '⭐ Organizer' : 'Coder'}</p>
-            </div>
-          )}
+          {!collapsed && <span className={`font-bold text-sm ${txt}`}>CodeForge</span>}
         </div>
         {!collapsed ? (
           <button onClick={() => setCollapsed(true)} className={`p-1.5 rounded-lg flex-shrink-0 ${isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}>
@@ -140,23 +137,24 @@ const Sidebar = ({ mobileOpen, onMobileClose }) => {
         )}
       </div>
 
-      {/* Scrollable nav */}
-      <nav className="flex-1 min-h-0 overflow-y-auto px-2 py-2 space-y-0.5">
+      {/* Nav — only scrolls if it truly can't fit (short/zoomed viewports);
+          tighter vertical padding than before so on normal screens it never needs to */}
+      <nav className="flex-1 min-h-0 overflow-y-auto px-2 py-1.5 space-y-0.5">
         {navItems.map(item => <NavItem key={item.title} item={item} />)}
       </nav>
 
       {/* Bottom section — always visible */}
-      <div className={`flex-shrink-0 border-t ${border} px-2 pt-2 pb-3 space-y-0.5`}>
+      <div className={`flex-shrink-0 border-t ${border} px-2 pt-1.5 pb-2 space-y-0.5`}>
         {bottomItems.map(item => (
           <Link key={item.path} to={item.path} onClick={() => mobileOpen && onMobileClose()}
-            className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all ${isActive(item.path) ? active : `${sub} ${hover}`}`}>
+            className={`flex items-center gap-3 px-3 py-1.5 rounded-xl text-sm transition-all ${isActive(item.path) ? active : `${sub} ${hover}`}`}>
             <span className={`flex-shrink-0 ${collapsed ? 'mx-auto' : ''}`}>{item.icon}</span>
             {!collapsed && <span>{item.title}</span>}
           </Link>
         ))}
         {/* Logout — always reachable */}
         <button onClick={logout}
-          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all ${sub} hover:bg-red-500/10 hover:text-red-400`}>
+          className={`w-full flex items-center gap-3 px-3 py-1.5 rounded-xl text-sm transition-all ${sub} hover:bg-red-500/10 hover:text-red-400`}>
           <span className={`flex-shrink-0 ${collapsed ? 'mx-auto' : ''}`}><FiLogOut className="w-5 h-5" /></span>
           {!collapsed && <span>Log Out</span>}
         </button>

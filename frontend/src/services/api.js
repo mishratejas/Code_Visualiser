@@ -101,8 +101,11 @@ export const leaderboardApi = {
 // ── Notifications ────────────────────────────────────────────────────────────
 export const notificationsApi = {
   getAll:    (params) => api.get('/notifications', { params }),
-  markRead:  (id)     => api.patch(`/notifications/${id}/read`),
-  markAllRead:()      => api.patch('/notifications/read-all'),
+  // Paths/methods must match backend/src/routes/notification.routes.js exactly —
+  // these were previously PATCH /notifications/:id/read and PATCH /notifications/read-all,
+  // neither of which exist server-side (404s were silently swallowed by callers).
+  markRead:  (id)     => api.post(`/notifications/mark-read/${id}`),
+  markAllRead:()      => api.post('/notifications/mark-all-read'),
   getUnreadCount:()   => api.get('/notifications/unread-count'),
 };
 

@@ -21,20 +21,32 @@ if GEMINI_READY:
         logger.error(f"Gemini init failed: {e}")
 
 
+GEMINI_CALL_TIMEOUT_SECONDS = 15  # hard ceiling so a hung Gemini call can never hang the request
+
+
 async def _gemini(prompt: str, fallback: Any) -> Any:
     if _model is None:
         return fallback
     try:
         import asyncio
         loop = asyncio.get_event_loop()
-        resp = await loop.run_in_executor(
-            None,
-            lambda: _model.generate_content(prompt)
+        # NOTE: run_in_executor() alone has NO timeout — if the Gemini SDK call
+        # hangs (slow network, provider outage, rate-limit backoff), this await
+        # would block forever, the frontend spinner would never resolve, and
+        # the worker thread stays occupied — with enough hung requests the
+        # whole executor thread pool starves, stalling *unrelated* AI calls too.
+        # wait_for() guarantees we always fall back within a bounded time.
+        resp = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: _model.generate_content(prompt)),
+            timeout=GEMINI_CALL_TIMEOUT_SECONDS,
         )
         text = resp.text.strip()
         text = re.sub(r'^```(?:json)?\s*', '', text)
         text = re.sub(r'\s*```$', '', text)
         return json.loads(text)
+    except asyncio.TimeoutError:
+        logger.error(f"Gemini recommendation call timed out after {GEMINI_CALL_TIMEOUT_SECONDS}s — using fallback")
+        return fallback
     except Exception as e:
         logger.error(f"Gemini recommendation failed: {e}")
         return fallback
@@ -43,8 +55,15 @@ async def _gemini(prompt: str, fallback: Any) -> Any:
 class RecommendationService:
 
     async def get_recommendations(self, user_stats: Dict, solved_problems: List[Dict],
-                                   available_problems: List[Dict], limit: int = 8) -> List[Dict]:
-        cache_key = f"rec:{user_stats.get('userId', '')}:{len(solved_problems)}"
+                                   available_problems: List[Dict], limit: int = 8,
+                                   user_id: str = "") -> List[Dict]:
+        # Previously this cache key was f"rec:{user_stats.get('userId', '')}:..." but
+        # user_stats (the frontend just sends user.stats) never actually contains a
+        # 'userId' field — so this always evaluated to "rec::<count>" for EVERY user.
+        # That meant two different users with the same solved-problem count could
+        # silently get served each other's cached recommendations. Now takes a real
+        # user_id passed explicitly from the route.
+        cache_key = f"rec:{user_id or 'anon'}:{len(solved_problems)}"
         cached = await get_cache(cache_key)
         if cached:
             return cached
@@ -123,7 +142,20 @@ Return ONLY a JSON array:
         return [{**p, "recommendation_reason": "Matches skill level", "priority": "high" if i < 3 else "medium"}
                 for i, p in enumerate(ranked[:limit])]
 
-    async def get_learning_path(self, user_stats: Dict, target_role: str = "sde") -> Dict:
+    async def get_learning_path(self, user_stats: Dict, target_role: str = "sde", user_id: str = "") -> Dict:
+        # This previously had NO caching at all — every page load/reload called
+        # Gemini fresh, which is why every reload re-paid the ~15s timeout wait
+        # (Gemini is currently timing out consistently — worth checking
+        # GET /api/v1/gemini-test on the AI service to confirm the key/model are
+        # actually valid) AND re-billed a Gemini call for a result that, since it
+        # always falls back anyway, comes out identical every time. Cache it like
+        # get_recommendations already does — a learning path only needs to change
+        # when the user's solved counts materially change, not on every visit.
+        cache_key = f"learning-path:{user_id or 'anon'}:{target_role}:{user_stats.get('easySolved',0)}:{user_stats.get('mediumSolved',0)}:{user_stats.get('hardSolved',0)}"
+        cached = await get_cache(cache_key)
+        if cached:
+            return cached
+
         prompt = f"""Create a DSA learning path for {target_role} interviews.
 Easy: {user_stats.get('easySolved',0)}, Medium: {user_stats.get('mediumSolved',0)}, Hard: {user_stats.get('hardSolved',0)}
 
@@ -150,7 +182,13 @@ Return ONLY valid JSON:
             "daily_goal": "2-3 problems",
             "resources": ["NeetCode 150", "Blind 75"],
         }
-        return await _gemini(prompt, fallback)
+        result = await _gemini(prompt, fallback)
+        # Cache both real and fallback results. Even the fallback is worth
+        # caching — it's deterministic, and caching it stops every reload from
+        # re-attempting (and re-timing-out on) Gemini for the same non-answer.
+        # Shorter TTL than recommendations since it's less personalized data.
+        await set_cache(cache_key, result, expire=1800)
+        return result
 
 
 recommendation_service = RecommendationService()
