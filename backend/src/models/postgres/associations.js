@@ -7,7 +7,7 @@ export const defineAssociations = async () => {
     const ContestParticipant = (await import('./ContestParticipant.models.js')).default;
     const ContestSubmission = (await import('./ContestSubmission.models.js')).default;
     const ContestRatingHistory = (await import('./ContestRatingHistory.models.js')).default;
-    const ContestRejudge = (await import('./Contestrejudge.models.js')).default;
+    const ContestRejudge = (await import('./ContestRejudge.models.js')).default;
     
     console.log('📦 Setting up model associations...');
     
