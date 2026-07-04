@@ -26,7 +26,7 @@ router.get('/:id/submissions', authenticate, getContestSubmissions);
 router.post('/', authenticate, authorize('admin', 'organizer', 'user'), createContest);
 router.put('/:id', authenticate, authorize('admin', 'organizer'), updateContest);
 router.delete('/:id', authenticate, authorize('admin', 'organizer'), deleteContest);
-router.post('/:id/problems', authenticate, authorize('admin', 'organizer'), addProblemsToContest);
+router.post('/:id/problems', authenticate, authorize('admin', 'organizer', 'user'), addProblemsToContest);
 router.post('/:id/end', authenticate, authorize('admin', 'organizer'), endContest);
 
 export default router;

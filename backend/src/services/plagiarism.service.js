@@ -1,19 +1,3 @@
-/**
- * Plagiarism Detection Service — runs entirely in Node.js, no external AI service needed.
- *
- * Algorithms:
- *   1. Winnowing  — document fingerprinting via k-gram hashing + sliding window min-hash
- *   2. Structural — control-flow token counting
- *
- * Combined score: 60% Winnowing + 40% Structural
- * Default threshold: 0.75
- *
- * Rules:
- *   - Only compares submissions from DIFFERENT users (same-user pairs are skipped)
- *   - Per user per problem: only the best submission is used
- *     (accepted > latest attempt) to avoid noise from failed attempts
- */
-
 import crypto from 'crypto';
 import PlagiarismReport from '../models/plagiarism.models.js';
 import Submission from '../models/submission.models.js';
@@ -155,7 +139,7 @@ function structuralSimilarity(code1, code2) {
 
 // ── Compare a pair ────────────────────────────────────────────────────────────
 
-function comparePair(s1, s2, threshold = 0.75) {
+function comparePair(s1, s2, threshold = 0.75, reviewThreshold = 0.5) {
   const lang1 = (s1.language || 'python').toLowerCase();
   const lang2 = (s2.language || 'python').toLowerCase();
 
@@ -177,7 +161,27 @@ function comparePair(s1, s2, threshold = 0.75) {
     ? 0.6 * winnowSim + 0.4 * structSim
     : winnowSim;
 
-  return { winnowSim, structSim, overallSim, isSuspicious: overallSim >= threshold };
+  // NOTE on tuning: the winnowing k-gram size (7 tokens) is intentionally
+  // conservative. Solutions that are logically identical but restructured
+  // (different loop style, reordered branches, nested-function vs arrow
+  // syntax) can legitimately score well below the auto-flag threshold even
+  // though a human would recognize them as suspiciously similar — k=7 is
+  // sensitive to exactly that kind of reordering. Lowering k catches more of
+  // those cases, but sharply increases false positives on generic patterns
+  // that many honest submissions share independently (null checks, standard
+  // BFS/DFS skeletons, etc.) — verified empirically: even at k=3 this
+  // specific kind of pair barely crosses 0.75, while k=3 windows are short
+  // enough to match boilerplate everyone writes the same way.
+  //
+  // Rather than lowering the auto-flag threshold globally (risking false
+  // accusations), pairs between reviewThreshold and threshold are still
+  // surfaced in the report — just tagged low-confidence — so a human
+  // reviewer gets the chance to judge borderline cases instead of them
+  // being silently invisible.
+  const isSuspicious = overallSim >= threshold;
+  const isBorderline  = !isSuspicious && overallSim >= reviewThreshold;
+
+  return { winnowSim, structSim, overallSim, isSuspicious, isBorderline };
 }
 
 // ── Main Service ──────────────────────────────────────────────────────────────
@@ -185,6 +189,7 @@ function comparePair(s1, s2, threshold = 0.75) {
 class PlagiarismService {
   constructor() {
     this.threshold = 0.75;
+    this.reviewThreshold = 0.5; // borderline pairs surfaced for human review, not auto-flagged
   }
 
   async checkContest(contestId, checkedBy = null) {
@@ -303,10 +308,10 @@ class PlagiarismService {
           // them gracefully (winnowing-only, no structural weight).
           // This catches identical code submitted under different language labels.
 
-          const { winnowSim, structSim, overallSim, isSuspicious } = comparePair(s1, s2, this.threshold);
+          const { winnowSim, structSim, overallSim, isSuspicious, isBorderline } = comparePair(s1, s2, this.threshold, this.reviewThreshold);
           allSimilarities.push(overallSim);
 
-          if (isSuspicious) {
+          if (isSuspicious || isBorderline) {
             suspiciousPairs.push({
               submission1:          s1.submission_id,
               submission2:          s2.submission_id,
@@ -316,7 +321,8 @@ class PlagiarismService {
               tokenSimilarity:      Math.round(winnowSim  * 1000) / 1000,
               astSimilarity:        Math.round(structSim  * 1000) / 1000,
               structuralSimilarity: Math.round(structSim  * 1000) / 1000,
-              isSuspicious:         true,
+              isSuspicious,
+              confidence:           isSuspicious ? 'high' : 'low',
               verdict:              'pending',
             });
           }
@@ -447,10 +453,11 @@ class PlagiarismService {
 
       const lang1 = (sub1.language || 'python').toLowerCase();
       const lang2 = (sub2.language || 'python').toLowerCase();
-      const { winnowSim, structSim, overallSim, isSuspicious } = comparePair(
+      const { winnowSim, structSim, overallSim, isSuspicious, isBorderline } = comparePair(
         { code: sub1.code, language: lang1 },
         { code: sub2.code, language: lang2 },
-        this.threshold
+        this.threshold,
+        this.reviewThreshold
       );
 
       return {
@@ -460,7 +467,10 @@ class PlagiarismService {
         winnowing_similarity: Math.round(winnowSim  * 1000) / 1000,
         ast_similarity:       Math.round(structSim  * 1000) / 1000,
         is_suspicious:        isSuspicious,
+        is_borderline:        isBorderline,
+        confidence:           isSuspicious ? 'high' : isBorderline ? 'low' : 'none',
         threshold:            this.threshold,
+        review_threshold:     this.reviewThreshold,
       };
     } catch (error) {
       logger.error(`Comparison failed: ${error.message}`);

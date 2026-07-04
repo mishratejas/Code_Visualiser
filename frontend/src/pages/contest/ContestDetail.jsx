@@ -117,13 +117,13 @@ const ContestDetail = () => {
   if (!contest) {
     return (
       <div className="max-w-4xl mx-auto p-6 text-center">
-        <div className="bg-gray-800/50 rounded-2xl p-12 border border-gray-700">
+        <div className="bg-gray-100 dark:bg-gray-800/50 rounded-2xl p-12 border border-gray-300 dark:border-gray-700">
           <FiAlertCircle className="h-16 w-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-white mb-2">Contest Not Found</h2>
-          <p className="text-gray-400 mb-6">The contest you're looking for doesn't exist or has been removed.</p>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Contest Not Found</h2>
+          <p className="text-gray-500 dark:text-gray-400 mb-6">The contest you're looking for doesn't exist or has been removed.</p>
           <button
             onClick={() => navigate('/contests')}
-            className="px-6 py-3 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-xl hover:shadow-lg transition-all"
+            className="px-6 py-3 bg-gradient-to-r from-rose-600 to-pink-600 text-gray-900 dark:text-white rounded-xl hover:shadow-lg transition-all"
           >
             Browse Contests
           </button>
@@ -149,7 +149,7 @@ const ContestDetail = () => {
     hard: 'text-red-400 bg-red-500/10 border-red-500/30'
   };
 
-  const difficultyClass = difficultyColors[contest.difficulty] || 'text-gray-400 bg-gray-500/10 border-gray-500/30';
+  const difficultyClass = difficultyColors[contest.difficulty] || 'text-gray-500 dark:text-gray-400 bg-gray-400 dark:bg-gray-500/10 border-gray-500/30';
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-8">
@@ -164,27 +164,27 @@ const ContestDetail = () => {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-3 bg-white/20 backdrop-blur-sm rounded-2xl">
-                  <MdOutlineEmojiEvents className="h-8 w-8 text-white" />
+                  <MdOutlineEmojiEvents className="h-8 w-8 text-gray-900 dark:text-white" />
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
                   {isLive && (
-                    <span className="px-4 py-2 bg-green-500 text-white rounded-full font-medium flex items-center gap-2 shadow-lg">
+                    <span className="px-4 py-2 bg-green-500 text-gray-900 dark:text-white rounded-full font-medium flex items-center gap-2 shadow-lg">
                       <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span>
                       Live Now
                     </span>
                   )}
                   {isUpcoming && (
-                    <span className="px-4 py-2 bg-blue-500 text-white rounded-full font-medium shadow-lg">
+                    <span className="px-4 py-2 bg-blue-500 text-gray-900 dark:text-white rounded-full font-medium shadow-lg">
                       Upcoming
                     </span>
                   )}
                   {isEnded && (
-                    <span className="px-4 py-2 bg-gray-600 text-white rounded-full font-medium shadow-lg">
+                    <span className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white rounded-full font-medium shadow-lg">
                       Ended
                     </span>
                   )}
                   {contest.is_private && (
-                    <span className="px-4 py-2 bg-purple-500/30 text-white rounded-full font-medium flex items-center gap-2 backdrop-blur-sm border border-white/20">
+                    <span className="px-4 py-2 bg-purple-500/30 text-gray-900 dark:text-white rounded-full font-medium flex items-center gap-2 backdrop-blur-sm border border-white/20">
                       <FiLock className="h-4 w-4" />
                       Private
                     </span>
@@ -192,7 +192,7 @@ const ContestDetail = () => {
                 </div>
               </div>
               
-              <h1 className="text-4xl lg:text-5xl font-bold text-white mb-3 break-words">{contest.title}</h1>
+              <h1 className="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-3 break-words">{contest.title}</h1>
               {contest.description && (
                 <p className="text-blue-100 text-lg max-w-3xl">{contest.description}</p>
               )}
@@ -208,19 +208,19 @@ const ContestDetail = () => {
       </div>
 
       {/* Registration Status and Actions */}
-      <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 border border-gray-700/50 shadow-xl">
+      <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800 to-gray-100 dark:to-gray-900 rounded-2xl p-6 border border-gray-300 dark:border-gray-700/50 shadow-xl">
         <div className="flex flex-col md:flex-row items-center gap-4 justify-between">
           <div className="flex items-center gap-4 flex-wrap">
             {contest.isRegistered ? (
               <>
-                <div className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl flex items-center gap-2 shadow-lg">
+                <div className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-gray-900 dark:text-white rounded-xl flex items-center gap-2 shadow-lg">
                   <FiCheckCircle className="h-5 w-5" />
                   <span className="font-medium">Successfully Registered</span>
                 </div>
                 {isLive && (
                   <button
                     onClick={handleEnterContest}
-                    className="px-6 py-3 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2"
+                    className="px-6 py-3 bg-gradient-to-r from-rose-600 to-pink-600 text-gray-900 dark:text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2"
                   >
                     <span>Enter Contest Now</span>
                     <FiArrowRight className="h-5 w-5" />
@@ -245,7 +245,7 @@ const ContestDetail = () => {
                 <button
                   onClick={handleRegisterClick}
                   disabled={registering}
-                  className="px-8 py-4 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-xl font-bold text-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3"
+                  className="px-8 py-4 bg-gradient-to-r from-rose-600 to-pink-600 text-gray-900 dark:text-white rounded-xl font-bold text-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3"
                 >
                   {contest.is_private && <FiLock className="h-5 w-5" />}
                   {registering ? (
@@ -260,7 +260,7 @@ const ContestDetail = () => {
                     </>
                   )}
                 </button>
-                <span className="text-gray-400">
+                <span className="text-gray-500 dark:text-gray-400">
                   {contest.max_participants ? 
                     `${contest.participantsCount}/${contest.max_participants} spots filled` : 
                     `${contest.participantsCount} registered`
@@ -278,7 +278,7 @@ const ContestDetail = () => {
                 <span className="font-medium">Contest has started - Registration closed</span>
               </div>
             ) : isEnded ? (
-              <div className="px-6 py-3 bg-gray-500/20 text-gray-400 rounded-xl flex items-center gap-2 border border-gray-500/30">
+              <div className="px-6 py-3 bg-gray-400 dark:bg-gray-500/20 text-gray-500 dark:text-gray-400 rounded-xl flex items-center gap-2 border border-gray-500/30">
                 <FiAlertCircle className="h-5 w-5" />
                 <span className="font-medium">Contest has ended</span>
               </div>
@@ -297,13 +297,13 @@ const ContestDetail = () => {
                 <FiShield className="h-5 w-5 text-red-400" />
               </div>
               <div>
-                <div className="font-semibold text-white">Plagiarism Detection</div>
-                <div className="text-sm text-gray-400">Review and manage suspicious submissions for this contest</div>
+                <div className="font-semibold text-gray-900 dark:text-white">Plagiarism Detection</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">Review and manage suspicious submissions for this contest</div>
               </div>
             </div>
             <button
               onClick={() => navigate(`/contests/${id}/plagiarism`)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-orange-600 text-white rounded-xl hover:shadow-lg hover:shadow-red-500/20 transition-all font-medium whitespace-nowrap"
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-orange-600 text-gray-900 dark:text-white rounded-xl hover:shadow-lg hover:shadow-red-500/20 transition-all font-medium whitespace-nowrap"
             >
               <FiShield className="h-4 w-4" />
               Open Plagiarism Panel
@@ -314,21 +314,21 @@ const ContestDetail = () => {
 
       {/* Contest Info Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 border border-gray-700/50 hover:border-rose-500/50 transition-all">
+        <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800 to-gray-100 dark:to-gray-900 rounded-2xl p-6 border border-gray-300 dark:border-gray-700/50 hover:border-rose-500/50 transition-all">
           <div className="flex items-center gap-3 mb-3">
             <div className="p-2 bg-rose-500/20 rounded-lg">
               <FiCalendar className="text-rose-400 h-5 w-5" />
             </div>
-            <div className="text-sm text-gray-400">Start Time</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">Start Time</div>
           </div>
-          <div className="text-white font-bold text-lg">
+          <div className="text-gray-900 dark:text-white font-bold text-lg">
             {new Date(contest.startTime).toLocaleDateString('en-US', { 
               month: 'short', 
               day: 'numeric',
               year: 'numeric'
             })}
           </div>
-          <div className="text-gray-400 text-sm mt-1">
+          <div className="text-gray-500 dark:text-gray-400 text-sm mt-1">
             {new Date(contest.startTime).toLocaleTimeString('en-US', {
               hour: '2-digit',
               minute: '2-digit'
@@ -336,43 +336,43 @@ const ContestDetail = () => {
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 border border-gray-700/50 hover:border-rose-500/50 transition-all">
+        <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800 to-gray-100 dark:to-gray-900 rounded-2xl p-6 border border-gray-300 dark:border-gray-700/50 hover:border-rose-500/50 transition-all">
           <div className="flex items-center gap-3 mb-3">
             <div className="p-2 bg-rose-500/20 rounded-lg">
               <FiClock className="text-rose-400 h-5 w-5" />
             </div>
-            <div className="text-sm text-gray-400">Duration</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">Duration</div>
           </div>
-          <div className="text-white font-bold text-lg">
+          <div className="text-gray-900 dark:text-white font-bold text-lg">
             {Math.floor(contest.duration / 60)}h {contest.duration % 60}m
           </div>
-          <div className="text-gray-400 text-sm mt-1">
+          <div className="text-gray-500 dark:text-gray-400 text-sm mt-1">
             Total time
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 border border-gray-700/50 hover:border-rose-500/50 transition-all">
+        <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800 to-gray-100 dark:to-gray-900 rounded-2xl p-6 border border-gray-300 dark:border-gray-700/50 hover:border-rose-500/50 transition-all">
           <div className="flex items-center gap-3 mb-3">
             <div className="p-2 bg-rose-500/20 rounded-lg">
               <FiUsers className="text-rose-400 h-5 w-5" />
             </div>
-            <div className="text-sm text-gray-400">Participants</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">Participants</div>
           </div>
-          <div className="text-white font-bold text-lg">{contest.participantsCount}</div>
-          <div className="text-gray-400 text-sm mt-1">
+          <div className="text-gray-900 dark:text-white font-bold text-lg">{contest.participantsCount}</div>
+          <div className="text-gray-500 dark:text-gray-400 text-sm mt-1">
             {contest.max_participants ? `of ${contest.max_participants} max` : 'Unlimited'}
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 border border-gray-700/50 hover:border-rose-500/50 transition-all">
+        <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800 to-gray-100 dark:to-gray-900 rounded-2xl p-6 border border-gray-300 dark:border-gray-700/50 hover:border-rose-500/50 transition-all">
           <div className="flex items-center gap-3 mb-3">
             <div className="p-2 bg-rose-500/20 rounded-lg">
               <FiCode className="text-rose-400 h-5 w-5" />
             </div>
-            <div className="text-sm text-gray-400">Problems</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">Problems</div>
           </div>
-          <div className="text-white font-bold text-lg">{contest.problemsCount}</div>
-          <div className="text-gray-400 text-sm mt-1">
+          <div className="text-gray-900 dark:text-white font-bold text-lg">{contest.problemsCount}</div>
+          <div className="text-gray-500 dark:text-gray-400 text-sm mt-1">
             Total challenges
           </div>
         </div>
@@ -380,14 +380,14 @@ const ContestDetail = () => {
 
       {/* Tags */}
       {contest.tags && contest.tags.length > 0 && (
-        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 border border-gray-700/50">
+        <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800 to-gray-100 dark:to-gray-900 rounded-2xl p-6 border border-gray-300 dark:border-gray-700/50">
           <div className="flex items-center gap-2 mb-4">
             <FiTag className="text-rose-400 h-5 w-5" />
-            <h2 className="text-xl font-bold text-white">Tags</h2>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Tags</h2>
           </div>
           <div className="flex flex-wrap gap-2">
             {contest.tags.map((tag) => (
-              <span key={tag} className="px-3 py-1.5 bg-gray-700/50 text-gray-300 rounded-lg text-sm border border-gray-600/50">
+              <span key={tag} className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 rounded-lg text-sm border border-gray-400 dark:border-gray-600/50">
                 {tag}
               </span>
             ))}
@@ -397,26 +397,26 @@ const ContestDetail = () => {
 
       {/* Rules */}
       {contest.rules && (
-        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 border border-gray-700/50">
+        <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800 to-gray-100 dark:to-gray-900 rounded-2xl p-6 border border-gray-300 dark:border-gray-700/50">
           <div className="flex items-center gap-2 mb-4">
             <FiInfo className="text-rose-400 h-5 w-5" />
-            <h2 className="text-xl font-bold text-white">Rules & Guidelines</h2>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Rules & Guidelines</h2>
           </div>
-          <p className="text-gray-300 whitespace-pre-wrap">{contest.rules}</p>
+          <p className="text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{contest.rules}</p>
         </div>
       )}
 
       {/* Prizes */}
       {contest.prizes && contest.prizes.length > 0 && (
-        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 border border-gray-700/50">
+        <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800 to-gray-100 dark:to-gray-900 rounded-2xl p-6 border border-gray-300 dark:border-gray-700/50">
           <div className="flex items-center gap-2 mb-4">
             <FiAward className="text-rose-400 h-5 w-5" />
-            <h2 className="text-xl font-bold text-white">Prizes</h2>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Prizes</h2>
           </div>
           <ul className="space-y-2">
             {contest.prizes.map((prize, index) => (
-              <li key={index} className="flex items-center gap-3 text-gray-300">
-                <span className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-full font-bold text-sm">
+              <li key={index} className="flex items-center gap-3 text-gray-600 dark:text-gray-300">
+                <span className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-yellow-500 to-orange-500 text-gray-900 dark:text-white rounded-full font-bold text-sm">
                   {index + 1}
                 </span>
                 <span>{prize}</span>
@@ -428,13 +428,13 @@ const ContestDetail = () => {
 
       {/* Problems List */}
       {contest.problems && contest.problems.length > 0 && (
-        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-8 border border-gray-700/50">
+        <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800 to-gray-100 dark:to-gray-900 rounded-2xl p-8 border border-gray-300 dark:border-gray-700/50">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
               <FiCode className="text-rose-400 h-6 w-6" />
               Contest Problems
             </h2>
-            <span className="text-gray-400">{contest.problems.length} problems</span>
+            <span className="text-gray-500 dark:text-gray-400">{contest.problems.length} problems</span>
           </div>
           
           <div className="space-y-3">
@@ -443,17 +443,17 @@ const ContestDetail = () => {
                 easy: 'text-green-400',
                 medium: 'text-yellow-400',
                 hard: 'text-red-400'
-              }[problem.difficulty] || 'text-gray-400';
+              }[problem.difficulty] || 'text-gray-500 dark:text-gray-400';
 
               return (
-                <div key={problem._id} className="bg-gray-800/50 rounded-xl p-5 hover:bg-gray-800/70 transition-all border border-gray-700/50 hover:border-rose-500/50">
+                <div key={problem._id} className="bg-gray-100 dark:bg-gray-800/50 rounded-xl p-5 hover:bg-gray-100 dark:hover:bg-gray-800/70 transition-all border border-gray-300 dark:border-gray-700/50 hover:border-rose-500/50">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4 flex-1 min-w-0">
                       <span className="flex items-center justify-center w-10 h-10 bg-rose-500/20 text-rose-400 rounded-lg font-bold shrink-0">
                         {index + 1}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="text-white font-semibold text-lg mb-1">{problem.title}</div>
+                        <div className="text-gray-900 dark:text-white font-semibold text-lg mb-1">{problem.title}</div>
                         <div className="flex items-center gap-3 flex-wrap">
                           <span className={`font-medium ${problemDifficultyColor}`}>
                             {problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}
@@ -461,7 +461,7 @@ const ContestDetail = () => {
                           {problem.tags && problem.tags.length > 0 && (
                             <div className="flex gap-2">
                               {problem.tags.slice(0, 3).map((tag) => (
-                                <span key={tag} className="text-xs px-2 py-1 bg-gray-700/50 text-gray-400 rounded">
+                                <span key={tag} className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400 rounded">
                                   {tag}
                                 </span>
                               ))}
@@ -480,19 +480,19 @@ const ContestDetail = () => {
 
       {/* Password Modal */}
       {showPasswordModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-8 max-w-md w-full border border-gray-700/50 shadow-2xl">
+        <div className="fixed inset-0 bg-white dark:bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800 to-gray-100 dark:to-gray-900 rounded-2xl p-8 max-w-md w-full border border-gray-300 dark:border-gray-700/50 shadow-2xl">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-3 bg-purple-500/20 rounded-xl">
                 <FiLock className="text-purple-400 h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-2xl font-bold text-white">Private Contest</h3>
-                <p className="text-gray-400 text-sm">Password required</p>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Private Contest</h3>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">Password required</p>
               </div>
             </div>
             
-            <p className="text-gray-300 mb-6">
+            <p className="text-gray-600 dark:text-gray-300 mb-6">
               This is a private contest. Please enter the contest password to register.
             </p>
             
@@ -501,7 +501,7 @@ const ContestDetail = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter contest password"
-              className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-xl text-white placeholder-gray-500 mb-6 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+              className="w-full px-4 py-3 bg-gray-200 dark:bg-gray-700/50 border border-gray-400 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-500 mb-6 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
               onKeyPress={(e) => {
                 if (e.key === 'Enter' && password) {
                   handleRegister(password);
@@ -517,14 +517,14 @@ const ContestDetail = () => {
                   setPassword('');
                 }}
                 disabled={registering}
-                className="flex-1 px-4 py-3 bg-gray-700/50 text-gray-300 rounded-xl hover:bg-gray-700 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 px-4 py-3 bg-gray-200 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleRegister(password)}
                 disabled={registering || !password}
-                className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-gray-900 dark:text-white rounded-xl hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {registering ? (
                   <>

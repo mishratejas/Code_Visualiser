@@ -10,6 +10,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { EditorProvider } from "./context/EditorContext";
 import PrivateRoute from "./components/common/PrivateRoute";
+import ContestBanGuard from "./components/common/ContestBanGaurd";
 import Header from "./components/common/Header";
 import Footer from "./components/common/Footer";
 import Sidebar from "./components/common/Sidebar";
@@ -176,32 +177,32 @@ const App = () => {
                     {/* Contests — single page, no subcategory routes */}
                     <Route path="/contests" element={
                       <PrivateRoute>
-                        <Layout showSidebar={true}><Contests /></Layout>
+                        <Layout showSidebar={true}><ContestBanGuard><Contests /></ContestBanGuard></Layout>
                       </PrivateRoute>
                     } />
                     <Route path="/contests/create" element={
                       <PrivateRoute>
-                        <Layout showSidebar={true}><CreateContest /></Layout>
+                        <Layout showSidebar={true}><ContestBanGuard><CreateContest /></ContestBanGuard></Layout>
                       </PrivateRoute>
                     } />
                     <Route path="/contests/:id/add-problems" element={
                       <PrivateRoute>
-                        <Layout showSidebar={true}><AddProblemsToContest /></Layout>
+                        <Layout showSidebar={true}><ContestBanGuard><AddProblemsToContest /></ContestBanGuard></Layout>
                       </PrivateRoute>
                     } />
                     <Route path="/contests/:id/live" element={
                       <PrivateRoute>
-                        <Layout showSidebar={true}><LiveContest /></Layout>
+                        <Layout showSidebar={true}><ContestBanGuard><LiveContest /></ContestBanGuard></Layout>
                       </PrivateRoute>
                     } />
                     <Route path="/contests/:contestId/problems/:problemId" element={
                       <PrivateRoute>
-                        <Layout showSidebar={true}><ContestProblem /></Layout>
+                        <Layout showSidebar={true}><ContestBanGuard><ContestProblem /></ContestBanGuard></Layout>
                       </PrivateRoute>
                     } />
                     <Route path="/contests/:id" element={
                       <PrivateRoute>
-                        <Layout showSidebar={true}><ContestDetail /></Layout>
+                        <Layout showSidebar={true}><ContestBanGuard><ContestDetail /></ContestBanGuard></Layout>
                       </PrivateRoute>
                     } />
 

@@ -1,5 +1,5 @@
 // frontend/src/pages/Problem.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
@@ -29,6 +29,7 @@ const Problem = () => {
   const [language, setLanguage] = useState('javascript');
   const [testResults, setTestResults] = useState([]);
   const [submissionResult, setSubmissionResult] = useState(null);
+  const [pollTimedOut, setPollTimedOut] = useState(false);
   // Track the exact code+language that was submitted so AnalysisPanel
   // always analyzes what was actually judged, not current editor state.
   const [submittedCode, setSubmittedCode] = useState('');
@@ -48,6 +49,9 @@ const Problem = () => {
     fetchProblem();
   }, [id]);
 
+  const pollRef = useRef(null);
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
   const fetchProblem = async () => {
     try {
       setLoading(true);
@@ -64,6 +68,23 @@ const Problem = () => {
       navigate('/problems');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Refreshes problem stats (acceptance rate, submission counts) after a
+  // judged submission WITHOUT touching the editor. Previously handleSubmit
+  // called fetchProblem() for this, which — as its name suggests — also
+  // resets `code` to the default starter template via setCode(...). That
+  // meant 1 second after every single submission (accepted or not), the
+  // editor silently wiped whatever the user had written. This only updates
+  // the `problem` state.
+  const refreshProblemStats = async () => {
+    try {
+      const response = await api.get(`/problems/${id}`);
+      const problemData = response.data?.problem || response.data?.data || response.data;
+      setProblem(problemData);
+    } catch (error) {
+      console.error('Failed to refresh problem stats:', error);
     }
   };
 
@@ -206,6 +227,95 @@ int main() {
     }
   };
 
+  // Runs once a submission's real (non-pending) verdict is known — whether
+  // that's immediately (old synchronous behaviour, kept as a fallback) or
+  // after polling resolves it. Split out so both paths show the exact same
+  // toasts/state updates instead of duplicating this logic.
+  const handleResolvedSubmission = (submission) => {
+    setSubmissionResult(submission);
+    setPollTimedOut(false);
+
+    if (submission.isAccepted || submission.verdict === 'accepted') {
+      toast.success('🎉 Solution accepted! All test cases passed!');
+      fetchMySubmissions();
+    } else {
+      const verdictDisplay = {
+        wrong_answer: 'Wrong Answer',
+        time_limit_exceeded: 'Time Limit Exceeded',
+        runtime_error: 'Runtime Error',
+        compilation_error: 'Compilation Error',
+        memory_limit_exceeded: 'Memory Limit Exceeded',
+      };
+      toast.error(verdictDisplay[submission.verdict] || submission.verdict || 'Submission failed');
+      if (submission.testCasesPassed !== undefined) {
+        toast(`${submission.testCasesPassed}/${submission.totalTestCases} test cases passed`, { icon: '📊' });
+      }
+    }
+
+    // Refresh problem stats (acceptance rate, submission count) now that a
+    // real verdict exists — this no longer touches the code editor (see
+    // refreshProblemStats above).
+    setTimeout(() => refreshProblemStats(), 1000);
+  };
+
+  // Docker-sandboxed judging can take a while (see judgeEngine.service.js —
+  // each test case spawns a real `docker run`), especially on a cold start.
+  // Backs off from frequent to slower polling instead of giving up quickly.
+  const POLL_FAST_INTERVAL_MS = 1500;
+  const POLL_FAST_ATTEMPTS = 20;   // ~30s
+  const POLL_SLOW_INTERVAL_MS = 4000;
+  const POLL_SLOW_ATTEMPTS = 20;   // then ~80s more — ~110s total
+
+  const checkSubmissionOnce = async (submissionId) => {
+    try {
+      const res = await api.get(`/submissions/${submissionId}`);
+      const sub = res?.data?.submission || {};
+      if (sub.verdict && sub.verdict !== 'pending') {
+        setSubmitting(false);
+        handleResolvedSubmission(sub);
+        return true;
+      }
+    } catch (err) {
+      // transient fetch error — caller decides whether to keep trying
+    }
+    return false;
+  };
+
+  const pollSubmission = (submissionId) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    let attempts = 0;
+
+    const startInterval = (ms, maxAttempts, onExhausted) => {
+      pollRef.current = setInterval(async () => {
+        attempts += 1;
+        const done = await checkSubmissionOnce(submissionId);
+        if (done) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+          return;
+        }
+        if (attempts >= maxAttempts) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+          onExhausted();
+        }
+      }, ms);
+    };
+
+    startInterval(POLL_FAST_INTERVAL_MS, POLL_FAST_ATTEMPTS, () => {
+      attempts = 0;
+      startInterval(POLL_SLOW_INTERVAL_MS, POLL_SLOW_ATTEMPTS, () => {
+        // Still pending after ~110s — stop auto-polling but keep the result
+        // panel actionable instead of leaving it frozen. setSubmitting(false)
+        // here (rather than only in checkSubmissionOnce) is what lets the
+        // "Check Again" button re-enable the Submit button flow if needed.
+        setSubmitting(false);
+        setPollTimedOut(true);
+        toast.error('Judging is taking longer than usual — you can check again in a moment.');
+      });
+    });
+  };
+
   const handleSubmit = async () => {
     if (!code.trim()) {
       toast.error('Please write some code first');
@@ -219,6 +329,7 @@ int main() {
     }
 
     setSubmitting(true);
+    setPollTimedOut(false);
     try {
       const response = await api.post('/submissions', {
         problemId: id,
@@ -235,44 +346,32 @@ int main() {
       // Snapshot the code and language at the moment of submission
       setSubmittedCode(code);
       setSubmittedLanguage(language);
-      setSubmissionResult(submission);
-
-      if (submission.isAccepted || submission.verdict === 'accepted') {
-        toast.success('🎉 Solution accepted! All test cases passed!');
-        fetchMySubmissions();
-        // Refresh problem stats with a slight delay because backend updates it asynchronously
-        setTimeout(() => fetchProblem(), 1000);
-      } else {
-        const verdictDisplay = {
-          'wrong_answer': 'Wrong Answer',
-          'time_limit_exceeded': 'Time Limit Exceeded',
-          'runtime_error': 'Runtime Error',
-          'compilation_error': 'Compilation Error',
-          'memory_limit_exceeded': 'Memory Limit Exceeded',
-          'pending': 'Pending',
-        };
-        toast.error(verdictDisplay[submission.verdict] || submission.verdict || 'Submission failed');
-        // Still refresh stats to update submission counts even if failed (optional, but good for total submissions count)
-        setTimeout(() => fetchProblem(), 1000);
-      }
 
       // Show test case results if available (returned in dev mode)
       if (executionResults.length > 0) {
         setTestResults(executionResults);
       }
 
-      // Show summary info
-      if (submission.testCasesPassed !== undefined) {
-        const passed = submission.testCasesPassed;
-        const total = submission.totalTestCases;
-        if (!submission.isAccepted && passed !== undefined) {
-          toast(`${passed}/${total} test cases passed`, { icon: '📊' });
-        }
+      // Judging is asynchronous (see judge.queue.js) — the endpoint above
+      // returns immediately with verdict: "pending" while a worker judges
+      // the code in the background. This used to be treated as the FINAL
+      // result: it showed "Pending" as a failure toast, showed "0/X test
+      // cases passed" (nothing has run yet), and never checked again — even
+      // though the submission almost always goes on to be judged correctly
+      // moments later. Poll for the real result instead.
+      if (submission.verdict === 'pending' || !submission.verdict) {
+        setSubmissionResult(submission); // shows the "Judging…" state, not a failure
+        toast.loading('Judging your code...', { id: 'judge', duration: 4000 });
+        pollSubmission(submission._id);
+      } else {
+        // Already-resolved verdict (e.g. inline fallback path when the judge
+        // queue itself is unreachable) — handle it immediately, no need to poll.
+        setSubmitting(false);
+        handleResolvedSubmission(submission);
       }
     } catch (err) {
       console.error('Submit error:', err);
       toast.error(err.response?.data?.message || 'Submission failed');
-    } finally {
       setSubmitting(false);
     }
   };
@@ -586,20 +685,22 @@ int main() {
             </div>
 
             {/* Submission Result Banner */}
-            {submissionResult && (
+            {submissionResult && (() => {
+              const isPending = submissionResult.verdict === 'pending' || !submissionResult.verdict;
+              const isAccepted = submissionResult.isAccepted || submissionResult.verdict === 'accepted';
+              return (
               <div className={`rounded-xl p-4 border ${
-                submissionResult.isAccepted || submissionResult.verdict === 'accepted'
-                  ? 'bg-green-900/20 border-green-700'
-                  : 'bg-red-900/20 border-red-700'
+                isAccepted ? 'bg-green-900/20 border-green-700'
+                : isPending ? 'bg-blue-900/20 border-blue-700'
+                : 'bg-red-900/20 border-red-700'
               }`}>
                 <div className="flex items-center justify-between">
                   <div>
                     <div className={`text-lg font-bold ${
-                      submissionResult.isAccepted || submissionResult.verdict === 'accepted'
-                        ? 'text-green-400'
-                        : 'text-red-400'
+                      isAccepted ? 'text-green-400' : isPending ? 'text-blue-400' : 'text-red-400'
                     }`}>
-                      {submissionResult.isAccepted || submissionResult.verdict === 'accepted' ? '✅ Accepted' :
+                      {isAccepted ? '✅ Accepted' :
+                        isPending ? '⏳ Judging…' :
                         submissionResult.verdict === 'wrong_answer' ? '❌ Wrong Answer' :
                         submissionResult.verdict === 'time_limit_exceeded' ? '⏱️ Time Limit Exceeded' :
                         submissionResult.verdict === 'runtime_error' ? '💥 Runtime Error' :
@@ -607,14 +708,36 @@ int main() {
                         submissionResult.verdict || 'Submission Failed'}
                     </div>
                     <div className="text-sm text-gray-400 mt-1">
-                      {submissionResult.testCasesPassed}/{submissionResult.totalTestCases} test cases passed
-                      {submissionResult.runtime > 0 && ` · ${submissionResult.runtime}ms`}
+                      {isPending
+                        ? (pollTimedOut
+                            ? 'Still judging — this can take longer right after a cold start. Use "Check Again".'
+                            : 'Running your code against test cases…')
+                        : <>
+                            {submissionResult.testCasesPassed}/{submissionResult.totalTestCases} test cases passed
+                            {submissionResult.runtime > 0 && ` · ${submissionResult.runtime}ms`}
+                          </>}
                     </div>
                   </div>
-                  <button onClick={() => setSubmissionResult(null)} className="text-gray-500 hover:text-gray-300">✕</button>
+                  <div className="flex items-center gap-3">
+                    {isPending && pollTimedOut && submissionResult._id && (
+                      <button
+                        onClick={async () => {
+                          toast.loading('Checking…', { id: 'recheck' });
+                          const done = await checkSubmissionOnce(submissionResult._id);
+                          toast.dismiss('recheck');
+                          if (!done) toast('Still judging — try again in a moment.');
+                        }}
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white transition-colors"
+                      >
+                        Check Again
+                      </button>
+                    )}
+                    <button onClick={() => setSubmissionResult(null)} className="text-gray-500 hover:text-gray-300">✕</button>
+                  </div>
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             {/* Test Results */}
             {testResults.length > 0 && (

@@ -406,6 +406,7 @@ export const deleteContest = async (req, res) => {
 export const addProblemsToContest = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.id || req.user?._id?.toString();
     const problemIds = req.body.problemIds || req.body.problem_ids || [];
     const points = req.body.points || req.body.pointsMap || {};
 
@@ -415,6 +416,27 @@ export const addProblemsToContest = async (req, res) => {
 
     const contest = await Contest.findByPk(id);
     if (!contest) return res.status(404).json({ success: false, message: 'Contest not found' });
+
+    // The route now lets any authenticated user through (previously it was
+    // hard-locked to global admin/organizer roles, which broke group-hosted
+    // contests: a group owner/admin can create a contest for their group —
+    // see createContest's group_id ownership check — but as a regular 'user'
+    // role they'd hit a 403 the moment they tried to add problems to the
+    // contest they'd just created). Authorization now happens here instead,
+    // against the actual resource: the contest's creator, an admin/moderator
+    // of the contest's host group (if any), or a global admin/organizer.
+    const isGlobalStaff = ['admin', 'organizer'].includes(req.user?.role);
+    const isCreator = contest.created_by && String(contest.created_by) === String(userId);
+    let isGroupHost = false;
+    if (!isGlobalStaff && !isCreator && contest.group_id) {
+      const membership = await GroupMember.findOne({
+        where: { group_id: contest.group_id, user_id: userId, status: 'active' }
+      });
+      isGroupHost = !!membership && ['owner', 'admin', 'moderator'].includes(membership.role);
+    }
+    if (!isGlobalStaff && !isCreator && !isGroupHost) {
+      return res.status(403).json({ success: false, message: 'Only the contest creator, an admin/moderator of its host group, or a site admin can add problems to this contest' });
+    }
 
     const existing = contest.problem_ids || [];
     const newIds = [...new Set([...existing, ...problemIds.map(String)])];

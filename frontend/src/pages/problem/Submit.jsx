@@ -33,6 +33,7 @@ const Submit = () => {
   const [submissionHistory, setSubmissionHistory] = useState([]);
   const [codeStatus, setCodeStatus] = useState('idle');
   const [lastSubmission, setLastSubmission] = useState(null);
+  const [pollTimedOut, setPollTimedOut] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
   const pollRef = useRef(null);
 
@@ -168,36 +169,74 @@ const Submit = () => {
     }
   };
 
-  const POLL_INTERVAL_MS = 1500;
-  const POLL_MAX_ATTEMPTS = 30; // ~45s ceiling before we give up waiting
+  // Docker-sandboxed execution (see judgeEngine.service.js — each test case
+  // spawns a real `docker run`) can legitimately take well over 45s on a
+  // cold start or under concurrency limits. The previous 30 attempts * 1.5s
+  // = 45s ceiling was tight enough that judging would sometimes still be
+  // running when the poll gave up — the worker finishes and saves "accepted"
+  // moments later, but by then the UI had already stopped polling and was
+  // left frozen on "pending / 0 test cases" with no way to recover without
+  // reloading the page. Backing off to a longer interval after the first
+  // stretch buys much more real time before giving up, without hammering
+  // the server every 1.5s for two straight minutes.
+  const POLL_FAST_INTERVAL_MS = 1500;
+  const POLL_FAST_ATTEMPTS = 20;       // ~30s of frequent polling
+  const POLL_SLOW_INTERVAL_MS = 4000;
+  const POLL_SLOW_ATTEMPTS = 20;       // then ~80s more, slower — ~110s total
+
+  // Single-shot status check, reused by both the automatic poller and the
+  // manual "Check Again" button so a user is never stuck if a poll pass
+  // happens to land right as judging finishes.
+  const checkSubmissionOnce = async (submissionId) => {
+    try {
+      const res = await submissionService.getSubmissionById(submissionId);
+      const sub = res?.data?.submission || {};
+      if (sub.verdict && sub.verdict !== 'pending') {
+        setLastSubmission(prev => ({ ...prev, ...sub, submittedCode: prev?.submittedCode || code }));
+        setCodeStatus(sub.verdict === 'accepted' ? 'success' : 'error');
+        setSubmitting(false);
+        fetchSubmissionHistory();
+        return true;
+      }
+    } catch (err) {
+      // transient fetch error — caller decides whether to keep trying
+    }
+    return false;
+  };
 
   const pollSubmission = (submissionId) => {
     if (pollRef.current) clearInterval(pollRef.current);
     let attempts = 0;
-    pollRef.current = setInterval(async () => {
-      attempts += 1;
-      try {
-        const res = await submissionService.getSubmissionById(submissionId);
-        const sub = res?.data?.submission || {};
-        if (sub.verdict && sub.verdict !== 'pending') {
+
+    const startInterval = (ms, maxAttempts, onExhausted) => {
+      pollRef.current = setInterval(async () => {
+        attempts += 1;
+        const done = await checkSubmissionOnce(submissionId);
+        if (done) {
           clearInterval(pollRef.current);
           pollRef.current = null;
-          setLastSubmission(prev => ({ ...prev, ...sub, submittedCode: prev?.submittedCode || code }));
-          setCodeStatus(sub.verdict === 'accepted' ? 'success' : 'error');
-          setSubmitting(false);
-          fetchSubmissionHistory();
           return;
         }
-      } catch (err) {
-        // transient fetch error while polling — keep trying until max attempts
-      }
-      if (attempts >= POLL_MAX_ATTEMPTS) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
+        if (attempts >= maxAttempts) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+          onExhausted();
+        }
+      }, ms);
+    };
+
+    // Fast phase first, then fall back to a slower phase instead of giving up.
+    startInterval(POLL_FAST_INTERVAL_MS, POLL_FAST_ATTEMPTS, () => {
+      attempts = 0;
+      startInterval(POLL_SLOW_INTERVAL_MS, POLL_SLOW_ATTEMPTS, () => {
+        // Still not resolved after ~110s total — stop auto-polling but keep
+        // the result panel actionable (manual "Check Again" button) instead
+        // of leaving it frozen with only a toast the user may have missed.
         setSubmitting(false);
-        toast.error('Judging is taking longer than expected. Check "Full Report" shortly.');
-      }
-    }, POLL_INTERVAL_MS);
+        setPollTimedOut(true);
+        toast.error('Judging is taking longer than usual. You can check again or view the full report shortly.');
+      });
+    });
   };
 
   const handleSubmit = async () => {
@@ -205,6 +244,7 @@ const Submit = () => {
     if (!validation.valid) { toast.error(validation.error); return; }
     setSubmitting(true);
     setCodeStatus('running');
+    setPollTimedOut(false);
     try {
       const response = await submissionService.submitSolution({ problemId, code, language });
       if (response.success) {
@@ -283,13 +323,13 @@ const Submit = () => {
             >
               ← Back to Problem
             </Link>
-            <span className="text-gray-400">•</span>
-            <span className="text-gray-600 dark:text-gray-400">Submit Solution</span>
+            <span className="text-gray-500 dark:text-gray-400">•</span>
+            <span className="text-gray-600 dark:text-gray-500 dark:text-gray-400">Submit Solution</span>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-900 dark:text-white">
             {problem?.title || 'Submit Solution'}
           </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
+          <p className="text-gray-600 dark:text-gray-500 dark:text-gray-400 mt-2">
             Write your solution and submit for evaluation
           </p>
         </div>
@@ -320,13 +360,13 @@ const Submit = () => {
             <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
               <div className="flex items-center space-x-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-600 dark:text-gray-300 mb-1">
                     Language
                   </label>
                   <select
                     value={language}
                     onChange={(e) => handleLanguageChange(e.target.value)}
-                    className="px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white"
+                    className="px-3 py-2 bg-gray-50 dark:bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-400 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-gray-900 dark:text-white"
                   >
                     {languages.map((lang) => (
                       <option key={lang.value} value={lang.value}>
@@ -339,22 +379,22 @@ const Submit = () => {
                 {problem?.constraints && (
                   <>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-600 dark:text-gray-300 mb-1">
                         Time Limit
                       </label>
-                      <div className="px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                        <span className="font-medium text-gray-900 dark:text-white">
+                      <div className="px-3 py-2 bg-gray-50 dark:bg-gray-200 dark:bg-gray-700 rounded-lg">
+                        <span className="font-medium text-gray-900 dark:text-gray-900 dark:text-white">
                           {problem.constraints.timeLimit || 2000} ms
                         </span>
                       </div>
                     </div>
                     
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-600 dark:text-gray-300 mb-1">
                         Memory Limit
                       </label>
-                      <div className="px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                        <span className="font-medium text-gray-900 dark:text-white">
+                      <div className="px-3 py-2 bg-gray-50 dark:bg-gray-200 dark:bg-gray-700 rounded-lg">
+                        <span className="font-medium text-gray-900 dark:text-gray-900 dark:text-white">
                           {problem.constraints.memoryLimit || 256} MB
                         </span>
                       </div>
@@ -403,7 +443,7 @@ const Submit = () => {
             </div>
 
             {/* Status Bar */}
-            <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-100 dark:bg-gray-800 rounded-lg">
               <div className="flex items-center space-x-4 text-sm">
                 <div className="flex items-center">
                   <div className={`w-2 h-2 rounded-full mr-2 ${
@@ -415,11 +455,11 @@ const Submit = () => {
                     codeStatus === 'reset' ? 'bg-yellow-500' :
                     'bg-gray-400'
                   }`}></div>
-                  <span className="text-gray-700 dark:text-gray-300 capitalize">
+                  <span className="text-gray-700 dark:text-gray-600 dark:text-gray-300 capitalize">
                     {codeStatus === 'idle' ? 'Ready' : codeStatus}
                   </span>
                 </div>
-                <span className="text-gray-500 dark:text-gray-400">
+                <span className="text-gray-600 dark:text-gray-500 dark:text-gray-500 dark:text-gray-400">
                   {code.length} chars • {code.split('\n').length} lines
                 </span>
               </div>
@@ -480,9 +520,11 @@ const Submit = () => {
                       ? 'Judging…'
                       : lastSubmission.verdict.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}
                   </h3>
-                  <p className="text-gray-400 text-sm">
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">
                     {lastSubmission.verdict === 'pending' || !lastSubmission.verdict
-                      ? 'Running your code against test cases...'
+                      ? (pollTimedOut
+                          ? 'Still judging — this can take a bit longer for compiled languages or right after a cold start. Use "Check Again" below.'
+                          : 'Running your code against test cases...')
                       : <>
                           {lastSubmission.testCasesPassed ?? 0}/{lastSubmission.totalTestCases ?? 0} test cases passed
                           {lastSubmission.executionTime ? ` · ${lastSubmission.executionTime}ms` : ''}
@@ -491,14 +533,28 @@ const Submit = () => {
                 </div>
               </div>
               <div className="flex gap-2">
+                {lastSubmission._id && pollTimedOut && (lastSubmission.verdict === 'pending' || !lastSubmission.verdict) && (
+                  <button
+                    onClick={async () => {
+                      toast.loading('Checking…', { id: 'recheck' });
+                      const done = await checkSubmissionOnce(lastSubmission._id);
+                      toast.dismiss('recheck');
+                      if (done) { setPollTimedOut(false); toast.success('Got it — result updated!'); }
+                      else toast('Still judging — try again in a moment.');
+                    }}
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-sm rounded-lg transition-colors"
+                  >
+                    Check Again
+                  </button>
+                )}
                 {lastSubmission._id && (
                   <Link to={`/submissions/${lastSubmission._id}`}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors">
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-gray-900 dark:text-white text-sm rounded-lg transition-colors">
                     Full Report
                   </Link>
                 )}
                 <button onClick={() => setShowAnalysis(s => !s)}
-                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors">
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-gray-900 dark:text-white text-sm rounded-lg transition-colors">
                   {showAnalysis ? 'Hide' : 'AI Analysis'}
                 </button>
               </div>
@@ -507,21 +563,21 @@ const Submit = () => {
             {/* Submitted code — always visible */}
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-gray-400 font-mono uppercase tracking-wider">Your Submitted Code</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-mono uppercase tracking-wider">Your Submitted Code</span>
                 <button onClick={() => { navigator.clipboard.writeText(lastSubmission.submittedCode || ''); toast.success('Copied!'); }}
-                  className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
+                  className="text-xs text-gray-600 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 flex items-center gap-1">
                   <FiCopy size={12}/> Copy
                 </button>
               </div>
-              <pre className="bg-gray-900 border border-gray-700 rounded-xl p-4 overflow-x-auto text-sm text-gray-200 max-h-80 font-mono">
+              <pre className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl p-4 overflow-x-auto text-sm text-gray-700 dark:text-gray-200 max-h-80 font-mono">
                 {lastSubmission.submittedCode || code}
               </pre>
             </div>
 
             {/* AI Analysis — expanded panel */}
             {showAnalysis && (
-              <div className="border-t border-gray-700 pt-4">
-                <div className="bg-gray-900/60 rounded-xl border border-purple-500/20 overflow-y-auto max-h-[600px]">
+              <div className="border-t border-gray-300 dark:border-gray-700 pt-4">
+                <div className="bg-white dark:bg-gray-900/60 rounded-xl border border-purple-500/20 overflow-y-auto max-h-[600px]">
                   <AnalysisPanel
                     code={lastSubmission.submittedCode || code}
                     language={language}
@@ -540,12 +596,12 @@ const Submit = () => {
         <div className="space-y-6">
           {/* Problem Info */}
           <Card>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-900 dark:text-white mb-4">
               Problem Details
             </h3>
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">Difficulty</span>
+                <span className="text-gray-600 dark:text-gray-500 dark:text-gray-400">Difficulty</span>
                 <span className={`font-medium ${
                   problem?.difficulty === 'easy' ? 'text-green-600 dark:text-green-400' :
                   problem?.difficulty === 'medium' ? 'text-yellow-600 dark:text-yellow-400' :
@@ -555,19 +611,19 @@ const Submit = () => {
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">Acceptance Rate</span>
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="text-gray-600 dark:text-gray-500 dark:text-gray-400">Acceptance Rate</span>
+                <span className="font-medium text-gray-900 dark:text-gray-900 dark:text-white">
                   {problem?.acceptanceRate?.toFixed(1) || problem?.metadata?.acceptanceRate?.toFixed(1) || 0}%
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">Total Submissions</span>
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="text-gray-600 dark:text-gray-500 dark:text-gray-400">Total Submissions</span>
+                <span className="font-medium text-gray-900 dark:text-gray-900 dark:text-white">
                   {problem?.totalSubmissions || problem?.metadata?.submissions || 0}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">Accepted</span>
+                <span className="text-gray-600 dark:text-gray-500 dark:text-gray-400">Accepted</span>
                 <span className="font-medium text-green-600 dark:text-green-400">
                   {problem?.acceptedSubmissions || 0}
                 </span>
@@ -575,8 +631,8 @@ const Submit = () => {
             </div>
             
             {problem?.tags && problem.tags.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                <h4 className="font-medium text-gray-900 dark:text-white mb-3">
+              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-300 dark:border-gray-700">
+                <h4 className="font-medium text-gray-900 dark:text-gray-900 dark:text-white mb-3">
                   Tags
                 </h4>
                 <div className="flex flex-wrap gap-2">
@@ -595,7 +651,7 @@ const Submit = () => {
 
           {/* Recent Submissions */}
           <Card>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-900 dark:text-white mb-4">
               Recent Submissions
             </h3>
             {submissionHistory.length > 0 ? (
@@ -603,7 +659,7 @@ const Submit = () => {
                 {submissionHistory.slice(0, 5).map((submission) => (
                   <div
                     key={submission._id}
-                    className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition"
+                    className="p-3 bg-gray-50 dark:bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-300 dark:hover:bg-gray-600 transition"
                   >
                     <div className="flex justify-between items-center mb-2">
                       <span className={`text-sm font-medium ${
@@ -613,22 +669,22 @@ const Submit = () => {
                       }`}>
                         {submission.status}
                       </span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                      <span className="text-xs text-gray-600 dark:text-gray-500 dark:text-gray-500 dark:text-gray-400">
                         {formatExecutionTime(submission.executionTime)}
                       </span>
                     </div>
-                    <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                    <div className="flex justify-between text-sm text-gray-600 dark:text-gray-500 dark:text-gray-400">
                       <span>Language: {submission.language}</span>
                       <span>{formatMemory(submission.memoryUsed)}</span>
                     </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <div className="text-xs text-gray-600 dark:text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
                       {new Date(submission.submittedAt).toLocaleDateString()}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-gray-500 dark:text-gray-400 text-center py-4">
+              <p className="text-gray-600 dark:text-gray-500 dark:text-gray-500 dark:text-gray-400 text-center py-4">
                 No submissions yet
               </p>
             )}
@@ -636,10 +692,10 @@ const Submit = () => {
 
           {/* Quick Tips */}
           <Card>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-900 dark:text-white mb-4">
               Tips for Success
             </h3>
-            <ul className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
+            <ul className="space-y-3 text-sm text-gray-600 dark:text-gray-500 dark:text-gray-400">
               <li className="flex items-start">
                 <FiCheck className="h-4 w-4 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
                 <span>Test your solution with sample cases first</span>
@@ -680,7 +736,7 @@ const Submit = () => {
                       ? test.passed
                         ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
                         : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      : 'bg-gray-100 dark:bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-600 dark:text-gray-300'
                     }`}
                 >
                   Test {index + 1}
@@ -699,21 +755,21 @@ const Submit = () => {
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <h4 className="font-medium text-gray-900 dark:text-white mb-2">Input</h4>
-                  <pre className="bg-gray-800 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm">
+                  <h4 className="font-medium text-gray-900 dark:text-gray-900 dark:text-white mb-2">Input</h4>
+                  <pre className="bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 p-4 rounded-lg overflow-x-auto text-sm">
                     {testResults[selectedTestCase].input || 'No input'}
                   </pre>
                 </div>
                 <div>
-                  <h4 className="font-medium text-gray-900 dark:text-white mb-2">Expected Output</h4>
-                  <pre className="bg-gray-800 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm">
+                  <h4 className="font-medium text-gray-900 dark:text-gray-900 dark:text-white mb-2">Expected Output</h4>
+                  <pre className="bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 p-4 rounded-lg overflow-x-auto text-sm">
                     {testResults[selectedTestCase].expectedOutput || 'No expected output'}
                   </pre>
                 </div>
               </div>
 
               <div>
-                <h4 className="font-medium text-gray-900 dark:text-white mb-2">Your Output</h4>
+                <h4 className="font-medium text-gray-900 dark:text-gray-900 dark:text-white mb-2">Your Output</h4>
                 <pre className={`p-4 rounded-lg overflow-x-auto text-sm ${testResults[selectedTestCase].passed
                     ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200'
                     : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200'
@@ -724,7 +780,7 @@ const Submit = () => {
 
               {testResults[selectedTestCase].error && (
                 <div>
-                  <h4 className="font-medium text-gray-900 dark:text-white mb-2">Error</h4>
+                  <h4 className="font-medium text-gray-900 dark:text-gray-900 dark:text-white mb-2">Error</h4>
                   <pre className="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 p-4 rounded-lg overflow-x-auto text-sm">
                     {testResults[selectedTestCase].error}
                   </pre>
@@ -733,8 +789,8 @@ const Submit = () => {
 
               {/* Performance Stats */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Status</div>
+                <div className="bg-gray-50 dark:bg-gray-200 dark:bg-gray-700 rounded-lg p-4">
+                  <div className="text-sm text-gray-600 dark:text-gray-500 dark:text-gray-400">Status</div>
                   <div className={`font-medium ${testResults[selectedTestCase].passed
                       ? 'text-green-600 dark:text-green-400'
                       : 'text-red-600 dark:text-red-400'
@@ -742,21 +798,21 @@ const Submit = () => {
                     {testResults[selectedTestCase].passed ? 'Passed' : 'Failed'}
                   </div>
                 </div>
-                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Time</div>
-                  <div className="font-medium text-gray-900 dark:text-white">
+                <div className="bg-gray-50 dark:bg-gray-200 dark:bg-gray-700 rounded-lg p-4">
+                  <div className="text-sm text-gray-600 dark:text-gray-500 dark:text-gray-400">Time</div>
+                  <div className="font-medium text-gray-900 dark:text-gray-900 dark:text-white">
                     {formatExecutionTime(testResults[selectedTestCase].executionTime || 0)}
                   </div>
                 </div>
-                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Memory</div>
-                  <div className="font-medium text-gray-900 dark:text-white">
+                <div className="bg-gray-50 dark:bg-gray-200 dark:bg-gray-700 rounded-lg p-4">
+                  <div className="text-sm text-gray-600 dark:text-gray-500 dark:text-gray-400">Memory</div>
+                  <div className="font-medium text-gray-900 dark:text-gray-900 dark:text-white">
                     {formatMemory(testResults[selectedTestCase].memoryUsed || 0)}
                   </div>
                 </div>
-                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Score</div>
-                  <div className="font-medium text-gray-900 dark:text-white">
+                <div className="bg-gray-50 dark:bg-gray-200 dark:bg-gray-700 rounded-lg p-4">
+                  <div className="text-sm text-gray-600 dark:text-gray-500 dark:text-gray-400">Score</div>
+                  <div className="font-medium text-gray-900 dark:text-gray-900 dark:text-white">
                     {testResults[selectedTestCase].score || 'N/A'}
                   </div>
                 </div>
@@ -765,27 +821,27 @@ const Submit = () => {
           )}
 
           {/* Custom Test Section */}
-          <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-            <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Custom Test</h4>
+          <div className="border-t border-gray-200 dark:border-gray-300 dark:border-gray-700 pt-6">
+            <h4 className="text-lg font-medium text-gray-900 dark:text-gray-900 dark:text-white mb-4">Custom Test</h4>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-600 dark:text-gray-300 mb-2">
                   Input
                 </label>
                 <textarea
                   value={customInput}
                   onChange={(e) => setCustomInput(e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white"
+                  className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-400 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-gray-900 dark:text-white"
                   placeholder="Enter custom input..."
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-600 dark:text-gray-300 mb-2">
                   Output
                 </label>
-                <div className="bg-gray-800 text-gray-100 p-4 rounded-lg min-h-[100px]">
+                <div className="bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 p-4 rounded-lg min-h-[100px]">
                   <pre className="whitespace-pre-wrap">{customOutput || 'Run test to see output...'}</pre>
                 </div>
               </div>

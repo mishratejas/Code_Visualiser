@@ -21,10 +21,10 @@ export default function DiscussPanel({ problemId, problemTitle, isDark }) {
   const [commentText, setCommentText] = useState('');
   const [commenting, setCommenting] = useState(false);
 
-  const txt  = isDark ? 'text-white' : 'text-gray-900';
-  const sub  = isDark ? 'text-gray-400' : 'text-gray-500';
-  const card = isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200';
-  const inp  = isDark ? 'bg-gray-900 border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400';
+  const txt  = isDark ? 'text-gray-900 dark:text-white' : 'text-gray-900';
+  const sub  = isDark ? 'text-gray-500 dark:text-gray-400' : 'text-gray-600 dark:text-gray-500';
+  const card = isDark ? 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700' : 'bg-gray-50 border-gray-200';
+  const inp  = isDark ? 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,22 +103,22 @@ export default function DiscussPanel({ problemId, problemTitle, isDark }) {
   };
 
   return (
-    <div className={`rounded-xl border overflow-hidden ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
+    <div className={`rounded-xl border overflow-hidden ${isDark ? 'border-gray-200 dark:border-gray-800' : 'border-gray-200'}`}>
       {/* Header */}
-      <div className={`flex items-center justify-between px-4 py-3 border-b ${isDark ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-white'}`}>
+      <div className={`flex items-center justify-between px-4 py-3 border-b ${isDark ? 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900' : 'border-gray-200 bg-white'}`}>
         <span className={`font-bold text-sm flex items-center gap-2 ${txt}`}>
           <FiMessageSquare className="h-4 w-4 text-rose-400" />
           Discuss — {problemTitle}
         </span>
         <div className="flex gap-2">
-          <button onClick={load} className="text-xs text-gray-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all">
+          <button onClick={load} className="text-xs text-gray-600 dark:text-gray-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all">
             <FiRefreshCw className="h-3.5 w-3.5" />
           </button>
           {user && (
             <button onClick={() => setShowCompose(p => !p)}
               className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${
                 showCompose
-                  ? 'bg-rose-500 text-white'
+                  ? 'bg-rose-500 text-gray-900 dark:text-white'
                   : 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
               }`}>
               + New Post
@@ -129,7 +129,7 @@ export default function DiscussPanel({ problemId, problemTitle, isDark }) {
 
       {/* Compose form */}
       {showCompose && user && (
-        <div className={`px-4 py-3 border-b ${isDark ? 'border-gray-800 bg-gray-900' : 'border-gray-100 bg-gray-50'}`}>
+        <div className={`px-4 py-3 border-b ${isDark ? 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900' : 'border-gray-100 bg-gray-50'}`}>
           <input
             value={newPostTitle}
             onChange={e => setNewPostTitle(e.target.value)}
@@ -144,11 +144,11 @@ export default function DiscussPanel({ problemId, problemTitle, isDark }) {
             className={`w-full mb-2 px-3 py-2 rounded-lg border text-sm resize-none focus:outline-none focus:ring-1 focus:ring-rose-500 ${inp}`}
           />
           <div className="flex gap-2 justify-end">
-            <button onClick={() => setShowCompose(false)} className={`text-xs px-3 py-1.5 rounded-lg ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`}>
+            <button onClick={() => setShowCompose(false)} className={`text-xs px-3 py-1.5 rounded-lg ${isDark ? 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-200' : 'text-gray-600 dark:text-gray-500 hover:text-gray-700'}`}>
               Cancel
             </button>
             <button onClick={handlePost} disabled={posting}
-              className="text-xs px-4 py-1.5 bg-rose-500 text-white rounded-lg font-semibold disabled:opacity-50 flex items-center gap-1.5">
+              className="text-xs px-4 py-1.5 bg-rose-500 text-gray-900 dark:text-white rounded-lg font-semibold disabled:opacity-50 flex items-center gap-1.5">
               {posting ? <FiRefreshCw className="animate-spin h-3 w-3" /> : <FiSend className="h-3 w-3" />}
               Post
             </button>
@@ -157,7 +157,7 @@ export default function DiscussPanel({ problemId, problemTitle, isDark }) {
       )}
 
       {/* Posts list */}
-      <div className={`overflow-y-auto max-h-[500px] ${isDark ? 'bg-gray-950' : 'bg-white'}`}>
+      <div className={`overflow-y-auto max-h-[500px] ${isDark ? 'bg-gray-50 dark:bg-gray-950' : 'bg-white'}`}>
         {loading ? (
           <div className="py-10 flex justify-center">
             <div className="w-5 h-5 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" />
@@ -174,12 +174,12 @@ export default function DiscussPanel({ problemId, problemTitle, isDark }) {
             )}
           </div>
         ) : (
-          <div className={`divide-y ${isDark ? 'divide-gray-800' : 'divide-gray-100'}`}>
+          <div className={`divide-y ${isDark ? 'divide-gray-200 dark:divide-gray-800' : 'divide-gray-100'}`}>
             {posts.map(post => (
               <div key={post.id || post._id}>
                 {/* Post row */}
                 <div
-                  className={`flex gap-3 px-4 py-3 cursor-pointer ${isDark ? 'hover:bg-gray-900' : 'hover:bg-gray-50'} transition-colors`}
+                  className={`flex gap-3 px-4 py-3 cursor-pointer ${isDark ? 'hover:bg-gray-50 dark:hover:bg-gray-900' : 'hover:bg-gray-50'} transition-colors`}
                   onClick={() => loadPostComments(post)}
                 >
                   {/* Vote */}
@@ -207,13 +207,13 @@ export default function DiscussPanel({ problemId, problemTitle, isDark }) {
                 {/* Expanded comments */}
                 {expandedPost && (expandedPost.id === post.id || expandedPost._id === post._id) && (
                   <div className={`mx-4 mb-3 rounded-xl border overflow-hidden ${card}`}>
-                    <div className={`px-3 py-2 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <div className={`px-3 py-2 border-b ${isDark ? 'border-gray-300 dark:border-gray-700' : 'border-gray-200'}`}>
                       <p className={`text-xs font-semibold ${txt}`}>{expandedPost.title}</p>
                       <p className={`text-xs ${sub} mt-1 leading-relaxed`}>{expandedPost.content || expandedPost.body}</p>
                     </div>
                     {/* Comments */}
                     {expandedPost.comments?.length > 0 && (
-                      <div className={`divide-y ${isDark ? 'divide-gray-700' : 'divide-gray-100'}`}>
+                      <div className={`divide-y ${isDark ? 'divide-gray-300 dark:divide-gray-700' : 'divide-gray-100'}`}>
                         {expandedPost.comments.map((c, i) => (
                           <div key={c._id || i} className="px-3 py-2">
                             <div className={`flex items-baseline gap-2 mb-0.5`}>
@@ -227,7 +227,7 @@ export default function DiscussPanel({ problemId, problemTitle, isDark }) {
                     )}
                     {/* Add comment */}
                     {user && (
-                      <div className={`flex gap-2 p-2 border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                      <div className={`flex gap-2 p-2 border-t ${isDark ? 'border-gray-300 dark:border-gray-700' : 'border-gray-200'}`}>
                         <FiCornerDownRight className={`h-3.5 w-3.5 ${sub} mt-2 shrink-0`} />
                         <input
                           value={commentText}
@@ -237,7 +237,7 @@ export default function DiscussPanel({ problemId, problemTitle, isDark }) {
                           className={`flex-1 px-3 py-1.5 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-rose-500 ${inp}`}
                         />
                         <button onClick={handleComment} disabled={commenting || !commentText.trim()}
-                          className="p-1.5 bg-rose-500 text-white rounded-lg disabled:opacity-50 hover:bg-rose-600 transition-colors">
+                          className="p-1.5 bg-rose-500 text-gray-900 dark:text-white rounded-lg disabled:opacity-50 hover:bg-rose-600 transition-colors">
                           {commenting ? <FiRefreshCw className="animate-spin h-3 w-3" /> : <FiSend className="h-3 w-3" />}
                         </button>
                       </div>
@@ -252,7 +252,7 @@ export default function DiscussPanel({ problemId, problemTitle, isDark }) {
 
       {/* Login prompt */}
       {!user && (
-        <div className={`px-4 py-2.5 border-t text-xs ${isDark ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-gray-50'} ${sub} text-center`}>
+        <div className={`px-4 py-2.5 border-t text-xs ${isDark ? 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900' : 'border-gray-200 bg-gray-50'} ${sub} text-center`}>
           <a href="/login" className="text-rose-400 hover:text-rose-300 font-semibold">Login</a> to post or vote
         </div>
       )}

@@ -99,7 +99,7 @@ export const getUserProfile = asyncHandler(async (req, res) => {
   
   const selectFields = isSelfViewing 
     ? '-password -security.twoFactorSecret'
-    : 'username profile.name profile.avatar profile.bio profile.country profile.university profile.github profile.linkedin profile.website stats role isProfileComplete createdAt';
+    : 'username profile.name profile.avatar profile.bio profile.country profile.university profile.github profile.linkedin profile.website stats role isProfileComplete createdAt security.contestBannedUntil';
   
   console.log('Select fields:', selectFields);
   
@@ -153,7 +153,12 @@ export const getUserProfile = asyncHandler(async (req, res) => {
       stats: user.stats || {},
       role: user.role,
       isProfileComplete: user.isProfileComplete,
-      createdAt: user.createdAt
+      createdAt: user.createdAt,
+      // Deliberately just this one boolean-ish field, not the whole security
+      // subdocument — visible to any viewer (not just the account owner) so a
+      // contest ban is transparent, without leaking unrelated security data
+      // like lockUntil, failedLoginAttempts, or 2FA state.
+      contestBannedUntil: user.security?.contestBannedUntil || null
     },
     stats: {
       recentSubmissions,

@@ -59,6 +59,8 @@ const ContestProblem = () => {
   const [loadingCode, setLoadingCode] = useState(false);
 
   const editorRef = useRef(null);
+  const pollRef = useRef(null);
+  useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current); }, []);
 
   useEffect(() => {
     fetchContestAndProblem();
@@ -308,6 +310,87 @@ const ContestProblem = () => {
     }
   };
 
+  // Docker-sandboxed judging can take a while (see judgeEngine.service.js —
+  // each test case spawns a real `docker run`), especially on a cold start.
+  const POLL_FAST_INTERVAL_MS = 1500;
+  const POLL_FAST_ATTEMPTS = 20;   // ~30s
+  const POLL_SLOW_INTERVAL_MS = 4000;
+  const POLL_SLOW_ATTEMPTS = 20;   // then ~80s more — ~110s total
+  const sleep = (ms) => new Promise((resolve) => { pollRef.current = setTimeout(resolve, ms); });
+
+  // Waits for the submission's real verdict instead of trusting the verdict
+  // in the immediate POST /submissions response.
+  //
+  // Under the async judge queue (judge.queue.js / judge.worker.js), that
+  // response ALWAYS comes back with verdict: "pending" — judging happens in
+  // the background. This function used to skip straight to reading
+  // sub.verdict from that immediate response and hand it straight to
+  // POST /contests/:id/submit as "the real verdict". Since judging hadn't
+  // even started yet, that meant `submitContestSolution` on the backend
+  // permanently recorded the ContestSubmission with status: "pending" and
+  // score: 0 — even when the underlying submission went on to be correctly
+  // judged "accepted" a few seconds later. The practice Submissions page
+  // would show it as solved; the contest leaderboard never would.
+  const pollForVerdict = async (submissionId) => {
+    let attempts = 0;
+    const tryOnce = async () => {
+      try {
+        const res = await api.get(`/submissions/${submissionId}`);
+        const sub = res?.data?.submission || {};
+        if (sub.verdict && sub.verdict !== "pending") return sub;
+      } catch {
+        // transient — keep trying
+      }
+      return null;
+    };
+    while (attempts < POLL_FAST_ATTEMPTS) {
+      const result = await tryOnce();
+      if (result) return result;
+      attempts += 1;
+      await sleep(POLL_FAST_INTERVAL_MS);
+    }
+    attempts = 0;
+    while (attempts < POLL_SLOW_ATTEMPTS) {
+      const result = await tryOnce();
+      if (result) return result;
+      attempts += 1;
+      await sleep(POLL_SLOW_INTERVAL_MS);
+    }
+    return null; // timed out — still pending
+  };
+
+  const recordContestSubmission = async (submissionId, sub) => {
+    const verdict = sub.verdict;
+    const runtime = sub.runtime || 0;
+    const passed = sub.testCasesPassed || 0;
+    const total = sub.totalTestCases || 0;
+
+    // ── Record in contest now that we actually have the real verdict ──
+    const contestRes = await api.post(`/contests/${contestId}/submit`, {
+      problemId,
+      code,
+      language,
+      submissionId,
+    });
+
+    const isAccepted = verdict === "accepted";
+    const pointsEarned =
+      contestRes?.data?.pointsEarned ?? contestRes?.pointsEarned ?? 0;
+
+    setTestResults([
+      { verdict, runtime, testCasesPassed: passed, totalTestCases: total, score: pointsEarned },
+    ]);
+
+    if (isAccepted) {
+      toast.success(`✅ Accepted! +${pointsEarned} points`, { duration: 5000, icon: "🏆" });
+    } else {
+      toast.error(`${verdict.replace(/_/g, ' ')} — ${passed}/${total} test cases passed`, { duration: 5000 });
+    }
+
+    // Refresh leaderboard/contest data now that a real result exists.
+    setTimeout(() => fetchContestAndProblem(), 1000);
+  };
+
   const handleSubmit = async () => {
     if (!code.trim()) {
       toast.error("Please write some code first");
@@ -330,7 +413,7 @@ const ContestProblem = () => {
 
     setSubmitting(true);
     try {
-      // ── Step 1: Execute code via normal submission endpoint to get verdict ──
+      // ── Step 1: Queue the submission for judging ──
       toast.loading("Judging your code...", { id: "judge" });
       const subRes = await api.post("/submissions", {
         problemId,
@@ -342,52 +425,29 @@ const ContestProblem = () => {
         subRes?.data?.submission ||
         subRes?.submission ||
         subRes?.data?.data?.submission;
-      toast.dismiss("judge");
 
       if (!sub)
         throw new Error("Submission execution failed — no result returned");
 
       const submissionId = sub._id;
-      const verdict = sub.verdict;
-      const runtime = sub.runtime || 0;
-      const passed = sub.testCasesPassed || 0;
-      const total = sub.totalTestCases || 0;
 
-      // ── Step 2: Record in contest with the real verdict ──
-      const contestRes = await api.post(`/contests/${contestId}/submit`, {
-        problemId,
-        code,
-        language,
-        submissionId,
-      });
+      // ── Step 2: Wait for the real verdict (see pollForVerdict above) ──
+      const finalSub = sub.verdict && sub.verdict !== "pending"
+        ? sub // already-resolved (e.g. inline fallback when the judge queue itself is unreachable)
+        : await pollForVerdict(submissionId);
 
-      const isAccepted = verdict === "Accepted" || verdict === "accepted";
-      const pointsEarned =
-        contestRes?.data?.pointsEarned ?? contestRes?.pointsEarned ?? 0;
+      toast.dismiss("judge");
 
-      setTestResults([
-        {
-          verdict,
-          runtime,
-          testCasesPassed: passed,
-          totalTestCases: total,
-          score: pointsEarned,
-        },
-      ]);
-
-      if (isAccepted) {
-        toast.success(`✅ Accepted! +${pointsEarned} points`, {
-          duration: 5000,
-          icon: "🏆",
-        });
-      } else {
-        toast.error(`${verdict} — ${passed}/${total} test cases passed`, {
-          duration: 5000,
-        });
+      if (!finalSub) {
+        // Still pending after ~110s — don't record a wrong result. Let the
+        // user retry recording once it's actually done instead of silently
+        // locking in "pending / 0 points".
+        toast.error('Judging is taking longer than usual. Click "Submit to Contest" again in a moment to record your result.', { duration: 6000 });
+        return;
       }
 
-      // Refresh leaderboard
-      setTimeout(() => fetchContestAndProblem(), 1500);
+      // ── Step 3: Record in contest with the REAL verdict ──
+      await recordContestSubmission(submissionId, finalSub);
     } catch (err) {
       toast.dismiss("judge");
       console.error("Submit error:", err);
@@ -408,13 +468,13 @@ const ContestProblem = () => {
       case "hard":
         return "bg-gradient-to-r from-red-500/10 to-rose-500/10 text-red-600 dark:text-red-400 border-red-500/30";
       default:
-        return "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400";
+        return "bg-gray-100 dark:bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-500 dark:text-gray-400";
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 dark:from-gray-900 to-white dark:to-black flex items-center justify-center">
         <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-600"></div>
       </div>
     );
@@ -422,11 +482,11 @@ const ContestProblem = () => {
 
   if (!problem || !contest) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
-        <div className="text-center text-white">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 dark:from-gray-900 to-white dark:to-black flex items-center justify-center">
+        <div className="text-center text-gray-900 dark:text-white">
           <div className="text-6xl mb-4">😕</div>
           <h2 className="text-2xl font-bold mb-2">Problem not found</h2>
-          <p className="text-gray-400">
+          <p className="text-gray-500 dark:text-gray-400">
             This problem is not available in this contest
           </p>
         </div>
@@ -435,14 +495,14 @@ const ContestProblem = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black text-white py-6 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 dark:from-gray-900 to-white dark:to-black text-gray-900 dark:text-white py-6 px-4">
       <div className="max-w-[1800px] mx-auto">
         {/* Header with Contest Info */}
-        <div className="mb-6 bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl rounded-2xl p-6 border border-gray-700/50">
+        <div className="mb-6 bg-gradient-to-br from-gray-100 dark:from-gray-800/50 to-gray-100 dark:to-gray-900/50 backdrop-blur-xl rounded-2xl p-6 border border-gray-300 dark:border-gray-700/50">
           <div className="flex items-center justify-between mb-4">
             <button
               onClick={() => navigate(`/contests/${contestId}/live`)}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-700/50 hover:bg-gray-700 rounded-xl transition-all"
+              className="flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700/50 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-all"
             >
               <FiArrowLeft size={18} />
               <span className="font-medium">Back to Contest</span>
@@ -450,16 +510,16 @@ const ContestProblem = () => {
 
             <div className="flex items-center gap-4">
               {/* User Stats */}
-              <div className="flex items-center gap-4 px-4 py-2 bg-gray-700/50 rounded-xl">
+              <div className="flex items-center gap-4 px-4 py-2 bg-gray-200 dark:bg-gray-700/50 rounded-xl">
                 <div className="text-center">
-                  <div className="text-xs text-gray-400">Your Rank</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Your Rank</div>
                   <div className="text-lg font-bold text-yellow-400">
                     #{userRank || "—"}
                   </div>
                 </div>
-                <div className="w-px h-8 bg-gray-600"></div>
+                <div className="w-px h-8 bg-gray-300 dark:bg-gray-600"></div>
                 <div className="text-center">
-                  <div className="text-xs text-gray-400">Your Score</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Your Score</div>
                   <div className="text-lg font-bold text-green-400">
                     {userScore}
                   </div>
@@ -477,9 +537,9 @@ const ContestProblem = () => {
           </div>
 
           {/* Contest Name */}
-          <div className="text-sm text-gray-400">
+          <div className="text-sm text-gray-500 dark:text-gray-400">
             Contest:{" "}
-            <span className="text-white font-medium">{contest.title}</span>
+            <span className="text-gray-900 dark:text-white font-medium">{contest.title}</span>
           </div>
         </div>
 
@@ -490,7 +550,7 @@ const ContestProblem = () => {
           {!isFullscreen && (
             <div className="space-y-6">
               {/* Problem Header */}
-              <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl rounded-2xl p-6 border border-gray-700/50">
+              <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800/50 to-gray-100 dark:to-gray-900/50 backdrop-blur-xl rounded-2xl p-6 border border-gray-300 dark:border-gray-700/50">
                 <h1 className="text-2xl font-bold mb-3 flex items-center gap-3">
                   <FiCode className="text-blue-400" />
                   {problem.title}
@@ -510,7 +570,7 @@ const ContestProblem = () => {
                   {problem.tags?.map((tag, index) => (
                     <span
                       key={index}
-                      className="px-3 py-1 bg-gray-700/50 text-gray-300 text-sm rounded-lg"
+                      className="px-3 py-1 bg-gray-200 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 text-sm rounded-lg"
                     >
                       {tag}
                     </span>
@@ -519,16 +579,16 @@ const ContestProblem = () => {
               </div>
 
               {/* Tabs */}
-              <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl rounded-2xl border border-gray-700/50 overflow-hidden">
-                <div className="flex border-b border-gray-700">
+              <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800/50 to-gray-100 dark:to-gray-900/50 backdrop-blur-xl rounded-2xl border border-gray-300 dark:border-gray-700/50 overflow-hidden">
+                <div className="flex border-b border-gray-300 dark:border-gray-700">
                   {["statement", "hints", "submissions"].map((tab) => (
                     <button
                       key={tab}
                       onClick={() => handleTabChange(tab)}
                       className={`flex-1 px-4 py-4 font-semibold transition-all text-sm ${
                         activeTab === tab
-                          ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white"
-                          : "text-gray-400 hover:bg-gray-700/50"
+                          ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-gray-900 dark:text-white"
+                          : "text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700/50"
                       }`}
                     >
                       {tab === "submissions"
@@ -556,7 +616,7 @@ const ContestProblem = () => {
                         {problem.tags?.map((tag, i) => (
                           <span
                             key={i}
-                            className="px-2 py-0.5 bg-gray-700/60 text-gray-300 text-xs rounded-full"
+                            className="px-2 py-0.5 bg-gray-200 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300 text-xs rounded-full"
                           >
                             {tag}
                           </span>
@@ -565,10 +625,10 @@ const ContestProblem = () => {
 
                       {/* Description */}
                       <div>
-                        <h3 className="text-base font-bold text-white mb-2">
+                        <h3 className="text-base font-bold text-gray-900 dark:text-white mb-2">
                           Problem Description
                         </h3>
-                        <p className="text-gray-300 leading-relaxed whitespace-pre-line">
+                        <p className="text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-line">
                           {problem.description || "No description available."}
                         </p>
                       </div>
@@ -577,21 +637,21 @@ const ContestProblem = () => {
                       {(problem.inputFormat || problem.outputFormat) && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {problem.inputFormat && (
-                            <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700">
-                              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                            <div className="bg-gray-100 dark:bg-gray-800/60 rounded-xl p-4 border border-gray-300 dark:border-gray-700">
+                              <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
                                 Input Format
                               </h4>
-                              <p className="text-gray-300 text-sm whitespace-pre-line leading-relaxed">
+                              <p className="text-gray-600 dark:text-gray-300 text-sm whitespace-pre-line leading-relaxed">
                                 {problem.inputFormat}
                               </p>
                             </div>
                           )}
                           {problem.outputFormat && (
-                            <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700">
-                              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                            <div className="bg-gray-100 dark:bg-gray-800/60 rounded-xl p-4 border border-gray-300 dark:border-gray-700">
+                              <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
                                 Output Format
                               </h4>
-                              <p className="text-gray-300 text-sm whitespace-pre-line leading-relaxed">
+                              <p className="text-gray-600 dark:text-gray-300 text-sm whitespace-pre-line leading-relaxed">
                                 {problem.outputFormat}
                               </p>
                             </div>
@@ -600,16 +660,16 @@ const ContestProblem = () => {
                       )}
 
                       {/* Constraints */}
-                      <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700">
-                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                      <div className="bg-gray-100 dark:bg-gray-800/60 rounded-xl p-4 border border-gray-300 dark:border-gray-700">
+                        <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
                           Constraints
                         </h4>
-                        <div className="flex flex-wrap gap-4 text-sm text-gray-300">
+                        <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-300">
                           <div className="flex items-center gap-2">
                             <FiClock className="text-blue-400 flex-shrink-0" />
                             <span>
                               Time Limit:{" "}
-                              <span className="text-white font-medium">
+                              <span className="text-gray-900 dark:text-white font-medium">
                                 {problem.constraints?.timeLimit ||
                                   problem.timeLimit ||
                                   2000}{" "}
@@ -621,7 +681,7 @@ const ContestProblem = () => {
                             <FiBarChart2 className="text-purple-400 flex-shrink-0" />
                             <span>
                               Memory:{" "}
-                              <span className="text-white font-medium">
+                              <span className="text-gray-900 dark:text-white font-medium">
                                 {problem.constraints?.memoryLimit ||
                                   problem.memoryLimit ||
                                   256}{" "}
@@ -631,7 +691,7 @@ const ContestProblem = () => {
                           </div>
                         </div>
                         {problem.constraints?.inputConstraints && (
-                          <p className="text-gray-400 text-sm mt-3 whitespace-pre-line">
+                          <p className="text-gray-500 dark:text-gray-400 text-sm mt-3 whitespace-pre-line">
                             {problem.constraints.inputConstraints}
                           </p>
                         )}
@@ -640,22 +700,22 @@ const ContestProblem = () => {
                       {/* Sample test cases inline */}
                       {problem.testCases?.length > 0 && (
                         <div>
-                          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                          <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
                             Examples
                           </h4>
                           <div className="space-y-4">
                             {problem.testCases.slice(0, 3).map((tc, i) => (
                               <div
                                 key={i}
-                                className="bg-gray-800/60 rounded-xl border border-gray-700 overflow-hidden"
+                                className="bg-gray-100 dark:bg-gray-800/60 rounded-xl border border-gray-300 dark:border-gray-700 overflow-hidden"
                               >
-                                <div className="px-4 py-2 bg-gray-700/40 text-xs font-semibold text-gray-300 border-b border-gray-700">
+                                <div className="px-4 py-2 bg-gray-200 dark:bg-gray-700/40 text-xs font-semibold text-gray-600 dark:text-gray-300 border-b border-gray-300 dark:border-gray-700">
                                   Example {i + 1}
                                 </div>
-                                <div className="grid grid-cols-2 divide-x divide-gray-700">
+                                <div className="grid grid-cols-2 divide-x divide-gray-300 dark:divide-gray-700">
                                   <div className="p-4">
                                     <div className="flex items-center justify-between mb-1.5">
-                                      <span className="text-xs text-gray-500 font-medium">
+                                      <span className="text-xs text-gray-600 dark:text-gray-500 font-medium">
                                         Input
                                       </span>
                                       <button
@@ -667,13 +727,13 @@ const ContestProblem = () => {
                                         <FiCopy size={11} /> Copy
                                       </button>
                                     </div>
-                                    <pre className="text-xs font-mono text-gray-200 whitespace-pre-wrap break-all leading-relaxed">
+                                    <pre className="text-xs font-mono text-gray-700 dark:text-gray-200 whitespace-pre-wrap break-all leading-relaxed">
                                       {formatText(tc.input)}
                                     </pre>
                                   </div>
                                   <div className="p-4">
                                     <div className="flex items-center justify-between mb-1.5">
-                                      <span className="text-xs text-gray-500 font-medium">
+                                      <span className="text-xs text-gray-600 dark:text-gray-500 font-medium">
                                         Output
                                       </span>
                                       <button
@@ -685,14 +745,14 @@ const ContestProblem = () => {
                                         <FiCopy size={11} /> Copy
                                       </button>
                                     </div>
-                                    <pre className="text-xs font-mono text-gray-200 whitespace-pre-wrap break-all leading-relaxed">
+                                    <pre className="text-xs font-mono text-gray-700 dark:text-gray-200 whitespace-pre-wrap break-all leading-relaxed">
                                       {formatText(tc.expectedOutput)}
                                     </pre>
                                   </div>
                                 </div>
                                 {tc.explanation && (
-                                  <div className="px-4 py-3 bg-blue-500/5 border-t border-gray-700 text-xs text-gray-400">
-                                    <span className="font-semibold text-gray-300">
+                                  <div className="px-4 py-3 bg-blue-500/5 border-t border-gray-300 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+                                    <span className="font-semibold text-gray-600 dark:text-gray-300">
                                       Explanation:{" "}
                                     </span>
                                     {tc.explanation}
@@ -715,14 +775,14 @@ const ContestProblem = () => {
                             key={index}
                             className="flex gap-4 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl"
                           >
-                            <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+                            <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-gray-900 dark:text-white rounded-full flex items-center justify-center font-bold">
                               {index + 1}
                             </div>
-                            <div className="text-gray-300">{hint}</div>
+                            <div className="text-gray-600 dark:text-gray-300">{hint}</div>
                           </div>
                         ))
                       ) : (
-                        <div className="text-center py-8 text-gray-400">
+                        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                           No hints available for this problem
                         </div>
                       )}
@@ -733,12 +793,12 @@ const ContestProblem = () => {
                   {activeTab === "submissions" && (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-base font-bold text-white">
+                        <h3 className="text-base font-bold text-gray-900 dark:text-white">
                           My Submissions
                         </h3>
                         <button
                           onClick={fetchMySubmissions}
-                          className="text-xs text-gray-400 hover:text-white px-2 py-1 bg-gray-700/50 rounded-lg transition-colors"
+                          className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white px-2 py-1 bg-gray-200 dark:bg-gray-700/50 rounded-lg transition-colors"
                         >
                           ↻ Refresh
                         </button>
@@ -770,7 +830,7 @@ const ContestProblem = () => {
                           <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                         </div>
                       ) : mySubmissions.length === 0 ? (
-                        <div className="text-center py-10 text-gray-500 text-sm">
+                        <div className="text-center py-10 text-gray-600 dark:text-gray-500 text-sm">
                           No submissions yet for this problem.
                         </div>
                       ) : (
@@ -789,7 +849,7 @@ const ContestProblem = () => {
                                 className={`flex items-center justify-between p-3 rounded-xl border ${
                                   isAC
                                     ? "bg-green-900/20 border-green-500/30"
-                                    : "bg-gray-800/40 border-gray-700/50"
+                                    : "bg-gray-100 dark:bg-gray-800/40 border-gray-300 dark:border-gray-700/50"
                                 }`}
                               >
                                 <div className="flex flex-col gap-0.5">
@@ -801,7 +861,7 @@ const ContestProblem = () => {
                                       ?.replace(/_/g, " ")
                                       .toUpperCase() || "PENDING"}
                                   </span>
-                                  <span className="text-xs text-gray-500">
+                                  <span className="text-xs text-gray-600 dark:text-gray-500">
                                     {sub.language?.toUpperCase()}
                                     {sub.score > 0 && ` · +${sub.score} pts`}
                                     {sub.time_taken > 0 &&
@@ -828,7 +888,7 @@ const ContestProblem = () => {
                                   className={`text-xs px-3 py-1.5 rounded-lg transition-colors font-medium ${
                                     isContestEnded
                                       ? "bg-blue-600/30 text-blue-300 border border-blue-500/30 hover:bg-blue-600/50"
-                                      : "bg-gray-700/40 text-gray-600 border border-gray-700/30 cursor-not-allowed"
+                                      : "bg-gray-200 dark:bg-gray-700/40 text-gray-600 border border-gray-300 dark:border-gray-700/30 cursor-not-allowed"
                                   }`}
                                 >
                                   {loadingCode
@@ -848,7 +908,7 @@ const ContestProblem = () => {
               </div>
 
               {/* Mini Leaderboard */}
-              <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl rounded-2xl p-6 border border-gray-700/50">
+              <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800/50 to-gray-100 dark:to-gray-900/50 backdrop-blur-xl rounded-2xl p-6 border border-gray-300 dark:border-gray-700/50">
                 <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                   <MdOutlineLeaderboard className="text-yellow-400" />
                   Top 5 Contestants
@@ -860,7 +920,7 @@ const ContestProblem = () => {
                       className={`flex items-center justify-between p-3 rounded-lg ${
                         entry.userId === user?.id
                           ? "bg-blue-500/20 border border-blue-500/30"
-                          : "bg-gray-700/30"
+                          : "bg-gray-200 dark:bg-gray-700/30"
                       }`}
                     >
                       <div className="flex items-center gap-3">
@@ -871,8 +931,8 @@ const ContestProblem = () => {
                               : index === 1
                                 ? "bg-gray-400 text-black"
                                 : index === 2
-                                  ? "bg-amber-700 text-white"
-                                  : "bg-gray-600 text-white"
+                                  ? "bg-amber-700 text-gray-900 dark:text-white"
+                                  : "bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white"
                           }`}
                         >
                           {index + 1}
@@ -887,7 +947,7 @@ const ContestProblem = () => {
                               </span>
                             )}
                           </div>
-                          <div className="text-xs text-gray-400">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
                             {entry.solved || 0} solved
                           </div>
                         </div>
@@ -896,7 +956,7 @@ const ContestProblem = () => {
                         <div className="font-bold text-green-400">
                           {entry.score || 0}
                         </div>
-                        <div className="text-xs text-gray-400">points</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">points</div>
                       </div>
                     </div>
                   ))}
@@ -907,15 +967,15 @@ const ContestProblem = () => {
 
           {/* Right Panel - Code Editor */}
           <div className="space-y-6">
-            <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl rounded-2xl border border-gray-700/50 overflow-hidden">
+            <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800/50 to-gray-100 dark:to-gray-900/50 backdrop-blur-xl rounded-2xl border border-gray-300 dark:border-gray-700/50 overflow-hidden">
               {/* Editor Header */}
-              <div className="px-6 py-4 border-b border-gray-700 bg-gray-800/50">
+              <div className="px-6 py-4 border-b border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/50">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <select
                       value={language}
                       onChange={(e) => handleLanguageChange(e.target.value)}
-                      className="px-4 py-2 bg-gray-900 border-2 border-gray-700 rounded-xl text-white font-medium focus:outline-none focus:border-blue-500 transition-all"
+                      className="px-4 py-2 bg-white dark:bg-gray-900 border-2 border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white font-medium focus:outline-none focus:border-blue-500 transition-all"
                     >
                       <option value="cpp">C++ 17</option>
                       <option value="python">Python 3</option>
@@ -925,7 +985,7 @@ const ContestProblem = () => {
 
                     <button
                       onClick={() => copyToClipboard(code)}
-                      className="flex items-center gap-2 px-4 py-2 text-gray-300 hover:bg-gray-700 rounded-xl transition-all"
+                      className="flex items-center gap-2 px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-all"
                     >
                       <FiCopy size={16} />
                       <span className="font-medium">Copy</span>
@@ -937,7 +997,7 @@ const ContestProblem = () => {
                           getDefaultCode(problem.title, language),
                         )
                       }
-                      className="px-4 py-2 text-gray-300 hover:bg-gray-700 rounded-xl transition-all font-medium"
+                      className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-all font-medium"
                     >
                       Reset
                     </button>
@@ -948,8 +1008,8 @@ const ContestProblem = () => {
                       onClick={() => setShowCustomTest(!showCustomTest)}
                       className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all font-medium ${
                         showCustomTest
-                          ? "bg-blue-600 text-white"
-                          : "text-gray-300 hover:bg-gray-700"
+                          ? "bg-blue-600 text-gray-900 dark:text-white"
+                          : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
                       }`}
                     >
                       Custom Test
@@ -957,7 +1017,7 @@ const ContestProblem = () => {
 
                     <button
                       onClick={() => setIsFullscreen(!isFullscreen)}
-                      className="p-2 text-gray-300 hover:bg-gray-700 rounded-xl transition-all"
+                      className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-all"
                     >
                       {isFullscreen ? (
                         <FiMinimize2 size={18} />
@@ -995,25 +1055,25 @@ const ContestProblem = () => {
 
               {/* Custom Test Panel */}
               {showCustomTest && (
-                <div className="border-t border-gray-700 p-6 bg-gray-800/50">
+                <div className="border-t border-gray-300 dark:border-gray-700 p-6 bg-gray-100 dark:bg-gray-800/50">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-semibold text-gray-300 mb-3">
+                      <label className="block text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">
                         Input
                       </label>
                       <textarea
                         value={customInput}
                         onChange={(e) => setCustomInput(e.target.value)}
-                        className="w-full h-40 bg-gray-900 text-gray-100 font-mono text-sm p-4 rounded-xl border-2 border-gray-700 focus:border-blue-500 focus:outline-none transition-all resize-none"
+                        className="w-full h-40 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 font-mono text-sm p-4 rounded-xl border-2 border-gray-300 dark:border-gray-700 focus:border-blue-500 focus:outline-none transition-all resize-none"
                         placeholder="Enter custom input..."
                         spellCheck="false"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-gray-300 mb-3">
+                      <label className="block text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">
                         Output
                       </label>
-                      <pre className="w-full h-40 bg-gray-900 text-gray-100 font-mono text-sm p-4 rounded-xl border-2 border-gray-700 overflow-auto whitespace-pre-wrap">
+                      <pre className="w-full h-40 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 font-mono text-sm p-4 rounded-xl border-2 border-gray-300 dark:border-gray-700 overflow-auto whitespace-pre-wrap">
                         {customOutput || "Run to see output..."}
                       </pre>
                     </div>
@@ -1022,9 +1082,9 @@ const ContestProblem = () => {
               )}
 
               {/* Editor Footer */}
-              <div className="px-6 py-4 border-t border-gray-700 bg-gray-800/50">
+              <div className="px-6 py-4 border-t border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/50">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-400 font-medium">
+                  <div className="text-sm text-gray-500 dark:text-gray-400 font-medium">
                     {code.length} chars • {code.split("\n").length} lines
                   </div>
                   <div className="flex items-center gap-3">
@@ -1033,8 +1093,8 @@ const ContestProblem = () => {
                       disabled={isRunning}
                       className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
                         isRunning
-                          ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                          : "bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:shadow-lg"
+                          ? "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-500 cursor-not-allowed"
+                          : "bg-gradient-to-r from-blue-600 to-indigo-600 text-gray-900 dark:text-white hover:shadow-lg"
                       }`}
                     >
                       {isRunning ? (
@@ -1055,8 +1115,8 @@ const ContestProblem = () => {
                       disabled={submitting}
                       className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
                         submitting
-                          ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                          : "bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg"
+                          ? "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-500 cursor-not-allowed"
+                          : "bg-gradient-to-r from-green-600 to-emerald-600 text-gray-900 dark:text-white hover:shadow-lg"
                       }`}
                     >
                       {submitting ? (
@@ -1078,8 +1138,8 @@ const ContestProblem = () => {
 
             {/* Submission Results */}
             {testResults.length > 0 && (
-              <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl rounded-2xl border border-gray-700/50 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-700 bg-gray-800/50">
+              <div className="bg-gradient-to-br from-gray-100 dark:from-gray-800/50 to-gray-100 dark:to-gray-900/50 backdrop-blur-xl rounded-2xl border border-gray-300 dark:border-gray-700/50 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/50">
                   <h3 className="font-bold flex items-center gap-2">
                     <BsLightning className="text-blue-400" />
                     Contest Submission Result
@@ -1148,9 +1208,9 @@ const ContestProblem = () => {
 
       {/* ── Code Viewer Modal — only shown after contest ends ─────────────── */}
       {viewingCode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl border border-gray-700 bg-gray-900 shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white dark:bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-300 dark:border-gray-700">
               <div className="flex items-center gap-3">
                 <span
                   className={`text-sm font-bold ${viewingCode.verdict === "accepted" ? "text-green-400" : "text-red-400"}`}
@@ -1159,7 +1219,7 @@ const ContestProblem = () => {
                     ? "✅ Accepted"
                     : `❌ ${viewingCode.verdict?.replace(/_/g, " ")}`}
                 </span>
-                <span className="text-xs px-2 py-0.5 bg-gray-800 text-gray-400 rounded">
+                <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded">
                   {viewingCode.language?.toUpperCase()}
                 </span>
               </div>
@@ -1171,20 +1231,20 @@ const ContestProblem = () => {
                     setViewingCode(null);
                     toast.success("Code loaded into editor");
                   }}
-                  className="text-xs px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:opacity-90"
+                  className="text-xs px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-gray-900 dark:text-white rounded-lg hover:opacity-90"
                 >
                   Load in Editor
                 </button>
                 <button
                   onClick={() => setViewingCode(null)}
-                  className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400"
+                  className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400"
                 >
                   ✕
                 </button>
               </div>
             </div>
             <div className="flex-1 overflow-auto p-4">
-              <pre className="text-sm font-mono text-gray-200 whitespace-pre-wrap break-all leading-relaxed">
+              <pre className="text-sm font-mono text-gray-700 dark:text-gray-200 whitespace-pre-wrap break-all leading-relaxed">
                 {viewingCode.code}
               </pre>
             </div>

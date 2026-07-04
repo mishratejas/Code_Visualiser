@@ -547,7 +547,7 @@ const Contests = () => {
                           🟢 Enter Live
                         </Link>
                       )}
-                      {filter === "my" && user?.role === "admin" && (
+                      {filter === "my" && (contest.isCreator || user?.role === "admin" || user?.role === "organizer") && (
                         <Link
                           to={`/contests/${contestId}/add-problems`}
                           className="px-3 py-1.5 text-xs bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg hover:opacity-80 transition-opacity"
