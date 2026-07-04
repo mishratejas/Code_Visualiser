@@ -156,7 +156,7 @@ const compileSandboxed = (compileCmd, timeoutMs = 10000) => {
     let stderr = '';
     const proc = spawn('bash', [
       '-c',
-      `ulimit -v 262144 -f 32768 -u 50; ${compileCmd}`,
+      `ulimit -v 1048576 -f 32768 -u 50; ${compileCmd}`,
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
     const timer = setTimeout(() => killProc(proc), timeoutMs);
@@ -192,7 +192,7 @@ const runWithUlimit = ({ execCmd, execArgs, inputData, timeoutMs }) => {
     const proc = spawn('bash', [
       '-c',
       // ulimit: virtual memory 256MB, file size 32MB, processes 50
-      `ulimit -v 262144 -f 32768 -u 50; ${execCmd} ${execArgs.join(' ')}`,
+      `ulimit -v 1048576 -f 32768 -u 50; ${execCmd} ${execArgs.join(' ')}`,
     ], { stdio: ['pipe', 'pipe', 'pipe'] });
 
     if (inputData) { proc.stdin.write(inputData); proc.stdin.end(); }
